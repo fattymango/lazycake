@@ -330,18 +330,19 @@ func (*CoordinatorMessage_Dispatch) isCoordinatorMessage_Body() {}
 func (*CoordinatorMessage_Cancel) isCoordinatorMessage_Body() {}
 
 type Register struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
-	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	Arch          string                 `protobuf:"bytes,3,opt,name=arch,proto3" json:"arch,omitempty"`
-	CpuFlags      []string               `protobuf:"bytes,4,rep,name=cpu_flags,json=cpuFlags,proto3" json:"cpu_flags,omitempty"`
-	Caps          *Capabilities          `protobuf:"bytes,5,opt,name=caps,proto3" json:"caps,omitempty"`
-	Offer         *Offer                 `protobuf:"bytes,6,opt,name=offer,proto3" json:"offer,omitempty"`
-	BootId        string                 `protobuf:"bytes,7,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	InstanceId    string                 `protobuf:"bytes,8,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	Images        []*CachedImage         `protobuf:"bytes,9,rep,name=images,proto3" json:"images,omitempty"` // full reconciliation on connect
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Token          string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Hostname       string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Arch           string                 `protobuf:"bytes,3,opt,name=arch,proto3" json:"arch,omitempty"`
+	CpuFlags       []string               `protobuf:"bytes,4,rep,name=cpu_flags,json=cpuFlags,proto3" json:"cpu_flags,omitempty"`
+	Caps           *Capabilities          `protobuf:"bytes,5,opt,name=caps,proto3" json:"caps,omitempty"`
+	Offer          *Offer                 `protobuf:"bytes,6,opt,name=offer,proto3" json:"offer,omitempty"`
+	BootId         string                 `protobuf:"bytes,7,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
+	InstanceId     string                 `protobuf:"bytes,8,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Images         []*CachedImage         `protobuf:"bytes,9,rep,name=images,proto3" json:"images,omitempty"`                                          // full reconciliation on connect
+	RunningTaskIds []string               `protobuf:"bytes,10,rep,name=running_task_ids,json=runningTaskIds,proto3" json:"running_task_ids,omitempty"` // re-announced on reconnect for adoption
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Register) Reset() {
@@ -433,6 +434,13 @@ func (x *Register) GetInstanceId() string {
 func (x *Register) GetImages() []*CachedImage {
 	if x != nil {
 		return x.Images
+	}
+	return nil
+}
+
+func (x *Register) GetRunningTaskIds() []string {
+	if x != nil {
+		return x.RunningTaskIds
 	}
 	return nil
 }
@@ -1683,7 +1691,7 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\rheartbeat_ack\x18\x02 \x01(\v2\x19.lazycake.v1.HeartbeatAckH\x00R\fheartbeatAck\x123\n" +
 	"\bdispatch\x18\x03 \x01(\v2\x15.lazycake.v1.DispatchH\x00R\bdispatch\x12-\n" +
 	"\x06cancel\x18\x04 \x01(\v2\x13.lazycake.v1.CancelH\x00R\x06cancelB\x06\n" +
-	"\x04body\"\xb2\x02\n" +
+	"\x04body\"\xdc\x02\n" +
 	"\bRegister\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x12\n" +
@@ -1694,7 +1702,9 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\aboot_id\x18\a \x01(\tR\x06bootId\x12\x1f\n" +
 	"\vinstance_id\x18\b \x01(\tR\n" +
 	"instanceId\x120\n" +
-	"\x06images\x18\t \x03(\v2\x18.lazycake.v1.CachedImageR\x06images\"\x8a\x02\n" +
+	"\x06images\x18\t \x03(\v2\x18.lazycake.v1.CachedImageR\x06images\x12(\n" +
+	"\x10running_task_ids\x18\n" +
+	" \x03(\tR\x0erunningTaskIds\"\x8a\x02\n" +
 	"\fCapabilities\x12!\n" +
 	"\fmemory_limit\x18\x01 \x01(\bR\vmemoryLimit\x12\x1b\n" +
 	"\tcpu_quota\x18\x02 \x01(\bR\bcpuQuota\x12\x1d\n" +

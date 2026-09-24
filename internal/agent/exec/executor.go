@@ -48,7 +48,11 @@ type Executor struct {
 
 type activeTask struct {
 	containerID string
-	fenced      bool
+	// overrideReason, once set, replaces whatever exit reason the
+	// container's own exit code would otherwise produce - set by FenceAll
+	// ("fenced") or CancelTask ("cancelled"), both of which stop the
+	// container out from under whatever normal completion path it was on.
+	overrideReason string
 }
 
 // FenceAll is the agent's self-fencing action (task 3.2, PLAN.md "Lease and
@@ -62,7 +66,7 @@ func (e *Executor) FenceAll(ctx context.Context) {
 	e.mu.Lock()
 	tasks := make(map[string]string, len(e.active))
 	for taskID, t := range e.active {
-		t.fenced = true
+		t.overrideReason = "fenced"
 		tasks[taskID] = t.containerID
 	}
 	e.mu.Unlock()
@@ -72,6 +76,27 @@ func (e *Executor) FenceAll(ctx context.Context) {
 		if err := e.Runtime.Stop(ctx, containerID, 10*time.Second); err != nil {
 			e.Log.Warn("stopping fenced container", "task_id", taskID, "error", err)
 		}
+	}
+}
+
+// CancelTask stops one task's container in response to a coordinator Cancel
+// message - most notably task 3.3's reconnect adoption, where the
+// coordinator has already reclaimed or redispatched a task the agent still
+// thinks it owns. A no-op if the task isn't currently running (already
+// finished, or never was on this agent).
+func (e *Executor) CancelTask(ctx context.Context, taskID string) {
+	e.mu.Lock()
+	t, ok := e.active[taskID]
+	if ok {
+		t.overrideReason = "cancelled"
+	}
+	e.mu.Unlock()
+	if !ok {
+		return
+	}
+	e.Log.Warn("cancelling task", "task_id", taskID, "container_id", t.containerID)
+	if err := e.Runtime.Stop(ctx, t.containerID, 10*time.Second); err != nil {
+		e.Log.Warn("stopping cancelled container", "task_id", taskID, "error", err)
 	}
 }
 
@@ -100,16 +125,17 @@ func (e *Executor) registerActive(taskID, containerID string) {
 	e.active[taskID] = &activeTask{containerID: containerID}
 }
 
-// unregisterActive returns whether the task had been fenced before this
-// call, so the caller can report the right exit reason.
-func (e *Executor) unregisterActive(taskID string) (wasFenced bool) {
+// unregisterActive returns the task's override reason, if FenceAll or
+// CancelTask set one before this call, so the caller can report the right
+// exit reason.
+func (e *Executor) unregisterActive(taskID string) (overrideReason string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if t, ok := e.active[taskID]; ok {
-		wasFenced = t.fenced
+		overrideReason = t.overrideReason
 		delete(e.active, taskID)
 	}
-	return wasFenced
+	return overrideReason
 }
 
 // HandleDispatch is a conn.Handlers.OnDispatch-compatible callback: it
@@ -129,12 +155,12 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 	var finishOnce sync.Once
 	sendFinished := func(exitCode int32, reason string) {
 		finishOnce.Do(func() {
-			if e.unregisterActive(d.GetTaskId()) {
-				// Fenced after this call was already headed for a
-				// different reason (e.g. it also hit its wall timeout
-				// right as the fence fired) - fencing is the more
+			if override := e.unregisterActive(d.GetTaskId()); override != "" {
+				// Fenced/cancelled after this call was already headed for
+				// a different reason (e.g. it also hit its wall timeout
+				// right as the fence fired) - the override is the more
 				// specific, more correct explanation.
-				reason = "fenced"
+				reason = override
 				exitCode = -1
 			}
 			msg := finished(d.GetTaskId(), exitCode, reason, time.Now())

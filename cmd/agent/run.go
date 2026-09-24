@@ -117,6 +117,7 @@ func run() error {
 	}
 	runner.Handlers = conn.Handlers{
 		OnDispatch:     executor.HandleDispatch,
+		OnCancel:       func(ctx context.Context, c *lazycakev1.Cancel) { executor.CancelTask(ctx, c.GetTaskId()) },
 		RunningTaskIDs: ledger.TaskIDs,
 		OnRegistered:   func(*lazycakev1.RegisterAck) { executor.ReplayPending() },
 	}
