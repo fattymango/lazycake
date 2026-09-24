@@ -151,6 +151,17 @@ func (r *PodmanRuntime) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *PodmanRuntime) Pid(ctx context.Context, containerID string) (int, error) {
+	inspect, err := r.cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return 0, fmt.Errorf("inspecting container %s: %w", containerID, err)
+	}
+	if inspect.State == nil {
+		return 0, fmt.Errorf("container %s has no state", containerID)
+	}
+	return inspect.State.Pid, nil
+}
+
 func (r *PodmanRuntime) Exec(ctx context.Context, containerID string, cmd []string) error {
 	resp, err := r.cli.ContainerExecCreate(ctx, containerID, types.ExecConfig{
 		Cmd: cmd, AttachStdout: true, AttachStderr: true,

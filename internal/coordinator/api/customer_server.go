@@ -55,22 +55,29 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 	if !strings.Contains(req.GetImage(), "@sha256:") {
 		return nil, status.Error(codes.InvalidArgument, "image must be digest-pinned, e.g. repo@sha256:...")
 	}
-	if len(req.GetGatewayIds()) > maxGateways {
-		return nil, status.Errorf(codes.InvalidArgument, "at most %d gateways per task, got %d", maxGateways, len(req.GetGatewayIds()))
+	if len(req.GetTargets()) > maxGateways {
+		return nil, status.Errorf(codes.InvalidArgument, "at most %d gateways per task, got %d", maxGateways, len(req.GetTargets()))
 	}
-	for _, gwID := range req.GetGatewayIds() {
-		gw, err := s.Store.GetGateway(ctx, gwID)
+	targets := make([]store.TunnelTarget, len(req.GetTargets()))
+	gatewayIDs := make([]string, len(req.GetTargets()))
+	for i, spec := range req.GetTargets() {
+		if spec.GetHostname() == "" || spec.GetPort() <= 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "target %d: hostname and port are required", i)
+		}
+		gw, err := s.Store.GetGateway(ctx, spec.GetGatewayId())
 		if err != nil {
 			if err == store.ErrNotFound {
-				return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", gwID)
+				return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GetGatewayId())
 			}
-			return nil, status.Errorf(codes.Internal, "getting gateway %s: %v", gwID, err)
+			return nil, status.Errorf(codes.Internal, "getting gateway %s: %v", spec.GetGatewayId(), err)
 		}
 		if gw.AccountID != tok.AccountID {
 			// Same error as not-found: don't reveal that a gateway ID
 			// belongs to someone else.
-			return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", gwID)
+			return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GetGatewayId())
 		}
+		targets[i] = store.TunnelTarget{GatewayID: spec.GetGatewayId(), Hostname: spec.GetHostname(), Port: spec.GetPort()}
+		gatewayIDs[i] = spec.GetGatewayId()
 	}
 	limits := req.GetLimits()
 	if limits == nil || limits.GetWallTimeoutS() <= 0 {
@@ -103,10 +110,11 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 			WallTimeoutS: int(limits.GetWallTimeoutS()), NoOutputTimeoutS: int(limits.GetNoOutputTimeoutS()),
 			EgressMB: int(limits.GetEgressMb()),
 		},
-		Requirements: store.Requirements{Arch: "amd64", Isolation: "podman", Confidentiality: "none"},
-		GatewayIDs:   req.GetGatewayIds(),
-		Delivery:     delivery,
-		Retry:        store.Retry{MaxAttempts: 1},
+		Requirements:  store.Requirements{Arch: "amd64", Isolation: "podman", Confidentiality: "none"},
+		GatewayIDs:    gatewayIDs,
+		TunnelTargets: targets,
+		Delivery:      delivery,
+		Retry:         store.Retry{MaxAttempts: 1},
 	}
 	if delivery == store.AtLeastOnce {
 		task.Retry.MaxAttempts = 3

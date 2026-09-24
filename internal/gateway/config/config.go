@@ -10,9 +10,20 @@ import (
 )
 
 // Service is one local TCP service the gateway is willing to forward to.
+// Host defaults to 127.0.0.1 (the common case: the gateway runs on the
+// same machine as the service, which is what proves control of it -
+// PLAN.md overview); an explicit host is only needed when that's not
+// true, e.g. this project's own docker-compose demo, where the gateway
+// and its "customer database" are necessarily separate containers.
 type Service struct {
 	Name string
+	Host string
 	Port int
+}
+
+// Addr is the host:port to dial for this service.
+func (s Service) Addr() string {
+	return fmt.Sprintf("%s:%d", s.Host, s.Port)
 }
 
 // Config is the gateway's full runtime configuration.
@@ -66,6 +77,8 @@ func Load(getenv func(string) string) (Config, error) {
 	return cfg, nil
 }
 
+// parseServices accepts "name:port" (host defaults to 127.0.0.1) or
+// "name:host:port", comma-separated.
 func parseServices(v string) ([]Service, error) {
 	if v == "" {
 		return nil, nil
@@ -76,15 +89,23 @@ func parseServices(v string) ([]Service, error) {
 		if part == "" {
 			continue
 		}
-		name, portStr, ok := strings.Cut(part, ":")
-		if !ok {
-			return nil, fmt.Errorf("malformed entry %q, want name:port", part)
+		fields := strings.Split(part, ":")
+		var svc Service
+		switch len(fields) {
+		case 2:
+			svc = Service{Name: fields[0], Host: "127.0.0.1"}
+			if _, err := fmt.Sscanf(fields[1], "%d", &svc.Port); err != nil || svc.Port <= 0 {
+				return nil, fmt.Errorf("malformed port in %q", part)
+			}
+		case 3:
+			svc = Service{Name: fields[0], Host: fields[1]}
+			if _, err := fmt.Sscanf(fields[2], "%d", &svc.Port); err != nil || svc.Port <= 0 {
+				return nil, fmt.Errorf("malformed port in %q", part)
+			}
+		default:
+			return nil, fmt.Errorf("malformed entry %q, want name:port or name:host:port", part)
 		}
-		var port int
-		if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil || port <= 0 {
-			return nil, fmt.Errorf("malformed port in %q", part)
-		}
-		out = append(out, Service{Name: name, Port: port})
+		out = append(out, svc)
 	}
 	return out, nil
 }
@@ -93,7 +114,7 @@ func parseServices(v string) ([]Service, error) {
 func (c Config) LogValue() slog.Value {
 	names := make([]string, len(c.Services))
 	for i, s := range c.Services {
-		names[i] = fmt.Sprintf("%s:%d", s.Name, s.Port)
+		names[i] = fmt.Sprintf("%s:%s", s.Name, s.Addr())
 	}
 	return slog.GroupValue(
 		slog.String("coordinator_addr", c.CoordinatorAddr),

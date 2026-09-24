@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -59,10 +60,14 @@ func TestSubmitTaskRejectsTooManyGateways(t *testing.T) {
 	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
 	client := startCustomerTestServer(t, fs)
 
+	targets := make([]*lazycakev1.TunnelTargetSpec, 4)
+	for i := range targets {
+		targets[i] = &lazycakev1.TunnelTargetSpec{GatewayId: fmt.Sprintf("gw_%d", i), Hostname: "db.acme.com", Port: 5432}
+	}
 	_, err := client.SubmitTask(authCtx("cust"), &lazycakev1.SubmitTaskRequest{
-		Image:      "alpine@sha256:abc",
-		Limits:     &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
-		GatewayIds: []string{"gw_1", "gw_2", "gw_3", "gw_4"},
+		Image:   "alpine@sha256:abc",
+		Limits:  &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
+		Targets: targets,
 	})
 	if err == nil {
 		t.Fatal("expected error for more than 3 gateways")
@@ -75,9 +80,11 @@ func TestSubmitTaskRejectsUnknownGateway(t *testing.T) {
 	client := startCustomerTestServer(t, fs)
 
 	_, err := client.SubmitTask(authCtx("cust"), &lazycakev1.SubmitTaskRequest{
-		Image:      "alpine@sha256:abc",
-		Limits:     &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
-		GatewayIds: []string{"gw_nonexistent"},
+		Image:  "alpine@sha256:abc",
+		Limits: &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
+		Targets: []*lazycakev1.TunnelTargetSpec{
+			{GatewayId: "gw_nonexistent", Hostname: "db.acme.com", Port: 5432},
+		},
 	})
 	if err == nil {
 		t.Fatal("expected error for an unknown gateway id")
@@ -91,9 +98,11 @@ func TestSubmitTaskRejectsOtherAccountsGateway(t *testing.T) {
 	client := startCustomerTestServer(t, fs)
 
 	_, err := client.SubmitTask(authCtx("cust1"), &lazycakev1.SubmitTaskRequest{
-		Image:      "alpine@sha256:abc",
-		Limits:     &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
-		GatewayIds: []string{"gw_other"},
+		Image:  "alpine@sha256:abc",
+		Limits: &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
+		Targets: []*lazycakev1.TunnelTargetSpec{
+			{GatewayId: "gw_other", Hostname: "db.acme.com", Port: 5432},
+		},
 	})
 	if err == nil {
 		t.Fatal("expected error submitting with another account's gateway")

@@ -14,7 +14,19 @@ func TestParseServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(svcs) != 2 || svcs[0] != (Service{"db", 5432}) || svcs[1] != (Service{"cache", 6379}) {
+	want := []Service{{Name: "db", Host: "127.0.0.1", Port: 5432}, {Name: "cache", Host: "127.0.0.1", Port: 6379}}
+	if len(svcs) != 2 || svcs[0] != want[0] || svcs[1] != want[1] {
+		t.Fatalf("unexpected services: %+v", svcs)
+	}
+}
+
+func TestParseServicesExplicitHost(t *testing.T) {
+	svcs, err := parseServices("db:customer-db:5432")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := Service{Name: "db", Host: "customer-db", Port: 5432}
+	if len(svcs) != 1 || svcs[0] != want {
 		t.Fatalf("unexpected services: %+v", svcs)
 	}
 }

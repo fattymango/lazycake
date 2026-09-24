@@ -31,7 +31,7 @@ type ForwardStats struct {
 type Listener struct {
 	Conn     *quicgo.Conn
 	Keypair  noise.Keypair
-	Services map[string]int // service name -> local TCP port
+	Services map[string]string // service name -> "host:port" to dial
 	Log      *slog.Logger
 
 	// Dial opens the local service connection; defaults to net.Dial.
@@ -80,13 +80,13 @@ func (l *Listener) handleStream(taskID string, stream *quicgo.Stream) {
 	}
 	service := string(nameBuf[:n])
 
-	port, ok := l.Services[service]
+	addr, ok := l.Services[service]
 	if !ok {
 		l.Log.Warn("refusing unpublished service", "task_id", taskID, "service", service)
 		return
 	}
 
-	local, err := l.dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	local, err := l.dial("tcp", addr)
 	if err != nil {
 		l.Log.Warn("dialing local service", "task_id", taskID, "service", service, "error", err)
 		return

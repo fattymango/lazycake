@@ -74,4 +74,8 @@ type Runtime interface {
 	// (bringing up loopback, writing resolv.conf) that must happen inside
 	// the container's own mount namespace.
 	Exec(ctx context.Context, containerID string, cmd []string) error
+	// Pid returns the host-side PID of a running container's init
+	// process, for internal/agent/netns.Proxy to join its network
+	// namespace via /proc/<pid>/ns.
+	Pid(ctx context.Context, containerID string) (int, error)
 }

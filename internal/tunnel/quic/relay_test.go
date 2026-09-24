@@ -50,7 +50,7 @@ func TestRelayRoundTrip(t *testing.T) {
 	go func() { serveErrCh <- relay.Serve(ctx, addr) }()
 	time.Sleep(100 * time.Millisecond) // let the listener come up
 
-	gwConn, err := DialGateway(ctx, addr, "gw-token", "gw_1")
+	gwConn, err := DialGateway(ctx, addr, "gw-token", "gw_1", nil)
 	if err != nil {
 		t.Fatalf("DialGateway: %v", err)
 	}

@@ -75,11 +75,11 @@ func TestTunnelIsolation(t *testing.T) {
 
 	gwKeypair, err := noise.GenerateKeypair()
 	require.NoError(t, err)
-	gwConn, err := quic.DialGateway(ctx, relayAddr, "gw-token", "gw_1")
+	gwConn, err := quic.DialGateway(ctx, relayAddr, "gw-token", "gw_1", gwKeypair.Public)
 	require.NoError(t, err)
 	forwarded := make(chan listener.ForwardStats, 4)
 	gw := &listener.Listener{
-		Conn: gwConn, Keypair: gwKeypair, Services: map[string]int{"db": pgPort}, Log: log,
+		Conn: gwConn, Keypair: gwKeypair, Services: map[string]string{"db": fmt.Sprintf("127.0.0.1:%d", pgPort)}, Log: log,
 		OnForward: func(s listener.ForwardStats) { forwarded <- s },
 	}
 	go gw.Run(ctx)

@@ -4,6 +4,7 @@ package netns
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -71,11 +72,11 @@ func TestEgressCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gwConn, err := quic.DialGateway(ctx, relayAddr, "gw-token", "gw_1")
+	gwConn, err := quic.DialGateway(ctx, relayAddr, "gw-token", "gw_1", gwKeypair.Public)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gw := &listener.Listener{Conn: gwConn, Keypair: gwKeypair, Services: map[string]int{"db": sinkPort}, Log: log}
+	gw := &listener.Listener{Conn: gwConn, Keypair: gwKeypair, Services: map[string]string{"db": fmt.Sprintf("127.0.0.1:%d", sinkPort)}, Log: log}
 	go gw.Run(ctx)
 
 	dnsConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
