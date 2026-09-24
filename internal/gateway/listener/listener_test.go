@@ -77,7 +77,7 @@ func TestGatewayForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gwConn, err := quic.DialGateway(ctx, addr, "gw-token", "gw_1")
+	gwConn, err := quic.DialGateway(ctx, addr, "gw-token", "gw_1", gwKeypair.Public)
 	if err != nil {
 		t.Fatalf("DialGateway: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestGatewayForward(t *testing.T) {
 	var statsCh = make(chan ForwardStats, 1)
 	l := &Listener{
 		Conn: gwConn, Keypair: gwKeypair, Log: log,
-		Services:  map[string]int{"db": svcPort},
+		Services:  map[string]string{"db": fmt.Sprintf("127.0.0.1:%d", svcPort)},
 		OnForward: func(s ForwardStats) { statsCh <- s },
 	}
 	go l.Run(ctx)
@@ -146,14 +146,14 @@ func TestGatewayRefusesUnpublishedService(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	gwKeypair, _ := noise.GenerateKeypair()
-	gwConn, err := quic.DialGateway(ctx, addr, "gw-token", "gw_1")
+	gwConn, err := quic.DialGateway(ctx, addr, "gw-token", "gw_1", gwKeypair.Public)
 	if err != nil {
 		t.Fatal(err)
 	}
 	forwardAttempted := make(chan struct{}, 1)
 	l := &Listener{
 		Conn: gwConn, Keypair: gwKeypair, Log: log,
-		Services: map[string]int{"db": 1}, // no "cache" published
+		Services: map[string]string{"db": "127.0.0.1:1"}, // no "cache" published
 		Dial: func(network, addr string) (net.Conn, error) {
 			forwardAttempted <- struct{}{}
 			return nil, fmt.Errorf("should never be called")

@@ -35,14 +35,66 @@ services:
       LAZYCAKE_DEV: "1"
       LAZYCAKE_DATABASE_URL: postgres://lazycake:lazycake@postgres:5432/lazycake?sslmode=disable
       LAZYCAKE_GRPC_ADDR: ":7443"
+      LAZYCAKE_RELAY_ADDR: ":7444"
       LAZYCAKE_SEED_DEMO_TOKEN: "demo-customer-token"
     ports:
       - "7443:7443"
+      - "7444:7444/udp"
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  # customer-db stands in for "the server holding the customer's data" -
+  # the thing a gateway proves control of by being installed next to it
+  # (PLAN.md overview). It is never reachable from the internet or from
+  # any agent directly; only through gateway -> relay -> Noise.
+  customer-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acme
+      POSTGRES_PASSWORD: acme
+      POSTGRES_DB: acme
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acme"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # gateway is installed "on the server holding customer data" per PLAN.md;
+  # here that's just this container, next to customer-db. It registers
+  # itself with the coordinator on first start (deploy/gateway-entrypoint.sh)
+  # using the seeded demo customer token, the same one-time step
+  # `lcctl gateway create` does by hand in a real deployment (task 2.7).
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: build
+    working_dir: /src
+    entrypoint: ["sh", "deploy/gateway-entrypoint.sh"]
+    environment:
+      CUSTOMER_API_ADDR: coordinator:7443
+      RELAY_ADDR: coordinator:7444
+      CUSTOMER_TOKEN: "demo-customer-token"
+      GATEWAY_LABEL: "customer-db"
+      # REGISTER_SERVICES is what gets recorded with the coordinator
+      # (name:port, informational). GATEWAY_SERVICES is what the gateway
+      # process actually binds to locally, which needs an explicit host
+      # here since the gateway and customer-db are necessarily separate
+      # containers in this demo - a real deployment's gateway runs on the
+      # same machine as the database it fronts, where the default
+      # 127.0.0.1 (internal/gateway/config.Service) is correct as-is.
+      REGISTER_SERVICES: "db:5432"
+      GATEWAY_SERVICES: "db:customer-db:5432"
+    volumes:
+      - lazycake-gateway-state:/var/lib/lazycake-gateway
+    depends_on:
+      coordinator:
+        condition: service_started
+      customer-db:
+        condition: service_healthy
 
   agent1:
     build:
@@ -73,3 +125,4 @@ services:
 
 volumes:
   lazycake-postgres:
+  lazycake-gateway-state:

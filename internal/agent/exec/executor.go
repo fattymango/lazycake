@@ -9,11 +9,14 @@ package exec
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/mkassab215/lazycake/internal/agent/capacity"
+	"github.com/mkassab215/lazycake/internal/agent/netns"
 	"github.com/mkassab215/lazycake/internal/agent/runtime"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
+	"github.com/mkassab215/lazycake/internal/tunnel/noise"
 )
 
 // Sender delivers one AgentMessage to the coordinator. *conn.Runner
@@ -30,6 +33,13 @@ type Executor struct {
 	Log        *slog.Logger
 	InstanceID string
 	BootID     string
+
+	// RelayAddr, Token and AgentKeypair are only needed when a dispatched
+	// task actually declares tunnel targets; a task with none never
+	// touches internal/agent/netns at all.
+	RelayAddr    string
+	Token        string
+	AgentKeypair noise.Keypair
 }
 
 // HandleDispatch is a conn.Handlers.OnDispatch-compatible callback: it
@@ -41,6 +51,15 @@ func (e *Executor) HandleDispatch(ctx context.Context, d *lazycakev1.Dispatch) {
 
 func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 	log := e.Log.With("task_id", d.GetTaskId())
+
+	// A task may finish from several independent places (normal exit,
+	// wall timeout, egress cap fired from a background goroutine) - Once
+	// keeps the coordinator from seeing more than one TaskFinished for
+	// the same task.
+	var finishOnce sync.Once
+	sendFinished := func(exitCode int32, reason string) {
+		finishOnce.Do(func() { e.Send.Send(finished(d.GetTaskId(), exitCode, reason, time.Now())) })
+	}
 
 	want := capacity.Resources{
 		Cores:    d.GetLimits().GetCpuCores(),
@@ -66,14 +85,14 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 
 	if _, err := e.Runtime.Pull(runCtx, d.GetImage()); err != nil {
 		log.Error("pulling image", "image", d.GetImage(), "error", err)
-		e.Send.Send(finished(d.GetTaskId(), -1, "error", time.Now()))
+		sendFinished(-1, "error")
 		return
 	}
 
 	id, err := e.Runtime.Create(runCtx, e.spec(d))
 	if err != nil {
 		log.Error("creating container", "error", err)
-		e.Send.Send(finished(d.GetTaskId(), -1, "error", time.Now()))
+		sendFinished(-1, "error")
 		return
 	}
 	defer func() {
@@ -84,23 +103,38 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 
 	if err := e.Runtime.Start(runCtx, id); err != nil {
 		log.Error("starting container", "error", err)
-		e.Send.Send(finished(d.GetTaskId(), -1, "error", time.Now()))
+		sendFinished(-1, "error")
 		return
 	}
 	e.Send.Send(started(d.GetTaskId(), time.Now()))
 
 	go e.streamLogs(ctx, d.GetTaskId(), id)
 
+	if len(d.GetTargets()) > 0 {
+		proxy, err := e.startTunnel(ctx, id, d, sendFinished)
+		if err != nil {
+			// The container is already running with --network=none and no
+			// route anywhere; failing to set up its one exception is the
+			// same as the task simply being unable to reach its target, so
+			// fail the task rather than let it run uselessly to timeout.
+			log.Error("starting netns proxy", "error", err)
+			_ = e.Runtime.Stop(context.Background(), id, 5*time.Second)
+			sendFinished(-1, "error")
+			return
+		}
+		defer proxy.Close()
+	}
+
 	result, err := e.Runtime.Wait(runCtx, id)
 	if err != nil {
 		if runCtx.Err() != nil {
 			log.Warn("task exceeded wall timeout, stopping", "wall_timeout_s", d.GetLimits().GetWallTimeoutS())
 			_ = e.Runtime.Stop(context.Background(), id, 10*time.Second)
-			e.Send.Send(finished(d.GetTaskId(), -1, "wall_timeout", time.Now()))
+			sendFinished(-1, "wall_timeout")
 			return
 		}
 		log.Error("waiting for container", "error", err)
-		e.Send.Send(finished(d.GetTaskId(), -1, "error", time.Now()))
+		sendFinished(-1, "error")
 		return
 	}
 
@@ -109,7 +143,43 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 		reason = "oom"
 	}
 	log.Info("task finished", "exit_code", result.ExitCode, "exit_reason", reason)
-	e.Send.Send(finished(d.GetTaskId(), int32(result.ExitCode), reason, time.Now()))
+	sendFinished(int32(result.ExitCode), reason)
+}
+
+// startTunnel sets up internal/agent/netns for a dispatched task that
+// declared tunnel targets: a --network=none container otherwise has no
+// interface at all, so this is the one exception PLAN.md's design carves
+// out, built inside the container's own network namespace.
+func (e *Executor) startTunnel(ctx context.Context, containerID string, d *lazycakev1.Dispatch, sendFinished func(int32, string)) (*netns.Proxy, error) {
+	pid, err := e.Runtime.Pid(ctx, containerID)
+	if err != nil {
+		return nil, err
+	}
+
+	targets := make([]netns.Target, len(d.GetTargets()))
+	for i, t := range d.GetTargets() {
+		targets[i] = netns.Target{
+			GatewayID: t.GetGatewayId(), Hostname: t.GetHostname(), Port: t.GetPort(),
+			NoisePubkey: t.GetNoisePubkey(),
+		}
+	}
+
+	proxy := &netns.Proxy{
+		ContainerPID: pid, ContainerID: containerID, TaskID: d.GetTaskId(),
+		Targets: targets, AgentKeypair: e.AgentKeypair,
+		RelayAddr: e.RelayAddr, Token: e.Token,
+		EgressCapBytes: int64(d.GetLimits().GetEgressMb()) << 20,
+		Runtime:        e.Runtime, Log: e.Log,
+		OnEgressExceeded: func() {
+			e.Log.Warn("egress cap exceeded, stopping task", "task_id", d.GetTaskId())
+			_ = e.Runtime.Stop(context.Background(), containerID, 5*time.Second)
+			sendFinished(-1, "egress_exceeded")
+		},
+	}
+	if err := proxy.Setup(ctx); err != nil {
+		return nil, err
+	}
+	return proxy, nil
 }
 
 func (e *Executor) spec(d *lazycakev1.Dispatch) runtime.Spec {

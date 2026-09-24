@@ -131,10 +131,14 @@ type Task struct {
 	Limits       Limits
 	Requirements Requirements
 
-	GatewayIDs []string
-	Delivery   DeliveryMode
-	Retry      Retry
-	Attempt    int
+	// GatewayIDs is a derived quick-query convenience list (the gateway
+	// IDs referenced in TunnelTargets); TunnelTargets is the source of
+	// truth used to actually build a Dispatch message's tunnel targets.
+	GatewayIDs    []string
+	TunnelTargets []TunnelTarget
+	Delivery      DeliveryMode
+	Retry         Retry
+	Attempt       int
 
 	NodeID         *string
 	LeaseExpiresAt *time.Time
@@ -162,6 +166,14 @@ type CachedImage struct {
 	Digest    string
 	SizeBytes int64
 	LastUsed  time.Time
+}
+
+// TunnelTarget is one hostname a task's container may resolve and reach
+// through a gateway, mirroring lazycakev1.TunnelTargetSpec.
+type TunnelTarget struct {
+	GatewayID string `json:"gateway_id"`
+	Hostname  string `json:"hostname"`
+	Port      int32  `json:"port"`
 }
 
 // CapacityFilter narrows ClaimQueuedTask to tasks a specific node can run.

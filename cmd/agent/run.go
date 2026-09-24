@@ -23,6 +23,7 @@ import (
 	"github.com/mkassab215/lazycake/internal/id"
 	"github.com/mkassab215/lazycake/internal/logging"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
+	"github.com/mkassab215/lazycake/internal/tunnel/noise"
 )
 
 func run() error {
@@ -97,13 +98,21 @@ func run() error {
 		Log: log,
 	}
 
+	tunnelKeypair, err := noise.GenerateKeypair()
+	if err != nil {
+		return fmt.Errorf("generating tunnel noise keypair: %w", err)
+	}
+
 	executor := &lcexec.Executor{
-		Runtime:    rt,
-		Ledger:     ledger,
-		Send:       runner,
-		Log:        log,
-		InstanceID: instanceID,
-		BootID:     bootID,
+		Runtime:      rt,
+		Ledger:       ledger,
+		Send:         runner,
+		Log:          log,
+		InstanceID:   instanceID,
+		BootID:       bootID,
+		RelayAddr:    cfg.RelayAddr,
+		Token:        cfg.Token,
+		AgentKeypair: tunnelKeypair,
 	}
 	runner.Handlers = conn.Handlers{
 		OnDispatch:     executor.HandleDispatch,

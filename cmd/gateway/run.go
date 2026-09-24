@@ -32,9 +32,9 @@ func run() error {
 	}
 	log.Info("noise static public key", "pubkey_hex", fmt.Sprintf("%x", keypair.Public))
 
-	services := make(map[string]int, len(cfg.Services))
+	services := make(map[string]string, len(cfg.Services))
 	for _, s := range cfg.Services {
-		services[s.Name] = s.Port
+		services[s.Name] = s.Addr()
 	}
 
 	conn, err := quic.DialGateway(ctx, cfg.CoordinatorAddr, cfg.Token, cfg.GatewayID, keypair.Public)

@@ -225,6 +225,38 @@ actually compiles against Go 1.25/1.26 and the current MVS-selected
 transitive graph. Newer docker/docker releases would need the
 `github.com/moby/moby/client` + `github.com/moby/moby/api` split instead.
 
+## Task 2.8 demo: gateway path fully verified, agent containers still
+## blocked by the same cgroup-delegation limitation as phase 1
+
+Brought up the extended `deploy/docker-compose.yml` for real (`postgres`,
+`migrate`, `coordinator`, `customer-db`, `gateway`): the gateway
+self-registers via `deploy/gateway-entrypoint.sh` using the seeded demo
+customer token, connects to the relay, and `lcctl gateway list` shows
+`connected: true` against the live coordinator - the whole registration
+and connection path (task 2.7's plumbing, exercised through a real running
+coordinator+gateway rather than just tests) works. The `agent1/2/3`
+services were not brought up in this pass: they hit the exact same
+cgroup-delegation limitation documented at length in task 1.10's entry
+above (this VM's podman falls back to cgroupfs, so `agent probe` correctly
+refuses to start), not anything new. A task actually flowing through
+agent -> netns proxy -> relay -> this gateway -> customer-db therefore
+isn't demonstrated by a running compose stack here, but the identical path
+*is* proven for real by `internal/e2e.TestTunnelIsolation` (task 2.5),
+which exercises every one of those hops end to end against a real
+container - the compose-specific gap is purely "agents can't start on
+this nested VM," already covered ground.
+
+Two real bugs surfaced only by actually running the compose stack (neither
+was caught by the unit/integration tests, which all construct `store.Gateway`
+values directly rather than going through `CreateGateway`'s SQL insert):
+`gateways.noise_pubkey` was declared `NOT NULL` even though it's legitimately
+unknown at `lcctl gateway create` time (fixed in migration 006 directly,
+since it was still unreleased this session), and the gateway's local
+service-forwarding config had no way to say "not on 127.0.0.1" (added the
+optional `name:host:port` form to `internal/gateway/config.parseServices`).
+This is a good example of why task 2.8 asked for the compose stack to
+actually come up, not just pass tests.
+
 ## Transport security (deferred)
 
 The agent<->coordinator gRPC connection is plaintext (`insecure.NewCredentials()`)

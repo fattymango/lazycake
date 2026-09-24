@@ -25,6 +25,18 @@ message TaskLimits {
   int32 egress_mb  = 8;
 }
 
+// TunnelTargetSpec is one hostname the task's container will be allowed to
+// resolve and connect to, reached through gateway_id. hostname is exactly
+// what customer code connects to (e.g. "db.acme.com"); the coordinator
+// resolves gateway_id to that gateway's published Noise key before
+// dispatch, and internal/agent/netns's stub resolver only ever answers
+// for hostnames listed here.
+message TunnelTargetSpec {
+  string gateway_id = 1;
+  string hostname    = 2;
+  int32  port        = 3;
+}
+
 message SubmitTaskRequest {
   string image         = 1;   // must be digest-pinned: "repo@sha256:..."
   repeated string entrypoint = 2;
@@ -33,7 +45,7 @@ message SubmitTaskRequest {
   string workdir        = 5;
   TaskLimits limits      = 6;
   string idempotency_key = 7;
-  repeated string gateway_ids = 8;
+  repeated TunnelTargetSpec targets = 8; // at most 3 - PLAN.md overview
   string delivery        = 9;  // "at_most_once" (default) | "at_least_once"
 }
 

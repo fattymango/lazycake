@@ -15,6 +15,10 @@ func (s *PostgresStore) CreateTask(ctx context.Context, t Task) error {
 	if err != nil {
 		return fmt.Errorf("marshalling env: %w", err)
 	}
+	targets, err := json.Marshal(t.TunnelTargets)
+	if err != nil {
+		return fmt.Errorf("marshalling tunnel targets: %w", err)
+	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO tasks (
 			id, account_id, idempotency_key, state,
@@ -22,21 +26,21 @@ func (s *PostgresStore) CreateTask(ctx context.Context, t Task) error {
 			cpu_cores, memory_mb, disk_mb, tmpfs_mb, pids_limit,
 			wall_timeout_s, no_output_timeout_s, egress_mb,
 			req_arch, req_cpu_flags, req_isolation, req_confidentiality,
-			gateway_ids, delivery, max_attempts, attempt
+			gateway_ids, tunnel_targets, delivery, max_attempts, attempt
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8, $9,
 			$10, $11, $12, $13, $14,
 			$15, $16, $17,
 			$18, $19, $20, $21,
-			$22, $23, $24, $25
+			$22, $23, $24, $25, $26
 		)`,
 		t.ID, t.AccountID, t.IdempotencyKey, string(t.State),
 		t.Image, orEmpty(t.Entrypoint), orEmpty(t.Args), env, t.Workdir,
 		t.Limits.CPUCores, t.Limits.MemoryMB, t.Limits.DiskMB, t.Limits.TmpfsMB, t.Limits.PIDs,
 		t.Limits.WallTimeoutS, t.Limits.NoOutputTimeoutS, t.Limits.EgressMB,
 		t.Requirements.Arch, orEmpty(t.Requirements.CPUFlags), t.Requirements.Isolation, t.Requirements.Confidentiality,
-		orEmpty(t.GatewayIDs), string(t.Delivery), t.Retry.MaxAttempts, t.Attempt,
+		orEmpty(t.GatewayIDs), targets, string(t.Delivery), t.Retry.MaxAttempts, t.Attempt,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -53,21 +57,21 @@ const taskColumns = `
 	cpu_cores, memory_mb, disk_mb, tmpfs_mb, pids_limit,
 	wall_timeout_s, no_output_timeout_s, egress_mb,
 	req_arch, req_cpu_flags, req_isolation, req_confidentiality,
-	gateway_ids, delivery, max_attempts, attempt,
+	gateway_ids, tunnel_targets, delivery, max_attempts, attempt,
 	node_id, lease_expires_at, requeue_after,
 	exit_code, exit_reason, started_at, finished_at, created_at`
 
 func scanTask(row rowScanner) (Task, error) {
 	var t Task
 	var state, delivery string
-	var envRaw []byte
+	var envRaw, targetsRaw []byte
 	err := row.Scan(
 		&t.ID, &t.AccountID, &t.IdempotencyKey, &state,
 		&t.Image, &t.Entrypoint, &t.Args, &envRaw, &t.Workdir,
 		&t.Limits.CPUCores, &t.Limits.MemoryMB, &t.Limits.DiskMB, &t.Limits.TmpfsMB, &t.Limits.PIDs,
 		&t.Limits.WallTimeoutS, &t.Limits.NoOutputTimeoutS, &t.Limits.EgressMB,
 		&t.Requirements.Arch, &t.Requirements.CPUFlags, &t.Requirements.Isolation, &t.Requirements.Confidentiality,
-		&t.GatewayIDs, &delivery, &t.Retry.MaxAttempts, &t.Attempt,
+		&t.GatewayIDs, &targetsRaw, &delivery, &t.Retry.MaxAttempts, &t.Attempt,
 		&t.NodeID, &t.LeaseExpiresAt, &t.RequeueAfter,
 		&t.ExitCode, &t.ExitReason, &t.StartedAt, &t.FinishedAt, &t.CreatedAt,
 	)
@@ -79,6 +83,11 @@ func scanTask(row rowScanner) (Task, error) {
 	if len(envRaw) > 0 {
 		if err := json.Unmarshal(envRaw, &t.Env); err != nil {
 			return Task{}, fmt.Errorf("unmarshalling env: %w", err)
+		}
+	}
+	if len(targetsRaw) > 0 {
+		if err := json.Unmarshal(targetsRaw, &t.TunnelTargets); err != nil {
+			return Task{}, fmt.Errorf("unmarshalling tunnel targets: %w", err)
 		}
 	}
 	return t, nil

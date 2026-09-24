@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +18,7 @@ func newSubmitCmd() *cobra.Command {
 		diskMB         int32
 		timeoutS       int32
 		idempotencyKey string
-		gatewayIDs     []string
+		targetSpecs    []string
 	)
 
 	cmd := &cobra.Command{
@@ -27,6 +29,11 @@ func newSubmitCmd() *cobra.Command {
 			if image == "" {
 				return fmt.Errorf("--image is required")
 			}
+			targets, err := parseTargetSpecs(targetSpecs)
+			if err != nil {
+				return err
+			}
+
 			client, ctx, closeFn, err := newClient()
 			if err != nil {
 				return err
@@ -47,7 +54,7 @@ func newSubmitCmd() *cobra.Command {
 					CpuCores: cpu, MemoryMb: memoryMB, DiskMb: diskMB, WallTimeoutS: timeoutS,
 				},
 				IdempotencyKey: idempotencyKey,
-				GatewayIds:     gatewayIDs,
+				Targets:        targets,
 			})
 			if err != nil {
 				return err
@@ -63,7 +70,26 @@ func newSubmitCmd() *cobra.Command {
 	cmd.Flags().Int32Var(&diskMB, "disk", 1024, "disk in MB")
 	cmd.Flags().Int32Var(&timeoutS, "timeout", 60, "wall timeout in seconds")
 	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "dedupe key for at_least_once retries")
-	cmd.Flags().StringSliceVar(&gatewayIDs, "gateway", nil, "gateway ID the task may reach (repeatable, max 3)")
+	cmd.Flags().StringSliceVar(&targetSpecs, "target", nil,
+		"gateway_id:hostname:port the task may reach (repeatable, max 3), e.g. gw_abc:db.acme.com:5432")
 
 	return cmd
+}
+
+func parseTargetSpecs(specs []string) ([]*lazycakev1.TunnelTargetSpec, error) {
+	out := make([]*lazycakev1.TunnelTargetSpec, 0, len(specs))
+	for _, spec := range specs {
+		parts := strings.SplitN(spec, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("malformed --target %q, want gateway_id:hostname:port", spec)
+		}
+		port, err := strconv.Atoi(parts[2])
+		if err != nil || port <= 0 {
+			return nil, fmt.Errorf("malformed port in --target %q", spec)
+		}
+		out = append(out, &lazycakev1.TunnelTargetSpec{
+			GatewayId: parts[0], Hostname: parts[1], Port: int32(port),
+		})
+	}
+	return out, nil
 }

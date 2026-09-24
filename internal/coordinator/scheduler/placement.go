@@ -59,7 +59,11 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
 	}
 
-	msg := dispatchMessage(task, requeueAfter.Add(-leaseMargin))
+	msg, err := s.dispatchMessage(ctx, task, requeueAfter.Add(-leaseMargin))
+	if err != nil {
+		s.Log.Warn("building dispatch message, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
+		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+	}
 	if err := s.Dispatch.Send(n.ID, msg); err != nil {
 		s.Log.Warn("dispatch send failed, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
@@ -118,7 +122,21 @@ func (s *Scheduler) inCooldown(nodeID, taskID string) bool {
 	return ok && s.now().Before(until)
 }
 
-func dispatchMessage(t store.Task, leaseExpires time.Time) *lazycakev1.CoordinatorMessage {
+func (s *Scheduler) dispatchMessage(ctx context.Context, t store.Task, leaseExpires time.Time) (*lazycakev1.CoordinatorMessage, error) {
+	targets := make([]*lazycakev1.TunnelTarget, len(t.TunnelTargets))
+	for i, tt := range t.TunnelTargets {
+		gw, err := s.Store.GetGateway(ctx, tt.GatewayID)
+		if err != nil {
+			return nil, fmt.Errorf("looking up gateway %s for target %s: %w", tt.GatewayID, tt.Hostname, err)
+		}
+		if len(gw.NoisePubkey) == 0 {
+			return nil, fmt.Errorf("gateway %s has not published a noise key yet (has it ever connected?)", tt.GatewayID)
+		}
+		targets[i] = &lazycakev1.TunnelTarget{
+			GatewayId: tt.GatewayID, Hostname: tt.Hostname, Port: tt.Port, NoisePubkey: gw.NoisePubkey,
+		}
+	}
+
 	return &lazycakev1.CoordinatorMessage{
 		Body: &lazycakev1.CoordinatorMessage_Dispatch{
 			Dispatch: &lazycakev1.Dispatch{
@@ -139,8 +157,9 @@ func dispatchMessage(t store.Task, leaseExpires time.Time) *lazycakev1.Coordinat
 					NoOutputTimeoutS: int32(t.Limits.NoOutputTimeoutS),
 					EgressMb:         int32(t.Limits.EgressMB),
 				},
+				Targets:            targets,
 				LeaseExpiresUnixMs: leaseExpires.UnixMilli(),
 			},
 		},
-	}
+	}, nil
 }

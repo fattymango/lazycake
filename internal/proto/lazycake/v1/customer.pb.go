@@ -121,6 +121,72 @@ func (x *TaskLimits) GetEgressMb() int32 {
 	return 0
 }
 
+// TunnelTargetSpec is one hostname the task's container will be allowed to
+// resolve and connect to, reached through gateway_id. hostname is exactly
+// what customer code connects to (e.g. "db.acme.com"); the coordinator
+// resolves gateway_id to that gateway's published Noise key before
+// dispatch, and internal/agent/netns's stub resolver only ever answers
+// for hostnames listed here.
+type TunnelTargetSpec struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GatewayId     string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TunnelTargetSpec) Reset() {
+	*x = TunnelTargetSpec{}
+	mi := &file_lazycake_v1_customer_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TunnelTargetSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TunnelTargetSpec) ProtoMessage() {}
+
+func (x *TunnelTargetSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_customer_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TunnelTargetSpec.ProtoReflect.Descriptor instead.
+func (*TunnelTargetSpec) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TunnelTargetSpec) GetGatewayId() string {
+	if x != nil {
+		return x.GatewayId
+	}
+	return ""
+}
+
+func (x *TunnelTargetSpec) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *TunnelTargetSpec) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
 type SubmitTaskRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Image          string                 `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"` // must be digest-pinned: "repo@sha256:..."
@@ -130,7 +196,7 @@ type SubmitTaskRequest struct {
 	Workdir        string                 `protobuf:"bytes,5,opt,name=workdir,proto3" json:"workdir,omitempty"`
 	Limits         *TaskLimits            `protobuf:"bytes,6,opt,name=limits,proto3" json:"limits,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	GatewayIds     []string               `protobuf:"bytes,8,rep,name=gateway_ids,json=gatewayIds,proto3" json:"gateway_ids,omitempty"`
+	Targets        []*TunnelTargetSpec    `protobuf:"bytes,8,rep,name=targets,proto3" json:"targets,omitempty"`   // at most 3 - PLAN.md overview
 	Delivery       string                 `protobuf:"bytes,9,opt,name=delivery,proto3" json:"delivery,omitempty"` // "at_most_once" (default) | "at_least_once"
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -138,7 +204,7 @@ type SubmitTaskRequest struct {
 
 func (x *SubmitTaskRequest) Reset() {
 	*x = SubmitTaskRequest{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[1]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -150,7 +216,7 @@ func (x *SubmitTaskRequest) String() string {
 func (*SubmitTaskRequest) ProtoMessage() {}
 
 func (x *SubmitTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[1]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -163,7 +229,7 @@ func (x *SubmitTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitTaskRequest.ProtoReflect.Descriptor instead.
 func (*SubmitTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{1}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SubmitTaskRequest) GetImage() string {
@@ -215,9 +281,9 @@ func (x *SubmitTaskRequest) GetIdempotencyKey() string {
 	return ""
 }
 
-func (x *SubmitTaskRequest) GetGatewayIds() []string {
+func (x *SubmitTaskRequest) GetTargets() []*TunnelTargetSpec {
 	if x != nil {
-		return x.GatewayIds
+		return x.Targets
 	}
 	return nil
 }
@@ -238,7 +304,7 @@ type SubmitTaskResponse struct {
 
 func (x *SubmitTaskResponse) Reset() {
 	*x = SubmitTaskResponse{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[2]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +316,7 @@ func (x *SubmitTaskResponse) String() string {
 func (*SubmitTaskResponse) ProtoMessage() {}
 
 func (x *SubmitTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[2]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +329,7 @@ func (x *SubmitTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitTaskResponse.ProtoReflect.Descriptor instead.
 func (*SubmitTaskResponse) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{2}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SubmitTaskResponse) GetTaskId() string {
@@ -282,7 +348,7 @@ type GetTaskRequest struct {
 
 func (x *GetTaskRequest) Reset() {
 	*x = GetTaskRequest{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[3]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -294,7 +360,7 @@ func (x *GetTaskRequest) String() string {
 func (*GetTaskRequest) ProtoMessage() {}
 
 func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[3]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -307,7 +373,7 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{3}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetTaskRequest) GetTaskId() string {
@@ -334,7 +400,7 @@ type TaskStatus struct {
 
 func (x *TaskStatus) Reset() {
 	*x = TaskStatus{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[4]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -346,7 +412,7 @@ func (x *TaskStatus) String() string {
 func (*TaskStatus) ProtoMessage() {}
 
 func (x *TaskStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[4]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -359,7 +425,7 @@ func (x *TaskStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskStatus.ProtoReflect.Descriptor instead.
 func (*TaskStatus) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{4}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TaskStatus) GetTaskId() string {
@@ -435,7 +501,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[5]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -447,7 +513,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[5]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -460,7 +526,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{5}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *StreamLogsRequest) GetTaskId() string {
@@ -489,7 +555,7 @@ type TaskLogLine struct {
 
 func (x *TaskLogLine) Reset() {
 	*x = TaskLogLine{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[6]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -501,7 +567,7 @@ func (x *TaskLogLine) String() string {
 func (*TaskLogLine) ProtoMessage() {}
 
 func (x *TaskLogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[6]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -514,7 +580,7 @@ func (x *TaskLogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskLogLine.ProtoReflect.Descriptor instead.
 func (*TaskLogLine) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{6}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TaskLogLine) GetSeq() int64 {
@@ -553,7 +619,7 @@ type ListNodesRequest struct {
 
 func (x *ListNodesRequest) Reset() {
 	*x = ListNodesRequest{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[7]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +631,7 @@ func (x *ListNodesRequest) String() string {
 func (*ListNodesRequest) ProtoMessage() {}
 
 func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[7]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +644,7 @@ func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListNodesRequest) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{7}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{8}
 }
 
 type NodeStatus struct {
@@ -596,7 +662,7 @@ type NodeStatus struct {
 
 func (x *NodeStatus) Reset() {
 	*x = NodeStatus{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[8]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +674,7 @@ func (x *NodeStatus) String() string {
 func (*NodeStatus) ProtoMessage() {}
 
 func (x *NodeStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[8]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +687,7 @@ func (x *NodeStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeStatus.ProtoReflect.Descriptor instead.
 func (*NodeStatus) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{8}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *NodeStatus) GetNodeId() string {
@@ -682,7 +748,7 @@ type ListNodesResponse struct {
 
 func (x *ListNodesResponse) Reset() {
 	*x = ListNodesResponse{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[9]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +760,7 @@ func (x *ListNodesResponse) String() string {
 func (*ListNodesResponse) ProtoMessage() {}
 
 func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[9]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +773,7 @@ func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
 func (*ListNodesResponse) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{9}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListNodesResponse) GetNodes() []*NodeStatus {
@@ -728,7 +794,7 @@ type CreateGatewayRequest struct {
 
 func (x *CreateGatewayRequest) Reset() {
 	*x = CreateGatewayRequest{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[10]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -740,7 +806,7 @@ func (x *CreateGatewayRequest) String() string {
 func (*CreateGatewayRequest) ProtoMessage() {}
 
 func (x *CreateGatewayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[10]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -753,7 +819,7 @@ func (x *CreateGatewayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGatewayRequest.ProtoReflect.Descriptor instead.
 func (*CreateGatewayRequest) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{10}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreateGatewayRequest) GetLabel() string {
@@ -782,7 +848,7 @@ type CreateGatewayResponse struct {
 
 func (x *CreateGatewayResponse) Reset() {
 	*x = CreateGatewayResponse{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[11]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +860,7 @@ func (x *CreateGatewayResponse) String() string {
 func (*CreateGatewayResponse) ProtoMessage() {}
 
 func (x *CreateGatewayResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[11]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +873,7 @@ func (x *CreateGatewayResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGatewayResponse.ProtoReflect.Descriptor instead.
 func (*CreateGatewayResponse) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{11}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateGatewayResponse) GetGatewayId() string {
@@ -832,7 +898,7 @@ type ListGatewaysRequest struct {
 
 func (x *ListGatewaysRequest) Reset() {
 	*x = ListGatewaysRequest{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[12]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -844,7 +910,7 @@ func (x *ListGatewaysRequest) String() string {
 func (*ListGatewaysRequest) ProtoMessage() {}
 
 func (x *ListGatewaysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[12]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -857,7 +923,7 @@ func (x *ListGatewaysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGatewaysRequest.ProtoReflect.Descriptor instead.
 func (*ListGatewaysRequest) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{12}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{13}
 }
 
 type GatewayStatus struct {
@@ -872,7 +938,7 @@ type GatewayStatus struct {
 
 func (x *GatewayStatus) Reset() {
 	*x = GatewayStatus{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[13]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -884,7 +950,7 @@ func (x *GatewayStatus) String() string {
 func (*GatewayStatus) ProtoMessage() {}
 
 func (x *GatewayStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[13]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -897,7 +963,7 @@ func (x *GatewayStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GatewayStatus.ProtoReflect.Descriptor instead.
 func (*GatewayStatus) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{13}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GatewayStatus) GetGatewayId() string {
@@ -937,7 +1003,7 @@ type ListGatewaysResponse struct {
 
 func (x *ListGatewaysResponse) Reset() {
 	*x = ListGatewaysResponse{}
-	mi := &file_lazycake_v1_customer_proto_msgTypes[14]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -949,7 +1015,7 @@ func (x *ListGatewaysResponse) String() string {
 func (*ListGatewaysResponse) ProtoMessage() {}
 
 func (x *ListGatewaysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_customer_proto_msgTypes[14]
+	mi := &file_lazycake_v1_customer_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -962,7 +1028,7 @@ func (x *ListGatewaysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGatewaysResponse.ProtoReflect.Descriptor instead.
 func (*ListGatewaysResponse) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{14}
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListGatewaysResponse) GetGateways() []*GatewayStatus {
@@ -986,7 +1052,12 @@ const file_lazycake_v1_customer_proto_rawDesc = "" +
 	"\x04pids\x18\x05 \x01(\x05R\x04pids\x12$\n" +
 	"\x0ewall_timeout_s\x18\x06 \x01(\x05R\fwallTimeoutS\x12-\n" +
 	"\x13no_output_timeout_s\x18\a \x01(\x05R\x10noOutputTimeoutS\x12\x1b\n" +
-	"\tegress_mb\x18\b \x01(\x05R\begressMb\"\x81\x03\n" +
+	"\tegress_mb\x18\b \x01(\x05R\begressMb\"a\n" +
+	"\x10TunnelTargetSpec\x12\x1d\n" +
+	"\n" +
+	"gateway_id\x18\x01 \x01(\tR\tgatewayId\x12\x1a\n" +
+	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x12\n" +
+	"\x04port\x18\x03 \x01(\x05R\x04port\"\x99\x03\n" +
 	"\x11SubmitTaskRequest\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x1e\n" +
 	"\n" +
@@ -996,9 +1067,8 @@ const file_lazycake_v1_customer_proto_rawDesc = "" +
 	"\x03env\x18\x04 \x03(\v2'.lazycake.v1.SubmitTaskRequest.EnvEntryR\x03env\x12\x18\n" +
 	"\aworkdir\x18\x05 \x01(\tR\aworkdir\x12/\n" +
 	"\x06limits\x18\x06 \x01(\v2\x17.lazycake.v1.TaskLimitsR\x06limits\x12'\n" +
-	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12\x1f\n" +
-	"\vgateway_ids\x18\b \x03(\tR\n" +
-	"gatewayIds\x12\x1a\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x127\n" +
+	"\atargets\x18\b \x03(\v2\x1d.lazycake.v1.TunnelTargetSpecR\atargets\x12\x1a\n" +
 	"\bdelivery\x18\t \x01(\tR\bdelivery\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -1080,47 +1150,49 @@ func file_lazycake_v1_customer_proto_rawDescGZIP() []byte {
 	return file_lazycake_v1_customer_proto_rawDescData
 }
 
-var file_lazycake_v1_customer_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_lazycake_v1_customer_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_lazycake_v1_customer_proto_goTypes = []any{
 	(*TaskLimits)(nil),            // 0: lazycake.v1.TaskLimits
-	(*SubmitTaskRequest)(nil),     // 1: lazycake.v1.SubmitTaskRequest
-	(*SubmitTaskResponse)(nil),    // 2: lazycake.v1.SubmitTaskResponse
-	(*GetTaskRequest)(nil),        // 3: lazycake.v1.GetTaskRequest
-	(*TaskStatus)(nil),            // 4: lazycake.v1.TaskStatus
-	(*StreamLogsRequest)(nil),     // 5: lazycake.v1.StreamLogsRequest
-	(*TaskLogLine)(nil),           // 6: lazycake.v1.TaskLogLine
-	(*ListNodesRequest)(nil),      // 7: lazycake.v1.ListNodesRequest
-	(*NodeStatus)(nil),            // 8: lazycake.v1.NodeStatus
-	(*ListNodesResponse)(nil),     // 9: lazycake.v1.ListNodesResponse
-	(*CreateGatewayRequest)(nil),  // 10: lazycake.v1.CreateGatewayRequest
-	(*CreateGatewayResponse)(nil), // 11: lazycake.v1.CreateGatewayResponse
-	(*ListGatewaysRequest)(nil),   // 12: lazycake.v1.ListGatewaysRequest
-	(*GatewayStatus)(nil),         // 13: lazycake.v1.GatewayStatus
-	(*ListGatewaysResponse)(nil),  // 14: lazycake.v1.ListGatewaysResponse
-	nil,                           // 15: lazycake.v1.SubmitTaskRequest.EnvEntry
+	(*TunnelTargetSpec)(nil),      // 1: lazycake.v1.TunnelTargetSpec
+	(*SubmitTaskRequest)(nil),     // 2: lazycake.v1.SubmitTaskRequest
+	(*SubmitTaskResponse)(nil),    // 3: lazycake.v1.SubmitTaskResponse
+	(*GetTaskRequest)(nil),        // 4: lazycake.v1.GetTaskRequest
+	(*TaskStatus)(nil),            // 5: lazycake.v1.TaskStatus
+	(*StreamLogsRequest)(nil),     // 6: lazycake.v1.StreamLogsRequest
+	(*TaskLogLine)(nil),           // 7: lazycake.v1.TaskLogLine
+	(*ListNodesRequest)(nil),      // 8: lazycake.v1.ListNodesRequest
+	(*NodeStatus)(nil),            // 9: lazycake.v1.NodeStatus
+	(*ListNodesResponse)(nil),     // 10: lazycake.v1.ListNodesResponse
+	(*CreateGatewayRequest)(nil),  // 11: lazycake.v1.CreateGatewayRequest
+	(*CreateGatewayResponse)(nil), // 12: lazycake.v1.CreateGatewayResponse
+	(*ListGatewaysRequest)(nil),   // 13: lazycake.v1.ListGatewaysRequest
+	(*GatewayStatus)(nil),         // 14: lazycake.v1.GatewayStatus
+	(*ListGatewaysResponse)(nil),  // 15: lazycake.v1.ListGatewaysResponse
+	nil,                           // 16: lazycake.v1.SubmitTaskRequest.EnvEntry
 }
 var file_lazycake_v1_customer_proto_depIdxs = []int32{
-	15, // 0: lazycake.v1.SubmitTaskRequest.env:type_name -> lazycake.v1.SubmitTaskRequest.EnvEntry
+	16, // 0: lazycake.v1.SubmitTaskRequest.env:type_name -> lazycake.v1.SubmitTaskRequest.EnvEntry
 	0,  // 1: lazycake.v1.SubmitTaskRequest.limits:type_name -> lazycake.v1.TaskLimits
-	8,  // 2: lazycake.v1.ListNodesResponse.nodes:type_name -> lazycake.v1.NodeStatus
-	13, // 3: lazycake.v1.ListGatewaysResponse.gateways:type_name -> lazycake.v1.GatewayStatus
-	1,  // 4: lazycake.v1.CustomerService.SubmitTask:input_type -> lazycake.v1.SubmitTaskRequest
-	3,  // 5: lazycake.v1.CustomerService.GetTask:input_type -> lazycake.v1.GetTaskRequest
-	5,  // 6: lazycake.v1.CustomerService.StreamLogs:input_type -> lazycake.v1.StreamLogsRequest
-	7,  // 7: lazycake.v1.CustomerService.ListNodes:input_type -> lazycake.v1.ListNodesRequest
-	10, // 8: lazycake.v1.CustomerService.CreateGateway:input_type -> lazycake.v1.CreateGatewayRequest
-	12, // 9: lazycake.v1.CustomerService.ListGateways:input_type -> lazycake.v1.ListGatewaysRequest
-	2,  // 10: lazycake.v1.CustomerService.SubmitTask:output_type -> lazycake.v1.SubmitTaskResponse
-	4,  // 11: lazycake.v1.CustomerService.GetTask:output_type -> lazycake.v1.TaskStatus
-	6,  // 12: lazycake.v1.CustomerService.StreamLogs:output_type -> lazycake.v1.TaskLogLine
-	9,  // 13: lazycake.v1.CustomerService.ListNodes:output_type -> lazycake.v1.ListNodesResponse
-	11, // 14: lazycake.v1.CustomerService.CreateGateway:output_type -> lazycake.v1.CreateGatewayResponse
-	14, // 15: lazycake.v1.CustomerService.ListGateways:output_type -> lazycake.v1.ListGatewaysResponse
-	10, // [10:16] is the sub-list for method output_type
-	4,  // [4:10] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	1,  // 2: lazycake.v1.SubmitTaskRequest.targets:type_name -> lazycake.v1.TunnelTargetSpec
+	9,  // 3: lazycake.v1.ListNodesResponse.nodes:type_name -> lazycake.v1.NodeStatus
+	14, // 4: lazycake.v1.ListGatewaysResponse.gateways:type_name -> lazycake.v1.GatewayStatus
+	2,  // 5: lazycake.v1.CustomerService.SubmitTask:input_type -> lazycake.v1.SubmitTaskRequest
+	4,  // 6: lazycake.v1.CustomerService.GetTask:input_type -> lazycake.v1.GetTaskRequest
+	6,  // 7: lazycake.v1.CustomerService.StreamLogs:input_type -> lazycake.v1.StreamLogsRequest
+	8,  // 8: lazycake.v1.CustomerService.ListNodes:input_type -> lazycake.v1.ListNodesRequest
+	11, // 9: lazycake.v1.CustomerService.CreateGateway:input_type -> lazycake.v1.CreateGatewayRequest
+	13, // 10: lazycake.v1.CustomerService.ListGateways:input_type -> lazycake.v1.ListGatewaysRequest
+	3,  // 11: lazycake.v1.CustomerService.SubmitTask:output_type -> lazycake.v1.SubmitTaskResponse
+	5,  // 12: lazycake.v1.CustomerService.GetTask:output_type -> lazycake.v1.TaskStatus
+	7,  // 13: lazycake.v1.CustomerService.StreamLogs:output_type -> lazycake.v1.TaskLogLine
+	10, // 14: lazycake.v1.CustomerService.ListNodes:output_type -> lazycake.v1.ListNodesResponse
+	12, // 15: lazycake.v1.CustomerService.CreateGateway:output_type -> lazycake.v1.CreateGatewayResponse
+	15, // 16: lazycake.v1.CustomerService.ListGateways:output_type -> lazycake.v1.ListGatewaysResponse
+	11, // [11:17] is the sub-list for method output_type
+	5,  // [5:11] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_lazycake_v1_customer_proto_init() }
@@ -1134,7 +1206,7 @@ func file_lazycake_v1_customer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lazycake_v1_customer_proto_rawDesc), len(file_lazycake_v1_customer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

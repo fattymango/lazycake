@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 )
 
@@ -12,6 +13,10 @@ import (
 type Config struct {
 	// CoordinatorAddr is the coordinator's gRPC address, host:port. Required.
 	CoordinatorAddr string
+	// RelayAddr is the coordinator's QUIC tunnel relay address, host:port.
+	// Only needed for tasks that declare tunnel targets; defaults to the
+	// same host as CoordinatorAddr on the relay's default port.
+	RelayAddr string
 	// Token authenticates this agent to the coordinator. Required.
 	Token string
 	// OfferCores is the number of CPU cores to rent out. Required, > 0.
@@ -34,6 +39,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	cfg := Config{
 		CoordinatorAddr: getenv("LAZYCAKE_COORDINATOR_ADDR"),
+		RelayAddr:       getenv("LAZYCAKE_RELAY_ADDR"),
 		Token:           getenv("LAZYCAKE_TOKEN"),
 		DataDir:         orDefault(getenv("LAZYCAKE_DATA_DIR"), "/var/lib/lazycake-agent"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
@@ -66,7 +72,22 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("LAZYCAKE_OFFER_DISK_MB must be > 0")
 	}
 
+	if cfg.RelayAddr == "" {
+		cfg.RelayAddr = defaultRelayAddr(cfg.CoordinatorAddr)
+	}
+
 	return cfg, nil
+}
+
+// defaultRelayAddr guesses the relay address from the gRPC coordinator
+// address: same host, the relay's default port (see
+// internal/coordinator/config's LAZYCAKE_RELAY_ADDR default, ":7444").
+func defaultRelayAddr(coordinatorAddr string) string {
+	host, _, err := net.SplitHostPort(coordinatorAddr)
+	if err != nil {
+		return coordinatorAddr
+	}
+	return net.JoinHostPort(host, "7444")
 }
 
 func orDefault(v, def string) string {
@@ -98,6 +119,7 @@ func atof(v string, def float64) (float64, error) {
 func (c Config) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("coordinator_addr", c.CoordinatorAddr),
+		slog.String("relay_addr", c.RelayAddr),
 		slog.String("token", redact(c.Token)),
 		slog.Float64("offer_cores", c.OfferCores),
 		slog.Int("offer_memory_mb", c.OfferMemoryMB),
