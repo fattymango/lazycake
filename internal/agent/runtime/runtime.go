@@ -52,6 +52,14 @@ type Result struct {
 	OOMKilled bool
 }
 
+// LabelledContainer is one container LabelledContainers found, with just
+// enough to decide whether the startup reconciliation sweep should treat
+// it as stale.
+type LabelledContainer struct {
+	ID     string
+	Labels map[string]string
+}
+
 // Runtime is the seam between task dispatch and the container engine.
 // PodmanRuntime is the only production implementation; tests depend on
 // this interface so they can fake it instead of needing a real engine.
@@ -66,9 +74,13 @@ type Runtime interface {
 	Stop(ctx context.Context, id string, grace time.Duration) error
 	Logs(ctx context.Context, id string) (io.ReadCloser, error)
 	Remove(ctx context.Context, id string) error
-	// ListLabelled returns container IDs whose label key=value, for the
-	// startup reconciliation sweep (phase 3.7).
+	// ListLabelled returns container IDs whose label key=value.
 	ListLabelled(ctx context.Context, key, value string) ([]string, error)
+	// LabelledContainers returns every container (running or not) that has
+	// label key set to any value, along with each one's own labels, for
+	// the startup reconciliation sweep (phase 3.7) to decide which are
+	// stale without a second Inspect round-trip per container.
+	LabelledContainers(ctx context.Context, key string) ([]LabelledContainer, error)
 	// Exec runs cmd inside a running container and waits for it to exit,
 	// for the small in-container setup steps the netns proxy needs
 	// (bringing up loopback, writing resolv.conf) that must happen inside

@@ -205,6 +205,19 @@ func (r *PodmanRuntime) ListLabelled(ctx context.Context, key, value string) ([]
 	return ids, nil
 }
 
+func (r *PodmanRuntime) LabelledContainers(ctx context.Context, key string) ([]LabelledContainer, error) {
+	f := filters.NewArgs(filters.Arg("label", key))
+	containers, err := r.cli.ContainerList(ctx, types.ContainerListOptions{All: true, Filters: f})
+	if err != nil {
+		return nil, fmt.Errorf("listing containers labelled %s: %w", key, err)
+	}
+	out := make([]LabelledContainer, len(containers))
+	for i, c := range containers {
+		out[i] = LabelledContainer{ID: c.ID, Labels: c.Labels}
+	}
+	return out, nil
+}
+
 func envList(env map[string]string) []string {
 	out := make([]string, 0, len(env))
 	for k, v := range env {
