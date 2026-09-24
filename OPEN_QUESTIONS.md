@@ -52,6 +52,27 @@ too. Not chasing a fully-green run further in this nested environment; the
 mechanism (start containers, read real kernel-reported state) is what task
 1.5 asked for and it is verified working in both directions (pass and fail).
 
+The same root cause shows up again in task 1.6's `TestOOMKill`
+(`internal/agent/runtime/podman_test.go`, `-tags=integration`): a
+`--memory=64m` container writing 128MB never gets OOM-killed on this VM,
+because the limit isn't actually being applied without cgroup delegation -
+consistent with `agent probe`'s `memory_limit: fail` on the same host. The
+other five runtime integration checks (pull, create, start, wait, logs,
+list-by-label, remove) all pass for real.
+
+## docker/docker/client dependency pin
+
+Section 3's approved dependency list names `github.com/docker/docker/client`
+without a version. The current release line renamed that repo's module path
+to `github.com/moby/moby/...`, so resolving the plain import path pulls a
+go.mod that no longer matches it. Pinned to `github.com/docker/docker
+v24.0.9+incompatible` (the last release still published under the original
+module path) plus matching-era `github.com/docker/go-connections v0.4.0`
+and `github.com/docker/distribution v2.8.2+incompatible`, which is what
+actually compiles against Go 1.25/1.26 and the current MVS-selected
+transitive graph. Newer docker/docker releases would need the
+`github.com/moby/moby/client` + `github.com/moby/moby/api` split instead.
+
 ## Transport security (deferred)
 
 The agent<->coordinator gRPC connection is plaintext (`insecure.NewCredentials()`)

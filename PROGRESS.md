@@ -11,4 +11,5 @@ One line per completed task: `<phase>.<task> — <what> — <date> — <commit>`
 - 1.3 — `api.Server` implements `AgentService.Connect`: auth, register, heartbeat ack, capacity/cache/log handling, task-event hooks behind a `TaskEvents` interface the scheduler will implement later — 2026-09-24
 - 1.4 — `conn.Runner` (register/heartbeat/reconnect w/ jittered backoff) + real wiring in cmd/coordinator and cmd/agent; manual kill -9 restart test: agent reconnects in ~10s — 2026-09-24
 - 1.5 — `agent probe`: real memory/cpu/pids/disk/systemd/gvisor/subuid/cgroup checks against actual podman, not version strings; ran for real inside podman-machine-default (mixed pass/fail, all actionable) plus full fake-Runner unit coverage — 2026-09-24
+- 1.6 — `runtime.Runtime` interface + `PodmanRuntime` (docker/docker/client v24 pinned against the podman API socket); real integration test: pull alpine, run+wait+read logs+remove all pass. The OOM sub-test fails on this VM for the same cgroupfs-fallback reason task 1.5 already found (not a code bug, see OPEN_QUESTIONS.md) — 2026-09-24
 
