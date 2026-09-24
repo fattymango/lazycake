@@ -20,4 +20,5 @@ One line per completed task: `<phase>.<task> — <what> — <date> — <commit>`
 **Phase 1 (vertical slice) complete**, with the one documented environment caveat above.
 
 - 2.1 — `testdata/netns-spike.sh`: proves the tunnel's core mechanism for real against podman. All 5 steps pass: `--network=none` container created; agent enters its user+net namespace unprivileged via `nsenter --user --net` (joining both together is the trick - net alone would EPERM); loopback brought up and a listener bound from the agent side; a process inside the container reaches that listener and gets its echo back; the container has no default route and DNS resolution fails outright. Rootless netns manipulation - the thing PLAN.md flags as the riskiest unknown in the whole project - genuinely works as designed — 2026-09-24
+- 2.2 — `internal/tunnel/noise`: Noise_IK session over any `io.ReadWriter`, length-prefixed framing, auto-chunked at the 65519-byte Noise message limit. 10MB round-trip identical bytes; a single flipped bit anywhere in a ciphertext fails AEAD authentication on decrypt — 2026-09-24
 
