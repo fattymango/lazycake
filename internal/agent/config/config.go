@@ -27,6 +27,12 @@ type Config struct {
 	OfferDiskMB int
 	// DataDir holds per-task scratch directories and the image cache.
 	DataDir string
+	// LcinitPath is the host path to the lcinit binary (cmd/lcinit, task
+	// 3.6), bind-mounted read-only into every dispatched task's container
+	// to enforce wall_timeout_s from the inside. Empty disables the
+	// wrapper - if unset, the caller (cmd/agent) looks for a "lcinit"
+	// binary next to the agent's own executable before giving up on it.
+	LcinitPath string
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 }
@@ -42,6 +48,7 @@ func Load(getenv func(string) string) (Config, error) {
 		RelayAddr:       getenv("LAZYCAKE_RELAY_ADDR"),
 		Token:           getenv("LAZYCAKE_TOKEN"),
 		DataDir:         orDefault(getenv("LAZYCAKE_DATA_DIR"), "/var/lib/lazycake-agent"),
+		LcinitPath:      getenv("LAZYCAKE_LCINIT_PATH"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
 	}
 
@@ -125,6 +132,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Int("offer_memory_mb", c.OfferMemoryMB),
 		slog.Int("offer_disk_mb", c.OfferDiskMB),
 		slog.String("data_dir", c.DataDir),
+		slog.String("lcinit_path", c.LcinitPath),
 		slog.Bool("dev", c.Dev),
 	)
 }

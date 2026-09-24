@@ -1,0 +1,90 @@
+//go:build integration
+
+// lcinit only makes sense on Linux (it execs and signals a child as
+// container PID 1); these tests spawn real /bin/sh children and are
+// tagged integration like the rest of the suite's Linux-only tests.
+package main
+
+import (
+	"os"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// TestInitDeadline is task 3.6's own verify: a container whose agent and
+// systemd are both gone (nothing left to enforce anything from outside)
+// still exits at its wall timeout, because lcinit itself - running as the
+// container's own PID 1 - enforces it.
+func TestInitDeadline(t *testing.T) {
+	start := time.Now()
+	code, err := run([]string{"--max-duration=500ms", "--", "sleep", "30"})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if code != deadlineExitCode {
+		t.Fatalf("exit code = %d, want %d (deadline)", code, deadlineExitCode)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("deadline enforcement took %v, way past the 500ms max-duration + kill grace", elapsed)
+	}
+	if elapsed < 500*time.Millisecond {
+		t.Fatalf("returned before max-duration(500ms) even elapsed: %v", elapsed)
+	}
+}
+
+// TestChildExitCodePassesThrough proves the common case isn't broken by
+// the deadline machinery: a child that exits on its own propagates its own
+// exit code untouched.
+func TestChildExitCodePassesThrough(t *testing.T) {
+	code, err := run([]string{"--", "sh", "-c", "exit 7"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if code != 7 {
+		t.Fatalf("exit code = %d, want 7", code)
+	}
+}
+
+// TestSignalForwarding proves lcinit forwards a real signal to the child
+// rather than only ever killing it via the deadline path: a child that
+// traps SIGTERM and exits with a distinctive code should see it.
+func TestSignalForwarding(t *testing.T) {
+	script := `trap 'exit 42' TERM; while true; do sleep 0.05; done`
+	doneCh := make(chan struct {
+		code int
+		err  error
+	}, 1)
+	go func() {
+		code, err := run([]string{"--", "sh", "-c", script})
+		doneCh <- struct {
+			code int
+			err  error
+		}{code, err}
+	}()
+
+	// Give the child a moment to install its trap, then signal the whole
+	// test process group the same way an external SIGTERM to lcinit's own
+	// PID would arrive - run()'s signal.Notify picks it up and forwards it.
+	time.Sleep(200 * time.Millisecond)
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("finding self: %v", err)
+	}
+	if err := self.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("signalling self: %v", err)
+	}
+
+	select {
+	case res := <-doneCh:
+		if res.err != nil {
+			t.Fatalf("run: %v", res.err)
+		}
+		if res.code != 42 {
+			t.Fatalf("exit code = %d, want 42 (child's SIGTERM trap)", res.code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() never returned after SIGTERM")
+	}
+}

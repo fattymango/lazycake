@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -104,6 +105,11 @@ func run() error {
 		return fmt.Errorf("generating tunnel noise keypair: %w", err)
 	}
 
+	lcinitPath := cfg.LcinitPath
+	if lcinitPath == "" {
+		lcinitPath = discoverLcinit(log)
+	}
+
 	executor := &lcexec.Executor{
 		Runtime:      rt,
 		Ledger:       ledger,
@@ -114,6 +120,7 @@ func run() error {
 		RelayAddr:    cfg.RelayAddr,
 		Token:        cfg.Token,
 		AgentKeypair: tunnelKeypair,
+		LcinitPath:   lcinitPath,
 	}
 	runner.Handlers = conn.Handlers{
 		OnDispatch:     executor.HandleDispatch,
@@ -139,6 +146,27 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// discoverLcinit looks for a "lcinit" binary next to the agent's own
+// executable, so a normal side-by-side install (both binaries dropped in
+// the same bin/ directory, as deploy/Dockerfile and `make build` both do)
+// works with zero configuration. Returns "" (wrapper disabled, task 3.6's
+// deadline enforcement falls back to the agent-side context deadline and
+// task 3.5's systemd-slice cleanup) rather than failing startup - lcinit is
+// defense in depth, not a hard requirement to run at all.
+func discoverLcinit(log *slog.Logger) string {
+	self, err := os.Executable()
+	if err != nil {
+		log.Warn("lcinit: could not determine own executable path, wrapper disabled", "error", err)
+		return ""
+	}
+	candidate := filepath.Join(filepath.Dir(self), "lcinit")
+	if _, err := os.Stat(candidate); err != nil {
+		log.Warn("lcinit: no binary found next to the agent executable, wrapper disabled", "looked_at", candidate)
+		return ""
+	}
+	return candidate
 }
 
 // readBootID returns the kernel's boot ID (used to label containers so the
