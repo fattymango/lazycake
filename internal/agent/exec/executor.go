@@ -8,6 +8,7 @@ package exec
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -40,6 +41,18 @@ type Executor struct {
 	RelayAddr    string
 	Token        string
 	AgentKeypair noise.Keypair
+
+	// LcinitPath, if set, is the host path to the lcinit binary
+	// (cmd/lcinit - see IMPLEMENTATION.md task 3.6): every dispatched
+	// task's container gets it bind-mounted read-only at
+	// /.lazycake/init and its entrypoint rewritten to run through it, so
+	// wall_timeout_s is enforced from inside the container even if the
+	// agent and systemd are both gone (PLAN.md "Killing orphans"). Empty
+	// disables the wrapper entirely - the container runs its own declared
+	// entrypoint directly, relying only on the agent-side wall timeout
+	// (internal/agent/exec's own runCtx deadline) and task 3.5's
+	// systemd-slice cleanup.
+	LcinitPath string
 
 	mu      sync.Mutex
 	active  map[string]*activeTask              // task_id -> running container
@@ -297,11 +310,15 @@ func (e *Executor) startTunnel(ctx context.Context, containerID string, d *lazyc
 }
 
 func (e *Executor) spec(d *lazycakev1.Dispatch) runtime.Spec {
+	entrypoint, args, mounts := d.GetEntrypoint(), d.GetArgs(), []runtime.Mount(nil)
+	if e.LcinitPath != "" {
+		entrypoint, args, mounts = e.wrapWithLcinit(d)
+	}
 	return runtime.Spec{
 		Name:       "lazycake-" + d.GetTaskId(),
 		Image:      d.GetImage(),
-		Entrypoint: d.GetEntrypoint(),
-		Args:       d.GetArgs(),
+		Entrypoint: entrypoint,
+		Args:       args,
 		Env:        d.GetEnv(),
 		Workdir:    d.GetWorkdir(),
 		Isolation:  d.GetIsolation(),
@@ -309,11 +326,31 @@ func (e *Executor) spec(d *lazycakev1.Dispatch) runtime.Spec {
 		MemoryMB:   int(d.GetLimits().GetMemoryMb()),
 		TmpfsMB:    int(d.GetLimits().GetTmpfsMb()),
 		PIDs:       int(d.GetLimits().GetPids()),
+		Mounts:     mounts,
 		Labels: map[string]string{
 			"lazycake.task_id":     d.GetTaskId(),
 			"lazycake.instance_id": e.InstanceID,
 			"lazycake.boot_id":     e.BootID,
 		},
+	}
+}
+
+// wrapWithLcinit rewrites a task's entrypoint to run through
+// /.lazycake/init (task 3.6): lcinit execs the original entrypoint+args as
+// its own child, so the container's actual PID 1 is lcinit, still
+// enforcing wall_timeout_s even if the agent process and systemd unit that
+// dispatched it are both gone by the time it matters.
+func (e *Executor) wrapWithLcinit(d *lazycakev1.Dispatch) (entrypoint, args []string, mounts []runtime.Mount) {
+	lcinitArgs := []string{}
+	if wallTimeoutS := d.GetLimits().GetWallTimeoutS(); wallTimeoutS > 0 {
+		lcinitArgs = append(lcinitArgs, fmt.Sprintf("--max-duration=%ds", wallTimeoutS))
+	}
+	lcinitArgs = append(lcinitArgs, "--")
+	lcinitArgs = append(lcinitArgs, d.GetEntrypoint()...)
+	lcinitArgs = append(lcinitArgs, d.GetArgs()...)
+
+	return []string{"/.lazycake/init"}, lcinitArgs, []runtime.Mount{
+		{HostPath: e.LcinitPath, ContainerPath: "/.lazycake/init", ReadOnly: true},
 	}
 }
 

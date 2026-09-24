@@ -8,7 +8,8 @@ COPY . .
 RUN go build -o /out/coordinator ./cmd/coordinator \
  && go build -o /out/agent ./cmd/agent \
  && go build -o /out/gateway ./cmd/gateway \
- && go build -o /out/lcctl ./cmd/lcctl
+ && go build -o /out/lcctl ./cmd/lcctl \
+ && CGO_ENABLED=0 go build -o /out/lcinit ./cmd/lcinit
 
 FROM alpine:3.20 AS coordinator
 RUN apk add --no-cache ca-certificates
@@ -27,6 +28,12 @@ RUN apk add --no-cache ca-certificates podman-remote shadow \
  && ln -s /usr/bin/podman-remote /usr/bin/podman \
  && usermod --add-subuids 65536-131071 --add-subgids 65536-131071 root
 COPY --from=build /out/agent /usr/local/bin/agent
+# lcinit lives next to the agent binary so cmd/agent's discoverLcinit finds
+# it with zero configuration (task 3.6) - it's bind-mounted read-only into
+# every dispatched task's own container, so it has to be a fully static
+# binary (CGO_ENABLED=0 above) rather than dynamically linked against this
+# image's musl, which an arbitrary customer image won't have.
+COPY --from=build /out/lcinit /usr/local/bin/lcinit
 ENTRYPOINT ["/usr/local/bin/agent"]
 
 FROM alpine:3.20 AS gateway

@@ -15,8 +15,9 @@ func main() {
 		return
 	}
 
-	if err := run(os.Args[1:]); err != nil {
+	code, err := run(os.Args[1:])
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "lcinit:", err)
-		os.Exit(1)
 	}
+	os.Exit(code)
 }
