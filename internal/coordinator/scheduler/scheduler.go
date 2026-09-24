@@ -7,6 +7,7 @@
 package scheduler
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -22,6 +23,19 @@ import (
 type Dispatcher interface {
 	Send(nodeID string, msg *lazycakev1.CoordinatorMessage) error
 }
+
+// BillingEvents receives the same start/finish events TaskEvents does, for
+// task duration metering (task 4.2 onward). *billing.Meters satisfies this
+// structurally - scheduler never imports billing's own dependencies back.
+type BillingEvents interface {
+	OnTaskStarted(ctx context.Context, nodeID, taskID string) error
+	OnTaskFinished(ctx context.Context, nodeID, taskID string) error
+}
+
+type noopBilling struct{}
+
+func (noopBilling) OnTaskStarted(context.Context, string, string) error  { return nil }
+func (noopBilling) OnTaskFinished(context.Context, string, string) error { return nil }
 
 // rejectCooldown is how long a task/node pair is avoided after a rejection,
 // per IMPLEMENTATION.md task 1.8 ("do not re-offer it to that node for
@@ -41,6 +55,8 @@ type Scheduler struct {
 	Dispatch Dispatcher
 	Clock    clock.Clock
 	Log      *slog.Logger
+	// Billing may be nil (defaults to a no-op) until wired in - phase 4.
+	Billing BillingEvents
 
 	// LeaseS is how long a dispatched task's lease is before the agent
 	// self-fences if it hears nothing (phase 3 uses this fully; phase 1
@@ -70,6 +86,13 @@ func (s *Scheduler) now() time.Time {
 		return time.Now()
 	}
 	return s.Clock.Now()
+}
+
+func (s *Scheduler) billing() BillingEvents {
+	if s.Billing == nil {
+		return noopBilling{}
+	}
+	return s.Billing
 }
 
 var _ api.TaskEvents = (*Scheduler)(nil)

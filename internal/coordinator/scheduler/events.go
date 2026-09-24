@@ -35,6 +35,9 @@ func (s *Scheduler) OnTaskStarted(ctx context.Context, nodeID, taskID string, at
 		return fmt.Errorf("marking task running: %w", err)
 	}
 	s.Log.Info("task started", "task_id", taskID, "node_id", nodeID)
+	if err := s.billing().OnTaskStarted(ctx, nodeID, taskID); err != nil {
+		s.Log.Error("metering task started", "task_id", taskID, "node_id", nodeID, "error", err)
+	}
 	return nil
 }
 
@@ -52,6 +55,9 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		return fmt.Errorf("marking task finished: %w", err)
 	}
 	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason)
+	if err := s.billing().OnTaskFinished(ctx, nodeID, ev.TaskID); err != nil {
+		s.Log.Error("metering task finished", "task_id", ev.TaskID, "node_id", nodeID, "error", err)
+	}
 	return nil
 }
 

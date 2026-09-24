@@ -23,6 +23,7 @@ type fakeStore struct {
 	tasks    map[string]store.Task
 	idemKeys map[[2]string]string // (account_id, idempotency_key) -> task_id
 	gateways map[string]store.Gateway
+	meters   map[string]store.TaskMeter
 }
 
 func newFakeStore() *fakeStore {
@@ -35,6 +36,7 @@ func newFakeStore() *fakeStore {
 		images:   map[string][]store.CachedImage{},
 		tasks:    map[string]store.Task{},
 		idemKeys: map[[2]string]string{},
+		meters:   map[string]store.TaskMeter{},
 	}
 }
 
@@ -394,6 +396,40 @@ func (f *fakeStore) SetGatewayConnected(ctx context.Context, id string, connecte
 	}
 	f.gateways[id] = g
 	return nil
+}
+
+func (f *fakeStore) RecordMeterStarted(ctx context.Context, taskID, nodeID string, at time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.meters[taskID]; ok {
+		return nil
+	}
+	f.meters[taskID] = store.TaskMeter{TaskID: taskID, NodeID: nodeID, StartedAt: at}
+	return nil
+}
+
+func (f *fakeStore) RecordMeterFinished(ctx context.Context, taskID string, at time.Time, durationS, normalisedS float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.meters[taskID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	m.FinishedAt = &at
+	m.DurationS = &durationS
+	m.NormalisedS = &normalisedS
+	f.meters[taskID] = m
+	return nil
+}
+
+func (f *fakeStore) GetMeter(ctx context.Context, taskID string) (store.TaskMeter, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.meters[taskID]
+	if !ok {
+		return store.TaskMeter{}, store.ErrNotFound
+	}
+	return m, nil
 }
 
 var _ store.Store = (*fakeStore)(nil)

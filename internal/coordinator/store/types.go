@@ -198,6 +198,17 @@ type GatewayService struct {
 	Port int    `json:"port"`
 }
 
+// TaskMeter is one task_meters row (task 4.2): duration_s/normalised_s are
+// nil until RecordMeterFinished runs.
+type TaskMeter struct {
+	TaskID      string
+	NodeID      string
+	StartedAt   time.Time
+	FinishedAt  *time.Time
+	DurationS   *float64
+	NormalisedS *float64
+}
+
 // Gateway is a customer-installed relay endpoint, registered via
 // `lcctl gateway create` before the gateway process itself ever runs -
 // NoisePubkey starts empty and is filled in the first time it connects

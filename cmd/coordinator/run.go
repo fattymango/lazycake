@@ -13,6 +13,7 @@ import (
 
 	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
+	"github.com/mkassab215/lazycake/internal/coordinator/billing"
 	"github.com/mkassab215/lazycake/internal/coordinator/config"
 	coordrelay "github.com/mkassab215/lazycake/internal/coordinator/relay"
 	"github.com/mkassab215/lazycake/internal/coordinator/scheduler"
@@ -60,6 +61,7 @@ func run() error {
 
 	registry := api.NewRegistry()
 	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
+	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log}
 
 	grpcServer := grpc.NewServer()
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{
