@@ -46,6 +46,16 @@ type Proxy struct {
 	Runtime      runtime.Runtime
 	Log          *slog.Logger
 
+	// EgressCapBytes caps total container->gateway bytes across every
+	// connection this task opens; <= 0 means unlimited (PLAN.md task
+	// descriptor limits.egress_mb).
+	EgressCapBytes int64
+	// OnEgressExceeded, if set, fires exactly once when the cap is
+	// crossed - after every open connection has already been closed - so
+	// the caller can kill the container and report exit_reason
+	// "egress_exceeded".
+	OnEgressExceeded func()
+
 	// ExecutablePath overrides which binary nsenter execs into for
 	// SubcommandName; defaults to os.Executable() (the real agent binary
 	// in production). Tests that exercise Proxy directly from a `go test`
@@ -157,7 +167,7 @@ func (p *Proxy) Setup(ctx context.Context) error {
 
 	serveCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
-	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.Log)
+	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, p.Log)
 
 	go func() {
 		if err := cmd.Wait(); err != nil && ctx.Err() == nil {
