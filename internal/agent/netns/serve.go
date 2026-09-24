@@ -14,12 +14,14 @@ import (
 
 // serve runs the parent-side loops against sockets the netns child bound
 // and handed over: DNS answers, and for each target, accept a TCP
-// connection and relay it out through QUIC+Noise. Runs until ctx is
-// cancelled or the sockets are closed.
-func serve(ctx context.Context, cfg Config, dnsConn *net.UDPConn, listeners []*net.TCPListener, relayConn *quicgo.Conn, log *slog.Logger) {
+// connection and relay it out through QUIC+Noise, enforcing egressCapBytes
+// (<=0 for unlimited) across every connection the task opens. Runs until
+// ctx is cancelled or the sockets are closed.
+func serve(ctx context.Context, cfg Config, dnsConn *net.UDPConn, listeners []*net.TCPListener, relayConn *quicgo.Conn, egressCapBytes int64, onEgressExceeded func(), log *slog.Logger) {
+	limiter := newEgressLimiter(egressCapBytes, onEgressExceeded)
 	go serveDNSLoop(dnsConn, cfg.Targets, log)
 	for i, t := range cfg.Targets {
-		go serveTargetLoop(ctx, listeners[i], t, cfg, relayConn, log)
+		go serveTargetLoop(ctx, listeners[i], t, cfg, relayConn, limiter, log)
 	}
 }
 
@@ -41,17 +43,19 @@ func serveDNSLoop(conn *net.UDPConn, targets []Target, log *slog.Logger) {
 	}
 }
 
-func serveTargetLoop(ctx context.Context, ln *net.TCPListener, target Target, cfg Config, relayConn *quicgo.Conn, log *slog.Logger) {
+func serveTargetLoop(ctx context.Context, ln *net.TCPListener, target Target, cfg Config, relayConn *quicgo.Conn, limiter *egressLimiter, log *slog.Logger) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		go handleTaskConn(ctx, conn, target, cfg, relayConn, log)
+		go handleTaskConn(ctx, conn, target, cfg, relayConn, limiter, log)
 	}
 }
 
-func handleTaskConn(ctx context.Context, conn net.Conn, target Target, cfg Config, relayConn *quicgo.Conn, log *slog.Logger) {
+func handleTaskConn(ctx context.Context, conn net.Conn, target Target, cfg Config, relayConn *quicgo.Conn, limiter *egressLimiter, log *slog.Logger) {
+	limiter.register(conn)
+	defer limiter.unregister(conn)
 	defer conn.Close()
 
 	stream, err := quic.OpenRelayedStream(ctx, relayConn, target.GatewayID, cfg.TaskID)
@@ -71,9 +75,12 @@ func handleTaskConn(ctx context.Context, conn net.Conn, target Target, cfg Confi
 		return
 	}
 
+	// Only container->gateway (egress) bytes count against the cap: this
+	// is the customer's own data leaving the host, which is what
+	// limits.egress_mb bounds (PLAN.md's task descriptor).
 	done := make(chan struct{}, 2)
 	go func() {
-		io.Copy(session, conn)
+		io.Copy(countingWriter{session, limiter}, conn)
 		stream.Close()
 		done <- struct{}{}
 	}()
