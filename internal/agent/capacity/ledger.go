@@ -98,6 +98,18 @@ func (l *Ledger) freeLocked() Resources {
 	return l.offer.sub(used)
 }
 
+// TaskIDs returns every currently admitted task ID, for re-announcing on
+// reconnect (PLAN.md "Task adoption on reconnect").
+func (l *Ledger) TaskIDs() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ids := make([]string, 0, len(l.allocated))
+	for id := range l.allocated {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // Offer returns the currently configured offer.
 func (l *Ledger) Offer() Resources {
 	l.mu.Lock()

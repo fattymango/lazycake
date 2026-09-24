@@ -36,6 +36,13 @@ func (s *PostgresStore) Close() {
 	s.pool.Close()
 }
 
+// Pool exposes the underlying pgx pool for callers that need raw SQL
+// outside the Store interface - test setup/teardown, mainly. Production
+// code should go through Store's methods instead.
+func (s *PostgresStore) Pool() *pgxpool.Pool {
+	return s.pool
+}
+
 var _ Store = (*PostgresStore)(nil)
 
 // --- Accounts ---

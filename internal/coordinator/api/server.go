@@ -44,13 +44,28 @@ type TaskFinishedEvent struct {
 	ColdPullBytes int64
 }
 
+// CapacityEvents receives capacity reports off the agent stream. The
+// scheduler implements this to keep its placement cache current; api never
+// imports scheduler.
+type CapacityEvents interface {
+	OnCapacityReport(ctx context.Context, nodeID string, rep CapacityReportEvent) error
+}
+
+// CapacityReportEvent carries what a CapacityReport message reports.
+type CapacityReportEvent struct {
+	FreeCores    float64
+	FreeMemoryMB int32
+	FreeDiskMB   int32
+}
+
 // Server implements lazycakev1.AgentServiceServer.
 type Server struct {
 	lazycakev1.UnimplementedAgentServiceServer
 
 	Store      store.Store
 	Registry   *Registry
-	Events     TaskEvents // may be nil until the scheduler is wired in (phase 1.8)
+	Events     TaskEvents     // may be nil until the scheduler is wired in (phase 1.8)
+	Capacity   CapacityEvents // may be nil until the scheduler is wired in (phase 1.8)
 	Clock      clock.Clock
 	Log        *slog.Logger
 	HeartbeatS int32
@@ -71,6 +86,17 @@ func (s *Server) events() TaskEvents {
 		return noopEvents{}
 	}
 	return s.Events
+}
+
+type noopCapacity struct{}
+
+func (noopCapacity) OnCapacityReport(context.Context, string, CapacityReportEvent) error { return nil }
+
+func (s *Server) capacity() CapacityEvents {
+	if s.Capacity == nil {
+		return noopCapacity{}
+	}
+	return s.Capacity
 }
 
 func (s *Server) now() time.Time {
@@ -244,14 +270,16 @@ func (s *Server) handleHeartbeat(ctx context.Context, nodeID string, hb *lazycak
 }
 
 func (s *Server) handleCapacity(ctx context.Context, nodeID string, cap *lazycakev1.CapacityReport) error {
-	offer := cap.GetOffer()
-	if offer == nil {
-		return nil
+	if offer := cap.GetOffer(); offer != nil {
+		if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb())); err != nil {
+			return fmt.Errorf("setting node offer: %w", err)
+		}
 	}
-	if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb())); err != nil {
-		return fmt.Errorf("setting node offer: %w", err)
-	}
-	return nil
+	return s.capacity().OnCapacityReport(ctx, nodeID, CapacityReportEvent{
+		FreeCores:    cap.GetFreeCores(),
+		FreeMemoryMB: cap.GetFreeMemoryMb(),
+		FreeDiskMB:   cap.GetFreeDiskMb(),
+	})
 }
 
 func (s *Server) handleCacheDelta(ctx context.Context, nodeID string, delta *lazycakev1.CacheDelta) error {
