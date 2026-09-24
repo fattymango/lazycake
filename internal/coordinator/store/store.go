@@ -17,6 +17,7 @@ type Store interface {
 	Tasks
 	Logs
 	ImageCache
+	Gateways
 }
 
 type Accounts interface {
@@ -91,4 +92,15 @@ type ImageCache interface {
 	// NodesWithImage returns node IDs known to already hold digest, for
 	// cache-aware placement.
 	NodesWithImage(ctx context.Context, digest string) ([]string, error)
+}
+
+type Gateways interface {
+	CreateGateway(ctx context.Context, g Gateway) error
+	GetGateway(ctx context.Context, id string) (Gateway, error)
+	ListGatewaysByAccount(ctx context.Context, accountID string) ([]Gateway, error)
+	// SetGatewayConnected records connectedness and, when connected is
+	// true, the Noise public key the gateway just published at connect
+	// time (nil/empty otherwise - it isn't cleared on disconnect, so the
+	// last-known key stays around for display/debugging).
+	SetGatewayConnected(ctx context.Context, id string, connected bool, noisePubkey []byte) error
 }

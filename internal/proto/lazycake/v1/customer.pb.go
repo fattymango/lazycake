@@ -717,6 +717,261 @@ func (x *ListNodesResponse) GetNodes() []*NodeStatus {
 	return nil
 }
 
+type CreateGatewayRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Label string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	// service_name:port, repeatable, e.g. "db:5432".
+	Services      []string `protobuf:"bytes,2,rep,name=services,proto3" json:"services,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateGatewayRequest) Reset() {
+	*x = CreateGatewayRequest{}
+	mi := &file_lazycake_v1_customer_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateGatewayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateGatewayRequest) ProtoMessage() {}
+
+func (x *CreateGatewayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_customer_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateGatewayRequest.ProtoReflect.Descriptor instead.
+func (*CreateGatewayRequest) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CreateGatewayRequest) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *CreateGatewayRequest) GetServices() []string {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+type CreateGatewayResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	GatewayId string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	// install_token authenticates the gateway process itself
+	// (LAZYCAKE_TOKEN) - shown once, not retrievable again.
+	InstallToken  string `protobuf:"bytes,2,opt,name=install_token,json=installToken,proto3" json:"install_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateGatewayResponse) Reset() {
+	*x = CreateGatewayResponse{}
+	mi := &file_lazycake_v1_customer_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateGatewayResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateGatewayResponse) ProtoMessage() {}
+
+func (x *CreateGatewayResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_customer_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateGatewayResponse.ProtoReflect.Descriptor instead.
+func (*CreateGatewayResponse) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CreateGatewayResponse) GetGatewayId() string {
+	if x != nil {
+		return x.GatewayId
+	}
+	return ""
+}
+
+func (x *CreateGatewayResponse) GetInstallToken() string {
+	if x != nil {
+		return x.InstallToken
+	}
+	return ""
+}
+
+type ListGatewaysRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGatewaysRequest) Reset() {
+	*x = ListGatewaysRequest{}
+	mi := &file_lazycake_v1_customer_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGatewaysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGatewaysRequest) ProtoMessage() {}
+
+func (x *ListGatewaysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_customer_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGatewaysRequest.ProtoReflect.Descriptor instead.
+func (*ListGatewaysRequest) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{12}
+}
+
+type GatewayStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GatewayId     string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	Connected     bool                   `protobuf:"varint,3,opt,name=connected,proto3" json:"connected,omitempty"`
+	Services      []string               `protobuf:"bytes,4,rep,name=services,proto3" json:"services,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GatewayStatus) Reset() {
+	*x = GatewayStatus{}
+	mi := &file_lazycake_v1_customer_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatewayStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatewayStatus) ProtoMessage() {}
+
+func (x *GatewayStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_customer_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatewayStatus.ProtoReflect.Descriptor instead.
+func (*GatewayStatus) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GatewayStatus) GetGatewayId() string {
+	if x != nil {
+		return x.GatewayId
+	}
+	return ""
+}
+
+func (x *GatewayStatus) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *GatewayStatus) GetConnected() bool {
+	if x != nil {
+		return x.Connected
+	}
+	return false
+}
+
+func (x *GatewayStatus) GetServices() []string {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+type ListGatewaysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Gateways      []*GatewayStatus       `protobuf:"bytes,1,rep,name=gateways,proto3" json:"gateways,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGatewaysResponse) Reset() {
+	*x = ListGatewaysResponse{}
+	mi := &file_lazycake_v1_customer_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGatewaysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGatewaysResponse) ProtoMessage() {}
+
+func (x *ListGatewaysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_customer_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGatewaysResponse.ProtoReflect.Descriptor instead.
+func (*ListGatewaysResponse) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_customer_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListGatewaysResponse) GetGateways() []*GatewayStatus {
+	if x != nil {
+		return x.Gateways
+	}
+	return nil
+}
+
 var File_lazycake_v1_customer_proto protoreflect.FileDescriptor
 
 const file_lazycake_v1_customer_proto_rawDesc = "" +
@@ -786,14 +1041,32 @@ const file_lazycake_v1_customer_proto_rawDesc = "" +
 	"\vtrust_score\x18\a \x01(\x01R\n" +
 	"trustScore\"B\n" +
 	"\x11ListNodesResponse\x12-\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x17.lazycake.v1.NodeStatusR\x05nodes2\xb7\x02\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x17.lazycake.v1.NodeStatusR\x05nodes\"H\n" +
+	"\x14CreateGatewayRequest\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12\x1a\n" +
+	"\bservices\x18\x02 \x03(\tR\bservices\"[\n" +
+	"\x15CreateGatewayResponse\x12\x1d\n" +
+	"\n" +
+	"gateway_id\x18\x01 \x01(\tR\tgatewayId\x12#\n" +
+	"\rinstall_token\x18\x02 \x01(\tR\finstallToken\"\x15\n" +
+	"\x13ListGatewaysRequest\"~\n" +
+	"\rGatewayStatus\x12\x1d\n" +
+	"\n" +
+	"gateway_id\x18\x01 \x01(\tR\tgatewayId\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1c\n" +
+	"\tconnected\x18\x03 \x01(\bR\tconnected\x12\x1a\n" +
+	"\bservices\x18\x04 \x03(\tR\bservices\"N\n" +
+	"\x14ListGatewaysResponse\x126\n" +
+	"\bgateways\x18\x01 \x03(\v2\x1a.lazycake.v1.GatewayStatusR\bgateways2\xe4\x03\n" +
 	"\x0fCustomerService\x12M\n" +
 	"\n" +
 	"SubmitTask\x12\x1e.lazycake.v1.SubmitTaskRequest\x1a\x1f.lazycake.v1.SubmitTaskResponse\x12?\n" +
 	"\aGetTask\x12\x1b.lazycake.v1.GetTaskRequest\x1a\x17.lazycake.v1.TaskStatus\x12H\n" +
 	"\n" +
 	"StreamLogs\x12\x1e.lazycake.v1.StreamLogsRequest\x1a\x18.lazycake.v1.TaskLogLine0\x01\x12J\n" +
-	"\tListNodes\x12\x1d.lazycake.v1.ListNodesRequest\x1a\x1e.lazycake.v1.ListNodesResponseB:Z8github.com/mkassab215/lazycake/internal/proto/lazycakev1b\x06proto3"
+	"\tListNodes\x12\x1d.lazycake.v1.ListNodesRequest\x1a\x1e.lazycake.v1.ListNodesResponse\x12V\n" +
+	"\rCreateGateway\x12!.lazycake.v1.CreateGatewayRequest\x1a\".lazycake.v1.CreateGatewayResponse\x12S\n" +
+	"\fListGateways\x12 .lazycake.v1.ListGatewaysRequest\x1a!.lazycake.v1.ListGatewaysResponseB:Z8github.com/mkassab215/lazycake/internal/proto/lazycakev1b\x06proto3"
 
 var (
 	file_lazycake_v1_customer_proto_rawDescOnce sync.Once
@@ -807,37 +1080,47 @@ func file_lazycake_v1_customer_proto_rawDescGZIP() []byte {
 	return file_lazycake_v1_customer_proto_rawDescData
 }
 
-var file_lazycake_v1_customer_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_lazycake_v1_customer_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_lazycake_v1_customer_proto_goTypes = []any{
-	(*TaskLimits)(nil),         // 0: lazycake.v1.TaskLimits
-	(*SubmitTaskRequest)(nil),  // 1: lazycake.v1.SubmitTaskRequest
-	(*SubmitTaskResponse)(nil), // 2: lazycake.v1.SubmitTaskResponse
-	(*GetTaskRequest)(nil),     // 3: lazycake.v1.GetTaskRequest
-	(*TaskStatus)(nil),         // 4: lazycake.v1.TaskStatus
-	(*StreamLogsRequest)(nil),  // 5: lazycake.v1.StreamLogsRequest
-	(*TaskLogLine)(nil),        // 6: lazycake.v1.TaskLogLine
-	(*ListNodesRequest)(nil),   // 7: lazycake.v1.ListNodesRequest
-	(*NodeStatus)(nil),         // 8: lazycake.v1.NodeStatus
-	(*ListNodesResponse)(nil),  // 9: lazycake.v1.ListNodesResponse
-	nil,                        // 10: lazycake.v1.SubmitTaskRequest.EnvEntry
+	(*TaskLimits)(nil),            // 0: lazycake.v1.TaskLimits
+	(*SubmitTaskRequest)(nil),     // 1: lazycake.v1.SubmitTaskRequest
+	(*SubmitTaskResponse)(nil),    // 2: lazycake.v1.SubmitTaskResponse
+	(*GetTaskRequest)(nil),        // 3: lazycake.v1.GetTaskRequest
+	(*TaskStatus)(nil),            // 4: lazycake.v1.TaskStatus
+	(*StreamLogsRequest)(nil),     // 5: lazycake.v1.StreamLogsRequest
+	(*TaskLogLine)(nil),           // 6: lazycake.v1.TaskLogLine
+	(*ListNodesRequest)(nil),      // 7: lazycake.v1.ListNodesRequest
+	(*NodeStatus)(nil),            // 8: lazycake.v1.NodeStatus
+	(*ListNodesResponse)(nil),     // 9: lazycake.v1.ListNodesResponse
+	(*CreateGatewayRequest)(nil),  // 10: lazycake.v1.CreateGatewayRequest
+	(*CreateGatewayResponse)(nil), // 11: lazycake.v1.CreateGatewayResponse
+	(*ListGatewaysRequest)(nil),   // 12: lazycake.v1.ListGatewaysRequest
+	(*GatewayStatus)(nil),         // 13: lazycake.v1.GatewayStatus
+	(*ListGatewaysResponse)(nil),  // 14: lazycake.v1.ListGatewaysResponse
+	nil,                           // 15: lazycake.v1.SubmitTaskRequest.EnvEntry
 }
 var file_lazycake_v1_customer_proto_depIdxs = []int32{
-	10, // 0: lazycake.v1.SubmitTaskRequest.env:type_name -> lazycake.v1.SubmitTaskRequest.EnvEntry
+	15, // 0: lazycake.v1.SubmitTaskRequest.env:type_name -> lazycake.v1.SubmitTaskRequest.EnvEntry
 	0,  // 1: lazycake.v1.SubmitTaskRequest.limits:type_name -> lazycake.v1.TaskLimits
 	8,  // 2: lazycake.v1.ListNodesResponse.nodes:type_name -> lazycake.v1.NodeStatus
-	1,  // 3: lazycake.v1.CustomerService.SubmitTask:input_type -> lazycake.v1.SubmitTaskRequest
-	3,  // 4: lazycake.v1.CustomerService.GetTask:input_type -> lazycake.v1.GetTaskRequest
-	5,  // 5: lazycake.v1.CustomerService.StreamLogs:input_type -> lazycake.v1.StreamLogsRequest
-	7,  // 6: lazycake.v1.CustomerService.ListNodes:input_type -> lazycake.v1.ListNodesRequest
-	2,  // 7: lazycake.v1.CustomerService.SubmitTask:output_type -> lazycake.v1.SubmitTaskResponse
-	4,  // 8: lazycake.v1.CustomerService.GetTask:output_type -> lazycake.v1.TaskStatus
-	6,  // 9: lazycake.v1.CustomerService.StreamLogs:output_type -> lazycake.v1.TaskLogLine
-	9,  // 10: lazycake.v1.CustomerService.ListNodes:output_type -> lazycake.v1.ListNodesResponse
-	7,  // [7:11] is the sub-list for method output_type
-	3,  // [3:7] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	13, // 3: lazycake.v1.ListGatewaysResponse.gateways:type_name -> lazycake.v1.GatewayStatus
+	1,  // 4: lazycake.v1.CustomerService.SubmitTask:input_type -> lazycake.v1.SubmitTaskRequest
+	3,  // 5: lazycake.v1.CustomerService.GetTask:input_type -> lazycake.v1.GetTaskRequest
+	5,  // 6: lazycake.v1.CustomerService.StreamLogs:input_type -> lazycake.v1.StreamLogsRequest
+	7,  // 7: lazycake.v1.CustomerService.ListNodes:input_type -> lazycake.v1.ListNodesRequest
+	10, // 8: lazycake.v1.CustomerService.CreateGateway:input_type -> lazycake.v1.CreateGatewayRequest
+	12, // 9: lazycake.v1.CustomerService.ListGateways:input_type -> lazycake.v1.ListGatewaysRequest
+	2,  // 10: lazycake.v1.CustomerService.SubmitTask:output_type -> lazycake.v1.SubmitTaskResponse
+	4,  // 11: lazycake.v1.CustomerService.GetTask:output_type -> lazycake.v1.TaskStatus
+	6,  // 12: lazycake.v1.CustomerService.StreamLogs:output_type -> lazycake.v1.TaskLogLine
+	9,  // 13: lazycake.v1.CustomerService.ListNodes:output_type -> lazycake.v1.ListNodesResponse
+	11, // 14: lazycake.v1.CustomerService.CreateGateway:output_type -> lazycake.v1.CreateGatewayResponse
+	14, // 15: lazycake.v1.CustomerService.ListGateways:output_type -> lazycake.v1.ListGatewaysResponse
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_lazycake_v1_customer_proto_init() }
@@ -851,7 +1134,7 @@ func file_lazycake_v1_customer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lazycake_v1_customer_proto_rawDesc), len(file_lazycake_v1_customer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

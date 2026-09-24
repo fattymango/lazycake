@@ -21,6 +21,9 @@ type Config struct {
 	CoordinatorAddr string
 	// Token authenticates this gateway to the coordinator. Required.
 	Token string
+	// GatewayID is the gw_<ulid> `lcctl gateway create` printed alongside
+	// this token. Required.
+	GatewayID string
 	// Services are the local services this gateway will forward to, e.g.
 	// "db:5432,cache:6379". Required, at least one.
 	Services []Service
@@ -37,6 +40,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		CoordinatorAddr: getenv("LAZYCAKE_COORDINATOR_ADDR"),
 		Token:           getenv("LAZYCAKE_TOKEN"),
+		GatewayID:       getenv("LAZYCAKE_GATEWAY_ID"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
 	}
 
@@ -51,6 +55,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.Token == "" {
 		return Config{}, fmt.Errorf("LAZYCAKE_TOKEN is required")
+	}
+	if cfg.GatewayID == "" {
+		return Config{}, fmt.Errorf("LAZYCAKE_GATEWAY_ID is required")
 	}
 	if len(cfg.Services) == 0 {
 		return Config{}, fmt.Errorf("LAZYCAKE_SERVICES is required, e.g. \"db:5432\"")
@@ -91,6 +98,7 @@ func (c Config) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("coordinator_addr", c.CoordinatorAddr),
 		slog.String("token", redact(c.Token)),
+		slog.String("gateway_id", c.GatewayID),
 		slog.String("services", strings.Join(names, ",")),
 		slog.Bool("dev", c.Dev),
 	)

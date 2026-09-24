@@ -22,12 +22,14 @@ type fakeStore struct {
 	images   map[string][]store.CachedImage
 	tasks    map[string]store.Task
 	idemKeys map[[2]string]string // (account_id, idempotency_key) -> task_id
+	gateways map[string]store.Gateway
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		accounts: map[string]store.Account{},
 		tokens:   map[string]store.APIToken{},
+		gateways: map[string]store.Gateway{},
 		nodes:    map[string]store.Node{},
 		hbs:      map[string]time.Time{},
 		images:   map[string][]store.CachedImage{},
@@ -277,5 +279,49 @@ func (f *fakeStore) ListCachedImages(context.Context, string) ([]store.CachedIma
 	panic("not used")
 }
 func (f *fakeStore) NodesWithImage(context.Context, string) ([]string, error) { panic("not used") }
+
+func (f *fakeStore) CreateGateway(ctx context.Context, g store.Gateway) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gateways[g.ID] = g
+	return nil
+}
+
+func (f *fakeStore) GetGateway(ctx context.Context, id string) (store.Gateway, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.gateways[id]
+	if !ok {
+		return store.Gateway{}, store.ErrNotFound
+	}
+	return g, nil
+}
+
+func (f *fakeStore) ListGatewaysByAccount(ctx context.Context, accountID string) ([]store.Gateway, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Gateway
+	for _, g := range f.gateways {
+		if g.AccountID == accountID {
+			out = append(out, g)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) SetGatewayConnected(ctx context.Context, id string, connected bool, noisePubkey []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.gateways[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	g.Connected = connected
+	if connected && len(noisePubkey) > 0 {
+		g.NoisePubkey = noisePubkey
+	}
+	f.gateways[id] = g
+	return nil
+}
 
 var _ store.Store = (*fakeStore)(nil)

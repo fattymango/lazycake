@@ -59,6 +59,20 @@ func handshakePair(t *testing.T) (initiator, responder *Session) {
 	return ir.s, rr.s
 }
 
+func TestPublicFromPrivateMatchesGenerated(t *testing.T) {
+	kp, err := GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := PublicFromPrivate(kp.Private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(pub, kp.Public) {
+		t.Fatal("derived public key does not match the one GenerateKeypair returned")
+	}
+}
+
 func TestRoundTrip10MB(t *testing.T) {
 	initiator, responder := handshakePair(t)
 

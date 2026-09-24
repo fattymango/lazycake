@@ -42,9 +42,10 @@ func readString(r io.Reader) (string, error) {
 // controlFrame is the first thing a connection sends, once, identifying
 // who's connecting and with what.
 type controlFrame struct {
-	Role      string // "agent" | "gateway"
-	Token     string
-	GatewayID string // only meaningful for role == "gateway"
+	Role        string // "agent" | "gateway"
+	Token       string
+	GatewayID   string // only meaningful for role == "gateway"
+	NoisePubkey string // hex-encoded; only meaningful for role == "gateway"
 }
 
 func writeControlFrame(w io.Writer, f controlFrame) error {
@@ -54,7 +55,10 @@ func writeControlFrame(w io.Writer, f controlFrame) error {
 	if err := writeString(w, f.Token); err != nil {
 		return err
 	}
-	return writeString(w, f.GatewayID)
+	if err := writeString(w, f.GatewayID); err != nil {
+		return err
+	}
+	return writeString(w, f.NoisePubkey)
 }
 
 func readControlFrame(r io.Reader) (controlFrame, error) {
@@ -67,6 +71,9 @@ func readControlFrame(r io.Reader) (controlFrame, error) {
 		return f, err
 	}
 	if f.GatewayID, err = readString(r); err != nil {
+		return f, err
+	}
+	if f.NoisePubkey, err = readString(r); err != nil {
 		return f, err
 	}
 	return f, nil

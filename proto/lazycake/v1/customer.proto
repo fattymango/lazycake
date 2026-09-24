@@ -10,6 +10,8 @@ service CustomerService {
   rpc GetTask(GetTaskRequest) returns (TaskStatus);
   rpc StreamLogs(StreamLogsRequest) returns (stream TaskLogLine);
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc CreateGateway(CreateGatewayRequest) returns (CreateGatewayResponse);
+  rpc ListGateways(ListGatewaysRequest) returns (ListGatewaysResponse);
 }
 
 message TaskLimits {
@@ -81,4 +83,30 @@ message NodeStatus {
 
 message ListNodesResponse {
   repeated NodeStatus nodes = 1;
+}
+
+message CreateGatewayRequest {
+  string label = 1;
+  // service_name:port, repeatable, e.g. "db:5432".
+  repeated string services = 2;
+}
+
+message CreateGatewayResponse {
+  string gateway_id = 1;
+  // install_token authenticates the gateway process itself
+  // (LAZYCAKE_TOKEN) - shown once, not retrievable again.
+  string install_token = 2;
+}
+
+message ListGatewaysRequest {}
+
+message GatewayStatus {
+  string gateway_id = 1;
+  string label      = 2;
+  bool   connected  = 3;
+  repeated string services = 4;
+}
+
+message ListGatewaysResponse {
+  repeated GatewayStatus gateways = 1;
 }

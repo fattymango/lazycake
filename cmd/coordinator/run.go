@@ -14,11 +14,13 @@ import (
 	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
 	"github.com/mkassab215/lazycake/internal/coordinator/config"
+	coordrelay "github.com/mkassab215/lazycake/internal/coordinator/relay"
 	"github.com/mkassab215/lazycake/internal/coordinator/scheduler"
 	"github.com/mkassab215/lazycake/internal/coordinator/seed"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/logging"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
+	"github.com/mkassab215/lazycake/internal/tunnel/quic"
 )
 
 const (
@@ -78,6 +80,15 @@ func run() error {
 	go func() { serveErr <- grpcServer.Serve(lis) }()
 	log.Info("agent gRPC listening", "addr", cfg.GRPCAddr)
 
+	tunnelRelay := &quic.Relay{
+		Auth:     coordrelay.StoreAdapter{Store: st},
+		Gateways: coordrelay.StoreAdapter{Store: st},
+		Log:      log,
+	}
+	relayErr := make(chan error, 1)
+	go func() { relayErr <- tunnelRelay.Serve(ctx, cfg.RelayAddr) }()
+	log.Info("tunnel relay listening", "addr", cfg.RelayAddr)
+
 	select {
 	case <-ctx.Done():
 		log.Info("coordinator shutting down")
@@ -85,5 +96,7 @@ func run() error {
 		return nil
 	case err := <-serveErr:
 		return fmt.Errorf("grpc server: %w", err)
+	case err := <-relayErr:
+		return fmt.Errorf("tunnel relay: %w", err)
 	}
 }

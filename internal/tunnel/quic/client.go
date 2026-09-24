@@ -2,6 +2,7 @@ package quic
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	quicgo "github.com/quic-go/quic-go"
@@ -15,10 +16,14 @@ func DialAgent(ctx context.Context, addr, token string) (*quicgo.Conn, error) {
 }
 
 // DialGateway connects to the relay at addr as gatewayID and completes the
-// control handshake. The returned Conn is then used with
+// control handshake, publishing noisePubkey so the coordinator can record
+// it (see Relay.OnGatewayRegistered). The returned Conn is then used with
 // AcceptRelayedStream to receive incoming task connections.
-func DialGateway(ctx context.Context, addr, token, gatewayID string) (*quicgo.Conn, error) {
-	return dial(ctx, addr, controlFrame{Role: "gateway", Token: token, GatewayID: gatewayID})
+func DialGateway(ctx context.Context, addr, token, gatewayID string, noisePubkey []byte) (*quicgo.Conn, error) {
+	return dial(ctx, addr, controlFrame{
+		Role: "gateway", Token: token, GatewayID: gatewayID,
+		NoisePubkey: hex.EncodeToString(noisePubkey),
+	})
 }
 
 func dial(ctx context.Context, addr string, cf controlFrame) (*quicgo.Conn, error) {
