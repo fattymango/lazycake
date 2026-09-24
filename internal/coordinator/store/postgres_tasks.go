@@ -212,6 +212,44 @@ func (s *PostgresStore) RequeueOverdue(ctx context.Context, now time.Time) ([]Ta
 	return out, rows.Err()
 }
 
+func (s *PostgresStore) RequeueTaskForRetry(ctx context.Context, id string, fromStates []TaskState) error {
+	fromStrs := make([]string, len(fromStates))
+	for i, st := range fromStates {
+		fromStrs[i] = string(st)
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET
+			state = 'queued', node_id = NULL, lease_expires_at = NULL, requeue_after = NULL,
+			attempt = attempt + 1
+		WHERE id = $1 AND state = ANY($2)`,
+		id, fromStrs)
+	if err != nil {
+		return fmt.Errorf("requeueing task for retry: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
+func (s *PostgresStore) AbandonTask(ctx context.Context, id string, fromStates []TaskState, at time.Time) error {
+	fromStrs := make([]string, len(fromStates))
+	for i, st := range fromStates {
+		fromStrs[i] = string(st)
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET state = 'abandoned', finished_at = $3
+		WHERE id = $1 AND state = ANY($2)`,
+		id, fromStrs, at)
+	if err != nil {
+		return fmt.Errorf("abandoning task: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *PostgresStore) ExtendNodeRequeue(ctx context.Context, nodeID string, newRequeueAfter time.Time) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks SET requeue_after = $2

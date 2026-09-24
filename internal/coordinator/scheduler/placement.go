@@ -25,6 +25,8 @@ func (s *Scheduler) Run(ctx context.Context, interval time.Duration) {
 }
 
 func (s *Scheduler) tick(ctx context.Context) {
+	s.reclaimOverdue(ctx)
+
 	nodes, err := s.Store.ListNodes(ctx)
 	if err != nil {
 		s.Log.Error("listing nodes for placement", "error", err)
