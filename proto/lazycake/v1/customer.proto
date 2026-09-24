@@ -1,0 +1,84 @@
+syntax = "proto3";
+package lazycake.v1;
+option go_package = "github.com/mkassab215/lazycake/internal/proto/lazycakev1";
+
+// CustomerService is what lcctl talks to: submit tasks, check status, read
+// logs, list nodes. Authenticated with a customer bearer token, the same
+// way an agent authenticates with an agent token on AgentService.
+service CustomerService {
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+  rpc GetTask(GetTaskRequest) returns (TaskStatus);
+  rpc StreamLogs(StreamLogsRequest) returns (stream TaskLogLine);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+}
+
+message TaskLimits {
+  double cpu_cores = 1;
+  int32 memory_mb  = 2;
+  int32 disk_mb    = 3;
+  int32 tmpfs_mb   = 4;
+  int32 pids       = 5;
+  int32 wall_timeout_s = 6;
+  int32 no_output_timeout_s = 7;
+  int32 egress_mb  = 8;
+}
+
+message SubmitTaskRequest {
+  string image         = 1;   // must be digest-pinned: "repo@sha256:..."
+  repeated string entrypoint = 2;
+  repeated string args  = 3;
+  map<string,string> env = 4;
+  string workdir        = 5;
+  TaskLimits limits      = 6;
+  string idempotency_key = 7;
+  repeated string gateway_ids = 8;
+  string delivery        = 9;  // "at_most_once" (default) | "at_least_once"
+}
+
+message SubmitTaskResponse {
+  string task_id = 1;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message TaskStatus {
+  string task_id     = 1;
+  string state       = 2;
+  int32  exit_code    = 3;
+  bool   has_exit_code = 4;
+  string exit_reason  = 5;
+  string node_id      = 6;
+  int64  created_at_unix_ms  = 7;
+  int64  started_at_unix_ms  = 8;
+  int64  finished_at_unix_ms = 9;
+}
+
+message StreamLogsRequest {
+  string task_id = 1;
+  bool   follow  = 2;
+}
+
+message TaskLogLine {
+  int64  seq    = 1;
+  string stream = 2;
+  int64  at_unix_ms = 3;
+  string line   = 4;
+}
+
+message ListNodesRequest {}
+
+message NodeStatus {
+  string node_id      = 1;
+  string hostname      = 2;
+  bool   connected     = 3;
+  double offer_cores   = 4;
+  int32  offer_memory_mb = 5;
+  int32  offer_disk_mb   = 6;
+  double trust_score   = 7;
+}
+
+message ListNodesResponse {
+  repeated NodeStatus nodes = 1;
+}

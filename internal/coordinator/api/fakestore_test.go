@@ -13,20 +13,26 @@ import (
 // test relying on unimplemented behaviour fails loudly instead of silently
 // returning zero values.
 type fakeStore struct {
-	mu     sync.Mutex
-	tokens map[string]store.APIToken
-	nodes  map[string]store.Node
-	hbs    map[string]time.Time
-	logs   []store.LogLine
-	images map[string][]store.CachedImage
+	mu       sync.Mutex
+	accounts map[string]store.Account
+	tokens   map[string]store.APIToken
+	nodes    map[string]store.Node
+	hbs      map[string]time.Time
+	logs     []store.LogLine
+	images   map[string][]store.CachedImage
+	tasks    map[string]store.Task
+	idemKeys map[[2]string]string // (account_id, idempotency_key) -> task_id
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		tokens: map[string]store.APIToken{},
-		nodes:  map[string]store.Node{},
-		hbs:    map[string]time.Time{},
-		images: map[string][]store.CachedImage{},
+		accounts: map[string]store.Account{},
+		tokens:   map[string]store.APIToken{},
+		nodes:    map[string]store.Node{},
+		hbs:      map[string]time.Time{},
+		images:   map[string][]store.CachedImage{},
+		tasks:    map[string]store.Task{},
+		idemKeys: map[[2]string]string{},
 	}
 }
 
@@ -103,42 +109,169 @@ func (f *fakeStore) AppendLogs(ctx context.Context, lines []store.LogLine) error
 	return nil
 }
 
-// --- unimplemented-by-design for this package's tests ---
+func (f *fakeStore) CreateAccount(ctx context.Context, a store.Account) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.accounts[a.ID] = a
+	return nil
+}
 
-func (f *fakeStore) CreateAccount(context.Context, store.Account) error { panic("not used") }
-func (f *fakeStore) GetAccount(context.Context, string) (store.Account, error) {
-	panic("not used")
+func (f *fakeStore) GetAccount(ctx context.Context, id string) (store.Account, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, ok := f.accounts[id]
+	if !ok {
+		return store.Account{}, store.ErrNotFound
+	}
+	return a, nil
 }
-func (f *fakeStore) AdjustBalance(context.Context, string, int64) (int64, error) {
-	panic("not used")
+
+func (f *fakeStore) AdjustBalance(ctx context.Context, id string, delta int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, ok := f.accounts[id]
+	if !ok {
+		return 0, store.ErrNotFound
+	}
+	a.BalanceMicros += delta
+	f.accounts[id] = a
+	return a.BalanceMicros, nil
 }
-func (f *fakeStore) CreateToken(context.Context, store.APIToken) error { panic("not used") }
-func (f *fakeStore) ListNodes(context.Context) ([]store.Node, error)   { panic("not used") }
-func (f *fakeStore) SetNodeBenchScore(context.Context, string, float64) error {
-	panic("not used")
+
+func (f *fakeStore) CreateToken(ctx context.Context, t store.APIToken) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tokens[string(t.TokenHash)] = t
+	return nil
 }
-func (f *fakeStore) SetNodeTrustScore(context.Context, string, float64) error {
-	panic("not used")
+
+func (f *fakeStore) ListNodes(ctx context.Context) ([]store.Node, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]store.Node, 0, len(f.nodes))
+	for _, n := range f.nodes {
+		out = append(out, n)
+	}
+	return out, nil
 }
-func (f *fakeStore) CreateTask(context.Context, store.Task) error { panic("not used") }
-func (f *fakeStore) GetTask(context.Context, string) (store.Task, error) {
-	panic("not used")
+
+func (f *fakeStore) SetNodeBenchScore(ctx context.Context, id string, score float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := f.nodes[id]
+	n.BenchScore = &score
+	f.nodes[id] = n
+	return nil
 }
-func (f *fakeStore) ListTasksByNode(context.Context, string, []store.TaskState) ([]store.Task, error) {
-	panic("not used")
+
+func (f *fakeStore) SetNodeTrustScore(ctx context.Context, id string, score float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := f.nodes[id]
+	n.TrustScore = score
+	f.nodes[id] = n
+	return nil
 }
+
+func (f *fakeStore) CreateTask(ctx context.Context, t store.Task) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if t.IdempotencyKey != nil {
+		key := [2]string{t.AccountID, *t.IdempotencyKey}
+		if _, exists := f.idemKeys[key]; exists {
+			return store.ErrDuplicate
+		}
+		f.idemKeys[key] = t.ID
+	}
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = time.Now()
+	}
+	f.tasks[t.ID] = t
+	return nil
+}
+
+func (f *fakeStore) GetTask(ctx context.Context, id string) (store.Task, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[id]
+	if !ok {
+		return store.Task{}, store.ErrNotFound
+	}
+	return t, nil
+}
+
+func (f *fakeStore) ListTasksByNode(ctx context.Context, nodeID string, states []store.TaskState) ([]store.Task, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	want := map[store.TaskState]bool{}
+	for _, s := range states {
+		want[s] = true
+	}
+	var out []store.Task
+	for _, t := range f.tasks {
+		if t.NodeID != nil && *t.NodeID == nodeID && want[t.State] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) ClaimQueuedTask(context.Context, string, store.CapacityFilter, time.Time) (store.Task, error) {
 	panic("not used")
 }
-func (f *fakeStore) TransitionTask(context.Context, string, []store.TaskState, store.TaskState, store.TaskUpdate) error {
-	panic("not used")
+
+func (f *fakeStore) TransitionTask(ctx context.Context, id string, from []store.TaskState, to store.TaskState, upd store.TaskUpdate) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	matched := false
+	for _, s := range from {
+		if t.State == s {
+			matched = true
+		}
+	}
+	if !matched {
+		return store.ErrConflict
+	}
+	t.State = to
+	if upd.NodeID != nil {
+		t.NodeID = upd.NodeID
+	}
+	if upd.ExitCode != nil {
+		t.ExitCode = upd.ExitCode
+	}
+	if upd.ExitReason != nil {
+		t.ExitReason = upd.ExitReason
+	}
+	if upd.StartedAt != nil {
+		t.StartedAt = upd.StartedAt
+	}
+	if upd.FinishedAt != nil {
+		t.FinishedAt = upd.FinishedAt
+	}
+	f.tasks[id] = t
+	return nil
 }
+
 func (f *fakeStore) RequeueOverdue(context.Context, time.Time) ([]store.Task, error) {
 	panic("not used")
 }
-func (f *fakeStore) ListLogs(context.Context, string, int64) ([]store.LogLine, error) {
-	panic("not used")
+
+func (f *fakeStore) ListLogs(ctx context.Context, taskID string, sinceSeq int64) ([]store.LogLine, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.LogLine
+	for _, l := range f.logs {
+		if l.TaskID == taskID && l.Seq > sinceSeq {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
+
 func (f *fakeStore) RemoveCachedImages(context.Context, string, []string) error { panic("not used") }
 func (f *fakeStore) ListCachedImages(context.Context, string) ([]store.CachedImage, error) {
 	panic("not used")
