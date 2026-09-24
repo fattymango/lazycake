@@ -21,6 +21,7 @@ import (
 	lcexec "github.com/mkassab215/lazycake/internal/agent/exec"
 	"github.com/mkassab215/lazycake/internal/agent/lease"
 	"github.com/mkassab215/lazycake/internal/agent/probe"
+	"github.com/mkassab215/lazycake/internal/agent/reconcile"
 	lcruntime "github.com/mkassab215/lazycake/internal/agent/runtime"
 	"github.com/mkassab215/lazycake/internal/id"
 	"github.com/mkassab215/lazycake/internal/logging"
@@ -81,6 +82,14 @@ func run() error {
 	hostname, _ := os.Hostname()
 	instanceID := id.New("ins")
 	bootID := readBootID()
+
+	// Kill anything left behind by a previous run before accepting any new
+	// work (IMPLEMENTATION.md task 3.7, PLAN.md "Killing orphans") - this
+	// must happen before runner.Run below, since that's what starts
+	// dispatching.
+	if err := reconcile.Sweep(ctx, rt, instanceID, bootID, log); err != nil {
+		return fmt.Errorf("startup reconciliation sweep: %w", err)
+	}
 
 	runner := &conn.Runner{
 		Client: lazycakev1.NewAgentServiceClient(clientConn),
