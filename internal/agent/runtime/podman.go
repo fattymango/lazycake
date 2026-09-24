@@ -151,6 +151,31 @@ func (r *PodmanRuntime) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *PodmanRuntime) Exec(ctx context.Context, containerID string, cmd []string) error {
+	resp, err := r.cli.ContainerExecCreate(ctx, containerID, types.ExecConfig{
+		Cmd: cmd, AttachStdout: true, AttachStderr: true,
+	})
+	if err != nil {
+		return fmt.Errorf("creating exec for %s: %w", containerID, err)
+	}
+
+	attach, err := r.cli.ContainerExecAttach(ctx, resp.ID, types.ExecStartCheck{})
+	if err != nil {
+		return fmt.Errorf("attaching exec for %s: %w", containerID, err)
+	}
+	defer attach.Close()
+	output, _ := io.ReadAll(attach.Reader)
+
+	inspect, err := r.cli.ContainerExecInspect(ctx, resp.ID)
+	if err != nil {
+		return fmt.Errorf("inspecting exec for %s: %w", containerID, err)
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("exec %v in %s exited %d: %s", cmd, containerID, inspect.ExitCode, output)
+	}
+	return nil
+}
+
 func (r *PodmanRuntime) ListLabelled(ctx context.Context, key, value string) ([]string, error) {
 	f := filters.NewArgs(filters.Arg("label", fmt.Sprintf("%s=%s", key, value)))
 	containers, err := r.cli.ContainerList(ctx, types.ContainerListOptions{All: true, Filters: f})
