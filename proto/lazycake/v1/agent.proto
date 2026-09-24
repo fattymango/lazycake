@@ -1,0 +1,154 @@
+syntax = "proto3";
+package lazycake.v1;
+option go_package = "github.com/mkassab215/lazycake/internal/proto/lazycakev1";
+
+service AgentService {
+  // Long-lived bidirectional stream. Agent dials out through NAT.
+  rpc Connect(stream AgentMessage) returns (stream CoordinatorMessage);
+}
+
+message AgentMessage {
+  oneof body {
+    Register      register     = 1;
+    Heartbeat     heartbeat    = 2;
+    CapacityReport capacity    = 3;
+    CacheDelta    cache_delta  = 4;
+    TaskAccepted  accepted     = 5;
+    TaskRejected  rejected     = 6;
+    TaskStarted   started      = 7;
+    TaskFinished  finished     = 8;
+    LogBatch      logs         = 9;
+  }
+}
+
+message CoordinatorMessage {
+  oneof body {
+    RegisterAck  register_ack = 1;
+    HeartbeatAck heartbeat_ack = 2;
+    Dispatch     dispatch      = 3;
+    Cancel       cancel        = 4;
+  }
+}
+
+message Register {
+  string token        = 1;
+  string hostname     = 2;
+  string arch         = 3;
+  repeated string cpu_flags = 4;
+  Capabilities caps   = 5;
+  Offer offer         = 6;
+  string boot_id      = 7;
+  string instance_id  = 8;
+  repeated CachedImage images = 9;  // full reconciliation on connect
+}
+
+message Capabilities {
+  bool memory_limit = 1;
+  bool cpu_quota    = 2;
+  bool pids_limit   = 3;
+  bool disk_limit   = 4;
+  bool gvisor       = 5;
+  bool systemd_slice = 6;
+  string runtime    = 7;   // "podman" | "docker"
+  string cgroup_version = 8;
+}
+
+message Offer {
+  double cores    = 1;
+  int32 memory_mb = 2;
+  int32 disk_mb   = 3;
+  int64 bandwidth_mb_month = 4;
+  int32 image_cache_mb = 5;
+}
+
+message RegisterAck {
+  string node_id      = 1;
+  int32 heartbeat_s   = 2;
+  int32 lease_s       = 3;   // agent fences at this many seconds without ack
+  bool  benchmark_now = 4;
+}
+
+message Heartbeat {
+  int64 seq = 1;
+  repeated string running_task_ids = 2;  // re-announce for adoption
+}
+
+message HeartbeatAck { int64 seq = 1; }
+
+message CapacityReport {
+  Offer offer          = 1;
+  double free_cores    = 2;
+  int32 free_memory_mb = 3;
+  int32 free_disk_mb   = 4;
+  double load_avg      = 5;
+  double temp_celsius  = 6;
+}
+
+message CachedImage {
+  string digest     = 1;
+  int64  size_bytes = 2;
+}
+
+message CacheDelta {
+  repeated CachedImage pulled  = 1;
+  repeated string      evicted = 2;
+}
+
+message Dispatch {
+  string task_id       = 1;
+  string image         = 2;   // digest-pinned
+  repeated string entrypoint = 3;
+  repeated string args  = 4;
+  map<string,string> env = 5;
+  string workdir        = 6;
+  Limits limits         = 7;
+  string isolation      = 8;
+  repeated TunnelTarget targets = 9;
+  int64 lease_expires_unix_ms = 10;
+}
+
+message Limits {
+  double cpu_cores = 1;
+  int32 memory_mb  = 2;
+  int32 disk_mb    = 3;
+  int32 tmpfs_mb   = 4;
+  int32 pids       = 5;
+  int32 wall_timeout_s = 6;
+  int32 no_output_timeout_s = 7;
+  int32 egress_mb  = 8;
+}
+
+message TunnelTarget {
+  string gateway_id = 1;
+  string hostname   = 2;   // what the container resolves
+  int32  port       = 3;
+  bytes  noise_pubkey = 4;
+}
+
+message TaskAccepted { string task_id = 1; }
+message TaskRejected { string task_id = 1; string reason = 2; }
+message TaskStarted  { string task_id = 1; int64 at_unix_ms = 2; }
+
+message TaskFinished {
+  string task_id     = 1;
+  int32  exit_code   = 2;
+  string exit_reason = 3;
+  int64  at_unix_ms  = 4;
+  int64  bytes_sent  = 5;
+  int64  bytes_recv  = 6;
+  int64  cold_pull_bytes = 7;
+}
+
+message Cancel { string task_id = 1; string reason = 2; }
+
+message LogBatch {
+  string task_id = 1;
+  repeated LogLine lines = 2;
+}
+
+message LogLine {
+  int64  seq    = 1;
+  string stream = 2;
+  int64  at_unix_ms = 3;
+  string line   = 4;
+}
