@@ -288,3 +288,38 @@ avoid, so pinning it is the fix, not a workaround. Not a regression from any
 task 3.2 code change; caught only because task 3.2's verify run happened to
 exercise the full integration suite.
 
+## Task 3.5: systemd unit verify is BLOCKED on this VM (same root cause as 1.5/1.6)
+
+Task 3.5 asks for `deploy/systemd/lazycake-agent.service` (a user unit with
+`Delegate=yes` and `KillMode=control-group`, so podman's systemd cgroup
+manager can create a transient scope per container as a child of the
+agent's own delegated cgroup, and a bare `kill -9` on the agent's PID takes
+every container with it via systemd's normal service-exit cleanup) - this
+is exactly the mechanism task 1.5's `agent probe` already checks for
+(`CheckSystemdSlice`), and this VM has never had it working: `systemctl
+--user` fails with "Failed to connect to user scope bus via local
+transport: No such file or directory" (no user D-Bus session in this nested
+WSL2 environment), the same finding documented under "Build environment"
+and reconfirmed at tasks 1.5/1.6/1.8/1.10. The unit file itself is written
+and `systemd-analyze verify` confirms it parses correctly (Delegate/
+KillMode accepted, the only complaints are the binary not being installed
+yet and a cosmetic executable-bit warning, both expected/fixed) - but the
+actual "kill -9 kills every container within 5s" behavior needs a real
+`systemctl --user` session with cgroup v2 delegation to exercise, which
+this machine cannot provide. **No Go code changes were needed for this
+task** - podman's own systemd cgroup manager already creates the
+per-container transient scope automatically whenever it successfully talks
+to systemd (this is what `CheckSystemdSlice`/`CgroupVersion` have been
+verifying since task 1.5); `PodmanRuntime` doesn't need to do anything
+differently. Marked BLOCKED in PROGRESS.md per IMPLEMENTATION.md rule 4;
+verify on a real target host with a working user session:
+```
+systemctl --user daemon-reload
+systemctl --user enable --now lazycake-agent
+lcctl submit ... --timeout 300 &
+sleep 10
+kill -9 $(pgrep -f 'bin/agent')
+sleep 5
+podman ps --filter label=lazycake.task_id   # must be empty
+```
+
