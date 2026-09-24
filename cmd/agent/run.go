@@ -18,6 +18,7 @@ import (
 	"github.com/fattymango/lazycake/internal/agent/config"
 	"github.com/fattymango/lazycake/internal/agent/conn"
 	lcexec "github.com/fattymango/lazycake/internal/agent/exec"
+	"github.com/fattymango/lazycake/internal/agent/lease"
 	"github.com/fattymango/lazycake/internal/agent/probe"
 	lcruntime "github.com/fattymango/lazycake/internal/agent/runtime"
 	"github.com/fattymango/lazycake/internal/id"
@@ -117,7 +118,19 @@ func run() error {
 	runner.Handlers = conn.Handlers{
 		OnDispatch:     executor.HandleDispatch,
 		RunningTaskIDs: ledger.TaskIDs,
+		OnRegistered:   func(*lazycakev1.RegisterAck) { executor.ReplayPending() },
 	}
+
+	watcher := &lease.Watcher{
+		Deadline: runner.FenceDeadline,
+		Log:      log,
+		OnFence: func() {
+			fenceCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			executor.FenceAll(fenceCtx)
+		},
+	}
+	go watcher.Run(ctx)
 
 	err = runner.Run(ctx)
 	log.Info("agent shutting down")

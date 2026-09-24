@@ -40,6 +40,76 @@ type Executor struct {
 	RelayAddr    string
 	Token        string
 	AgentKeypair noise.Keypair
+
+	mu      sync.Mutex
+	active  map[string]*activeTask              // task_id -> running container
+	pending map[string]*lazycakev1.AgentMessage // task_id -> not-yet-confirmed TaskFinished, for replay on reconnect
+}
+
+type activeTask struct {
+	containerID string
+	fenced      bool
+}
+
+// FenceAll is the agent's self-fencing action (task 3.2, PLAN.md "Lease and
+// fencing"): called once internal/agent/lease.Watcher decides the agent
+// has lost contact with the coordinator for too long. Every running
+// container is stopped (SIGTERM, grace, SIGKILL - see runtime.Stop) and
+// marked so its eventual exit is reported as "fenced" rather than
+// whatever exit code SIGKILL happens to produce, once there's a
+// connection to report it on again (see ReplayPending).
+func (e *Executor) FenceAll(ctx context.Context) {
+	e.mu.Lock()
+	tasks := make(map[string]string, len(e.active))
+	for taskID, t := range e.active {
+		t.fenced = true
+		tasks[taskID] = t.containerID
+	}
+	e.mu.Unlock()
+
+	for taskID, containerID := range tasks {
+		e.Log.Warn("self-fencing task", "task_id", taskID, "container_id", containerID)
+		if err := e.Runtime.Stop(ctx, containerID, 10*time.Second); err != nil {
+			e.Log.Warn("stopping fenced container", "task_id", taskID, "error", err)
+		}
+	}
+}
+
+// ReplayPending resends every TaskFinished the agent couldn't confirm was
+// delivered (most notably a fenced task's report, sent while disconnected
+// - PLAN.md "report it on reconnect"). Call this from
+// conn.Handlers.OnRegistered.
+func (e *Executor) ReplayPending() {
+	e.mu.Lock()
+	pending := e.pending
+	e.pending = make(map[string]*lazycakev1.AgentMessage)
+	e.mu.Unlock()
+
+	for taskID, msg := range pending {
+		e.Log.Info("replaying finished report after reconnect", "task_id", taskID)
+		e.Send.Send(msg)
+	}
+}
+
+func (e *Executor) registerActive(taskID, containerID string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.active == nil {
+		e.active = make(map[string]*activeTask)
+	}
+	e.active[taskID] = &activeTask{containerID: containerID}
+}
+
+// unregisterActive returns whether the task had been fenced before this
+// call, so the caller can report the right exit reason.
+func (e *Executor) unregisterActive(taskID string) (wasFenced bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if t, ok := e.active[taskID]; ok {
+		wasFenced = t.fenced
+		delete(e.active, taskID)
+	}
+	return wasFenced
 }
 
 // HandleDispatch is a conn.Handlers.OnDispatch-compatible callback: it
@@ -58,7 +128,24 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 	// the same task.
 	var finishOnce sync.Once
 	sendFinished := func(exitCode int32, reason string) {
-		finishOnce.Do(func() { e.Send.Send(finished(d.GetTaskId(), exitCode, reason, time.Now())) })
+		finishOnce.Do(func() {
+			if e.unregisterActive(d.GetTaskId()) {
+				// Fenced after this call was already headed for a
+				// different reason (e.g. it also hit its wall timeout
+				// right as the fence fired) - fencing is the more
+				// specific, more correct explanation.
+				reason = "fenced"
+				exitCode = -1
+			}
+			msg := finished(d.GetTaskId(), exitCode, reason, time.Now())
+			e.mu.Lock()
+			if e.pending == nil {
+				e.pending = make(map[string]*lazycakev1.AgentMessage)
+			}
+			e.pending[d.GetTaskId()] = msg
+			e.mu.Unlock()
+			e.Send.Send(msg)
+		})
 	}
 
 	want := capacity.Resources{
@@ -107,6 +194,7 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 		return
 	}
 	e.Send.Send(started(d.GetTaskId(), time.Now()))
+	e.registerActive(d.GetTaskId(), id)
 
 	go e.streamLogs(ctx, d.GetTaskId(), id)
 

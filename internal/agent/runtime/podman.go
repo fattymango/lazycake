@@ -79,6 +79,11 @@ func (r *PodmanRuntime) Create(ctx context.Context, spec Spec) (string, error) {
 			Memory:    int64(spec.MemoryMB) << 20,
 			PidsLimit: pidsLimitPtr(spec.PIDs),
 		},
+		// Pinned rather than inherited: a host defaulting to the journald
+		// log driver (podman's own default on some distros) makes the
+		// Docker-API ContainerLogs call Logs() relies on come back empty -
+		// k8s-file is what that API path actually reads from reliably.
+		LogConfig: container.LogConfig{Type: "k8s-file"},
 	}
 	if spec.Isolation == "gvisor" {
 		hostCfg.Runtime = "runsc"
