@@ -74,7 +74,13 @@ type Capabilities struct {
 
 // Node is a host's registered machine.
 type Node struct {
-	ID              string
+	ID string
+	// InstanceID identifies one agent process's lifetime (minted fresh on
+	// every process start, stable across that process's reconnects). It's
+	// how a reconnecting agent is recognised as the same node rather than
+	// getting a brand new node_id - and with it a fresh, empty set of
+	// assigned tasks - every time (IMPLEMENTATION.md task 3.3).
+	InstanceID      string
 	AccountID       string
 	Hostname        string
 	Arch            string

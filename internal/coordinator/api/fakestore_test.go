@@ -72,6 +72,17 @@ func (f *fakeStore) GetNode(ctx context.Context, id string) (store.Node, error) 
 	return n, nil
 }
 
+func (f *fakeStore) GetNodeByInstanceID(ctx context.Context, accountID, instanceID string) (store.Node, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.AccountID == accountID && n.InstanceID == instanceID && instanceID != "" {
+			return n, nil
+		}
+	}
+	return store.Node{}, store.ErrNotFound
+}
+
 func (f *fakeStore) SetNodeConnected(ctx context.Context, id string, connected bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -40,6 +40,7 @@ message Register {
   string boot_id      = 7;
   string instance_id  = 8;
   repeated CachedImage images = 9;  // full reconciliation on connect
+  repeated string running_task_ids = 10;  // re-announced on reconnect for adoption
 }
 
 message Capabilities {

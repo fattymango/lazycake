@@ -38,6 +38,10 @@ type Tokens interface {
 type Nodes interface {
 	UpsertNode(ctx context.Context, n Node) error
 	GetNode(ctx context.Context, id string) (Node, error)
+	// GetNodeByInstanceID looks up a node by the stable per-process identity
+	// an agent presents on every Register, so a reconnect can be recognised
+	// as the same node (task 3.3). Returns ErrNotFound if none matches.
+	GetNodeByInstanceID(ctx context.Context, accountID, instanceID string) (Node, error)
 	ListNodes(ctx context.Context) ([]Node, error)
 	SetNodeConnected(ctx context.Context, id string, connected bool) error
 	RecordHeartbeat(ctx context.Context, id string, at time.Time) error

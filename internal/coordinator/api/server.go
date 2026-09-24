@@ -166,6 +166,7 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 		return err
 	}
 	log.Info("agent registered", "hostname", reg.GetHostname(), "arch", reg.GetArch())
+	s.adoptOrCancel(ctx, nodeID, reg.GetRunningTaskIds())
 
 	// Pump outbound messages to the stream concurrently with the inbound
 	// receive loop below.
@@ -208,15 +209,26 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 		return "", status.Error(codes.PermissionDenied, "token is not an agent token")
 	}
 
+	// Reuse the same node row across reconnects of the same agent process
+	// (task 3.3): a fresh node_id every time would mean a fresh, empty set
+	// of assigned tasks every time, making adoption impossible.
 	nodeID := id.New(id.Node)
+	if instanceID := reg.GetInstanceId(); instanceID != "" {
+		if existing, err := s.Store.GetNodeByInstanceID(ctx, tok.AccountID, instanceID); err == nil {
+			nodeID = existing.ID
+		} else if err != store.ErrNotFound {
+			return "", fmt.Errorf("looking up node by instance id: %w", err)
+		}
+	}
 	caps := reg.GetCaps()
 	offer := reg.GetOffer()
 	n := store.Node{
-		ID:        nodeID,
-		AccountID: tok.AccountID,
-		Hostname:  reg.GetHostname(),
-		Arch:      reg.GetArch(),
-		CPUFlags:  reg.GetCpuFlags(),
+		ID:         nodeID,
+		AccountID:  tok.AccountID,
+		InstanceID: reg.GetInstanceId(),
+		Hostname:   reg.GetHostname(),
+		Arch:       reg.GetArch(),
+		CPUFlags:   reg.GetCpuFlags(),
 		Capabilities: store.Capabilities{
 			MemoryLimit:   caps.GetMemoryLimit(),
 			CPUQuota:      caps.GetCpuQuota(),
@@ -235,6 +247,38 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 		return "", fmt.Errorf("upserting node: %w", err)
 	}
 	return nodeID, nil
+}
+
+// adoptOrCancel implements task 3.3's reconnect adoption: for every task ID
+// the agent re-announces as still running in Register, either leave it be
+// (the coordinator still considers it assigned to this node and hasn't
+// requeued it) or tell the agent to kill it (the coordinator has already
+// moved on - reassigned elsewhere or reclaimed - so a duplicate dispatch
+// must not be allowed to keep running silently on this node too).
+func (s *Server) adoptOrCancel(ctx context.Context, nodeID string, runningTaskIDs []string) {
+	now := s.now()
+	for _, taskID := range runningTaskIDs {
+		t, err := s.Store.GetTask(ctx, taskID)
+		if err != nil {
+			s.Log.Warn("adoption: looking up reported-running task", "node_id", nodeID, "task_id", taskID, "error", err)
+			continue
+		}
+
+		stillAssigned := t.NodeID != nil && *t.NodeID == nodeID &&
+			(t.State == store.TaskDispatched || t.State == store.TaskRunning) &&
+			(t.RequeueAfter == nil || now.Before(*t.RequeueAfter))
+		if stillAssigned {
+			s.Log.Info("adopting task on reconnect", "node_id", nodeID, "task_id", taskID)
+			continue
+		}
+
+		s.Log.Warn("task no longer assigned to reconnecting node, cancelling", "node_id", nodeID, "task_id", taskID, "state", t.State)
+		if err := s.Registry.Send(nodeID, &lazycakev1.CoordinatorMessage{
+			Body: &lazycakev1.CoordinatorMessage_Cancel{Cancel: &lazycakev1.Cancel{TaskId: taskID, Reason: "reclaimed"}},
+		}); err != nil {
+			s.Log.Warn("sending cancel for reclaimed task", "node_id", nodeID, "task_id", taskID, "error", err)
+		}
+	}
 }
 
 func (s *Server) handleMessage(ctx context.Context, nodeID string, msg *lazycakev1.AgentMessage) error {

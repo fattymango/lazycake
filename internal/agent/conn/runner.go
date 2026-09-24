@@ -165,17 +165,22 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		return fmt.Errorf("opening connect stream: %w", err)
 	}
 
+	var running []string
+	if r.Handlers.RunningTaskIDs != nil {
+		running = r.Handlers.RunningTaskIDs()
+	}
 	if err := stream.Send(&lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_Register{
 		Register: &lazycakev1.Register{
-			Token:      r.Identity.Token,
-			Hostname:   r.Identity.Hostname,
-			Arch:       r.Identity.Arch,
-			CpuFlags:   r.Identity.CPUFlags,
-			Caps:       r.Identity.Caps,
-			Offer:      r.Identity.Offer,
-			BootId:     r.Identity.BootID,
-			InstanceId: r.Identity.InstanceID,
-			Images:     r.Identity.Images,
+			Token:          r.Identity.Token,
+			Hostname:       r.Identity.Hostname,
+			Arch:           r.Identity.Arch,
+			CpuFlags:       r.Identity.CPUFlags,
+			Caps:           r.Identity.Caps,
+			Offer:          r.Identity.Offer,
+			BootId:         r.Identity.BootID,
+			InstanceId:     r.Identity.InstanceID,
+			Images:         r.Identity.Images,
+			RunningTaskIds: running,
 		},
 	}}); err != nil {
 		return fmt.Errorf("sending register: %w", err)

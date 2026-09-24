@@ -123,10 +123,11 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 		return fmt.Errorf("marshalling capabilities: %w", err)
 	}
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO nodes (id, account_id, hostname, arch, cpu_flags, capabilities,
+		INSERT INTO nodes (id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
 			offer_cores, offer_memory_mb, offer_disk_mb, connected)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
 		ON CONFLICT (id) DO UPDATE SET
+			instance_id = EXCLUDED.instance_id,
 			hostname = EXCLUDED.hostname,
 			arch = EXCLUDED.arch,
 			cpu_flags = EXCLUDED.cpu_flags,
@@ -135,7 +136,7 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 			offer_memory_mb = EXCLUDED.offer_memory_mb,
 			offer_disk_mb = EXCLUDED.offer_disk_mb,
 			connected = true`,
-		n.ID, n.AccountID, n.Hostname, n.Arch, orEmpty(n.CPUFlags), caps,
+		n.ID, n.AccountID, nullIfEmpty(n.InstanceID), n.Hostname, n.Arch, orEmpty(n.CPUFlags), caps,
 		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB)
 	if err != nil {
 		return fmt.Errorf("upserting node: %w", err)
@@ -143,12 +144,12 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 	return nil
 }
 
+const nodeColumns = `id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
+	offer_cores, offer_memory_mb, offer_disk_mb, bench_score, trust_score,
+	connected, last_heartbeat_at, created_at`
+
 func (s *PostgresStore) GetNode(ctx context.Context, id string) (Node, error) {
-	row := s.pool.QueryRow(ctx, `
-		SELECT id, account_id, hostname, arch, cpu_flags, capabilities,
-			offer_cores, offer_memory_mb, offer_disk_mb, bench_score, trust_score,
-			connected, last_heartbeat_at, created_at
-		FROM nodes WHERE id = $1`, id)
+	row := s.pool.QueryRow(ctx, `SELECT `+nodeColumns+` FROM nodes WHERE id = $1`, id)
 	n, err := scanNode(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Node{}, ErrNotFound
@@ -159,12 +160,22 @@ func (s *PostgresStore) GetNode(ctx context.Context, id string) (Node, error) {
 	return n, nil
 }
 
+func (s *PostgresStore) GetNodeByInstanceID(ctx context.Context, accountID, instanceID string) (Node, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT `+nodeColumns+` FROM nodes WHERE account_id = $1 AND instance_id = $2`,
+		accountID, instanceID)
+	n, err := scanNode(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Node{}, ErrNotFound
+	}
+	if err != nil {
+		return Node{}, fmt.Errorf("getting node by instance id: %w", err)
+	}
+	return n, nil
+}
+
 func (s *PostgresStore) ListNodes(ctx context.Context) ([]Node, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, account_id, hostname, arch, cpu_flags, capabilities,
-			offer_cores, offer_memory_mb, offer_disk_mb, bench_score, trust_score,
-			connected, last_heartbeat_at, created_at
-		FROM nodes ORDER BY created_at`)
+	rows, err := s.pool.Query(ctx, `SELECT `+nodeColumns+` FROM nodes ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("listing nodes: %w", err)
 	}
@@ -188,11 +199,15 @@ type rowScanner interface {
 func scanNode(row rowScanner) (Node, error) {
 	var n Node
 	var capsRaw []byte
-	err := row.Scan(&n.ID, &n.AccountID, &n.Hostname, &n.Arch, &n.CPUFlags, &capsRaw,
+	var instanceID *string
+	err := row.Scan(&n.ID, &n.AccountID, &instanceID, &n.Hostname, &n.Arch, &n.CPUFlags, &capsRaw,
 		&n.OfferCores, &n.OfferMemoryMB, &n.OfferDiskMB, &n.BenchScore, &n.TrustScore,
 		&n.Connected, &n.LastHeartbeatAt, &n.CreatedAt)
 	if err != nil {
 		return Node{}, err
+	}
+	if instanceID != nil {
+		n.InstanceID = *instanceID
 	}
 	if len(capsRaw) > 0 {
 		if err := json.Unmarshal(capsRaw, &n.Capabilities); err != nil {
@@ -200,6 +215,16 @@ func scanNode(row rowScanner) (Node, error) {
 		}
 	}
 	return n, nil
+}
+
+// nullIfEmpty coalesces "" to SQL NULL: instance_id's partial unique index
+// excludes NULL specifically so nodes that never report one (shouldn't
+// happen outside tests) don't collide with each other under it.
+func nullIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (s *PostgresStore) SetNodeConnected(ctx context.Context, id string, connected bool) error {
