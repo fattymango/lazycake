@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lazycake
+      POSTGRES_PASSWORD: lazycake
+      POSTGRES_DB: lazycake
+    ports:
+      - "5432:5432"
+    volumes:
+      - lazycake-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lazycake"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  lazycake-postgres:
