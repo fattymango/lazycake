@@ -122,6 +122,20 @@ at `/run/user/1000/bus`, but connecting to it fails with "Transport
 endpoint is not connected" for reasons not chased down further here) this
 would just work, unmodified.
 
+Dug one level further into *why*: `systemd --user` for uid 1000 is actually
+running (`ps` shows `/usr/lib/systemd/systemd --user`, pid 343), and its
+`dbus-broker` is genuinely listening on `/run/user/1000/bus` (confirmed via
+`ss -xlp`, socket owned by the right pid). Yet any client connecting to
+that exact path - `systemctl --user`, `busctl`, podman's own client - gets
+`ENOTCONN` ("Transport endpoint is not connected"), not the
+`ECONNREFUSED`/`ENOENT` you'd expect from a genuinely dead or missing
+socket. That smells like a WSL2/`podman-machine-default`-specific AF_UNIX
+socket quirk (this VM's rootfs sits on a virtiofs/9p-backed mount under
+Windows) rather than anything wrong with the systemd/dbus setup itself.
+Not chasing it further - it's infrastructure archaeology, not a LazyCake
+bug, and the code already has honest, working fallback behaviour for
+exactly this situation (refuse to advertise capabilities that don't work).
+
 ## docker/docker/client dependency pin
 
 Section 3's approved dependency list names `github.com/docker/docker/client`
