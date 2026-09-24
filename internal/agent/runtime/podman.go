@@ -65,6 +65,11 @@ func (r *PodmanRuntime) Create(ctx context.Context, spec Spec) (string, error) {
 		Env:        envList(spec.Env),
 		WorkingDir: spec.Workdir,
 		Labels:     spec.Labels,
+		// Tty merges stdout/stderr into one unframed stream. Without it the
+		// engine multiplexes both streams with an 8-byte header per frame
+		// (the stdcopy format), which Logs callers would otherwise have to
+		// demultiplex; tasks never get an interactive terminal regardless.
+		Tty: true,
 	}
 
 	hostCfg := &container.HostConfig{

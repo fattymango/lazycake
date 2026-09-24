@@ -150,7 +150,10 @@ func (r *Runner) runOnce(ctx context.Context) error {
 
 	errCh := make(chan error, 2)
 	go r.sendLoop(streamCtx, stream, sendCh, heartbeatEvery, errCh)
-	go r.recvLoop(streamCtx, stream, errCh)
+	// recvLoop exits when streamCtx ends (this stream's lifetime) but
+	// dispatches handlers with the outer ctx: a task must keep running
+	// across a reconnect, not die because this particular stream dropped.
+	go r.recvLoop(streamCtx, ctx, stream, errCh)
 
 	select {
 	case err := <-errCh:
@@ -198,7 +201,7 @@ func (r *Runner) sendLoop(ctx context.Context, stream lazycakev1.AgentService_Co
 	}
 }
 
-func (r *Runner) recvLoop(ctx context.Context, stream lazycakev1.AgentService_ConnectClient, errCh chan<- error) {
+func (r *Runner) recvLoop(streamCtx, taskCtx context.Context, stream lazycakev1.AgentService_ConnectClient, errCh chan<- error) {
 	for {
 		msg, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -218,14 +221,17 @@ func (r *Runner) recvLoop(ctx context.Context, stream lazycakev1.AgentService_Co
 		switch body := msg.GetBody().(type) {
 		case *lazycakev1.CoordinatorMessage_Dispatch:
 			if r.Handlers.OnDispatch != nil {
-				r.Handlers.OnDispatch(ctx, body.Dispatch)
+				r.Handlers.OnDispatch(taskCtx, body.Dispatch)
 			}
 		case *lazycakev1.CoordinatorMessage_Cancel:
 			if r.Handlers.OnCancel != nil {
-				r.Handlers.OnCancel(ctx, body.Cancel)
+				r.Handlers.OnCancel(taskCtx, body.Cancel)
 			}
 		case *lazycakev1.CoordinatorMessage_HeartbeatAck, *lazycakev1.CoordinatorMessage_RegisterAck:
 			// no-op: heartbeat/register acks need no action beyond receipt
+		}
+		if streamCtx.Err() != nil {
+			return
 		}
 	}
 }

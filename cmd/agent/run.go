@@ -7,15 +7,19 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/mkassab215/lazycake/internal/agent/capacity"
 	"github.com/mkassab215/lazycake/internal/agent/config"
 	"github.com/mkassab215/lazycake/internal/agent/conn"
+	lcexec "github.com/mkassab215/lazycake/internal/agent/exec"
 	"github.com/mkassab215/lazycake/internal/agent/probe"
+	lcruntime "github.com/mkassab215/lazycake/internal/agent/runtime"
 	"github.com/mkassab215/lazycake/internal/id"
 	"github.com/mkassab215/lazycake/internal/logging"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
@@ -44,6 +48,26 @@ func run() error {
 		return fmt.Errorf("capability probe failed: memory and/or cpu enforcement is not working; run 'agent probe' for details")
 	}
 
+	sock, err := lcruntime.DefaultSocket()
+	if err != nil {
+		return fmt.Errorf("finding container engine socket: %w", err)
+	}
+	rt, err := lcruntime.NewPodmanRuntime(sock)
+	if err != nil {
+		return fmt.Errorf("connecting to container engine: %w", err)
+	}
+	defer rt.Close()
+
+	physical, err := capacity.Physical(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("reading physical host capacity: %w", err)
+	}
+	offer := capacity.ClampOffer(physical, capacity.Resources{
+		Cores: cfg.OfferCores, MemoryMB: cfg.OfferMemoryMB, DiskMB: cfg.OfferDiskMB,
+	})
+	log.Info("offer clamped against physical capacity", "physical", physical, "requested", cfg.OfferCores, "clamped", offer)
+	ledger := capacity.NewLedger(offer)
+
 	clientConn, err := grpc.NewClient(cfg.CoordinatorAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -52,21 +76,38 @@ func run() error {
 	defer clientConn.Close()
 
 	hostname, _ := os.Hostname()
+	instanceID := id.New("ins")
+	bootID := readBootID()
+
 	runner := &conn.Runner{
 		Client: lazycakev1.NewAgentServiceClient(clientConn),
 		Identity: conn.Identity{
 			Token:      cfg.Token,
 			Hostname:   hostname,
 			Arch:       runtime.GOARCH,
-			InstanceID: id.New("ins"),
+			InstanceID: instanceID,
+			BootID:     bootID,
 			Caps:       report.Capabilities("podman"),
 			Offer: &lazycakev1.Offer{
-				Cores:    cfg.OfferCores,
-				MemoryMb: int32(cfg.OfferMemoryMB),
-				DiskMb:   int32(cfg.OfferDiskMB),
+				Cores:    offer.Cores,
+				MemoryMb: int32(offer.MemoryMB),
+				DiskMb:   int32(offer.DiskMB),
 			},
 		},
 		Log: log,
+	}
+
+	executor := &lcexec.Executor{
+		Runtime:    rt,
+		Ledger:     ledger,
+		Send:       runner,
+		Log:        log,
+		InstanceID: instanceID,
+		BootID:     bootID,
+	}
+	runner.Handlers = conn.Handlers{
+		OnDispatch:     executor.HandleDispatch,
+		RunningTaskIDs: ledger.TaskIDs,
 	}
 
 	err = runner.Run(ctx)
@@ -75,6 +116,18 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// readBootID returns the kernel's boot ID (used to label containers so the
+// startup reconciliation sweep in phase 3.7 can tell "this run" apart from
+// a stale one after a crash/reboot), or "" if it can't be read - e.g. off
+// Linux, where the agent doesn't run in production anyway.
+func readBootID() string {
+	b, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // runProbe implements `agent probe`: prints a table of every capability

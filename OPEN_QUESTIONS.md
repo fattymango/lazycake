@@ -60,6 +60,19 @@ consistent with `agent probe`'s `memory_limit: fail` on the same host. The
 other five runtime integration checks (pull, create, start, wait, logs,
 list-by-label, remove) all pass for real.
 
+`internal/e2e/dispatch_test.go` (`-tags=integration`) is the automated form
+of task 1.8's verify: real Postgres, real coordinator (scheduler + gRPC),
+real agent (conn.Runner + exec.Executor + PodmanRuntime), real podman.
+`TestDispatchEndToEnd` passes: submit -> queued -> reserved -> dispatched ->
+running -> succeeded with exit code 0, entirely through the real stack.
+`TestDispatchOOM` fails on this VM for the same already-documented reason
+(no real cgroup memory delegation here) - the task exits normally instead
+of being OOM-killed, so its exit_reason is "exited" not "oom". Same root
+cause as tasks 1.5 and 1.6, not a scheduler/executor bug: the state-machine
+plumbing (dispatch, accept, start, finish, transition to failed) is
+verified correct by the fact that this test gets as far as an asserted
+mismatch on exit_reason rather than a timeout or a crash.
+
 ## docker/docker/client dependency pin
 
 Section 3's approved dependency list names `github.com/docker/docker/client`

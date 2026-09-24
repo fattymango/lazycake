@@ -7,14 +7,22 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
 	"github.com/mkassab215/lazycake/internal/coordinator/config"
+	"github.com/mkassab215/lazycake/internal/coordinator/scheduler"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/logging"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
+)
+
+const (
+	heartbeatS = 15
+	leaseS     = 60
 )
 
 func run() error {
@@ -40,14 +48,22 @@ func run() error {
 		return fmt.Errorf("listening on %s: %w", cfg.GRPCAddr, err)
 	}
 
+	registry := api.NewRegistry()
+	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
+
 	grpcServer := grpc.NewServer()
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{
 		Store:      st,
-		Registry:   api.NewRegistry(),
+		Registry:   registry,
+		Events:     sched,
+		Capacity:   sched,
+		Clock:      clock.Real{},
 		Log:        log,
-		HeartbeatS: 15,
-		LeaseS:     60,
+		HeartbeatS: heartbeatS,
+		LeaseS:     leaseS,
 	})
+
+	go sched.Run(ctx, time.Second)
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- grpcServer.Serve(lis) }()
