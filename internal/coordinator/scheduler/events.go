@@ -55,7 +55,7 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		return fmt.Errorf("marking task finished: %w", err)
 	}
 	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason)
-	if err := s.billing().OnTaskFinished(ctx, nodeID, ev.TaskID); err != nil {
+	if err := s.billing().OnTaskFinished(ctx, nodeID, ev.TaskID, ev.BytesSent+ev.BytesRecv); err != nil {
 		s.Log.Error("metering task finished", "task_id", ev.TaskID, "node_id", nodeID, "error", err)
 	}
 	return nil

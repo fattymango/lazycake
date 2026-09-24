@@ -29,13 +29,15 @@ type Dispatcher interface {
 // structurally - scheduler never imports billing's own dependencies back.
 type BillingEvents interface {
 	OnTaskStarted(ctx context.Context, nodeID, taskID string) error
-	OnTaskFinished(ctx context.Context, nodeID, taskID string) error
+	// bytesAgent is bytes_sent + bytes_recv from the task's TaskFinished
+	// message, for task 4.3's byte reconciliation.
+	OnTaskFinished(ctx context.Context, nodeID, taskID string, bytesAgent int64) error
 }
 
 type noopBilling struct{}
 
-func (noopBilling) OnTaskStarted(context.Context, string, string) error  { return nil }
-func (noopBilling) OnTaskFinished(context.Context, string, string) error { return nil }
+func (noopBilling) OnTaskStarted(context.Context, string, string) error         { return nil }
+func (noopBilling) OnTaskFinished(context.Context, string, string, int64) error { return nil }
 
 // rejectCooldown is how long a task/node pair is avoided after a rejection,
 // per IMPLEMENTATION.md task 1.8 ("do not re-offer it to that node for

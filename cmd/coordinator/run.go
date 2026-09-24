@@ -61,7 +61,26 @@ func run() error {
 
 	registry := api.NewRegistry()
 	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
-	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log}
+
+	// Three-point byte reconciliation (task 4.3): the relay's own stream
+	// counters and the gateway's ReportBytes RPC both feed the same
+	// Reconciler the agent's TaskFinished report does (via billing.Meters
+	// below), so all three independently-observed byte counts for one
+	// task end up in one place to compare.
+	reconciler := &billing.Reconciler{
+		ResolveNodeID: func(ctx context.Context, taskID string) (string, error) {
+			t, err := st.GetTask(ctx, taskID)
+			if err != nil {
+				return "", err
+			}
+			if t.NodeID == nil {
+				return "", nil
+			}
+			return *t.NodeID, nil
+		},
+		Log: log,
+	}
+	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log, Reconciler: reconciler}
 
 	grpcServer := grpc.NewServer()
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{
@@ -75,6 +94,7 @@ func run() error {
 		LeaseS:     leaseS,
 	})
 	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st})
+	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: reconciler})
 
 	go sched.Run(ctx, time.Second)
 
@@ -86,6 +106,9 @@ func run() error {
 		Auth:     coordrelay.StoreAdapter{Store: st},
 		Gateways: coordrelay.StoreAdapter{Store: st},
 		Log:      log,
+		OnStreamClosed: func(stats quic.StreamStats) {
+			reconciler.RecordRelayBytes(stats.TaskID, stats.BytesAgentToGW+stats.BytesGWToAgent)
+		},
 	}
 	relayErr := make(chan error, 1)
 	go func() { relayErr <- tunnelRelay.Serve(ctx, cfg.RelayAddr) }()

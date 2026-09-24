@@ -30,6 +30,13 @@ func (s Service) Addr() string {
 type Config struct {
 	// CoordinatorAddr is the coordinator's relay address, host:port. Required.
 	CoordinatorAddr string
+	// GRPCAddr is the coordinator's plain gRPC address, for reporting byte
+	// counts back (task 4.3's ReportBytes, GatewayService). Optional -
+	// empty disables reporting entirely rather than failing startup, same
+	// as lcinit's discovery in cmd/agent: this is a defense-in-depth
+	// signal for billing to cross-check, not something the gateway's own
+	// job (forwarding traffic) depends on.
+	GRPCAddr string
 	// Token authenticates this gateway to the coordinator. Required.
 	Token string
 	// GatewayID is the gw_<ulid> `lcctl gateway create` printed alongside
@@ -50,6 +57,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	cfg := Config{
 		CoordinatorAddr: getenv("LAZYCAKE_COORDINATOR_ADDR"),
+		GRPCAddr:        getenv("LAZYCAKE_GRPC_ADDR"),
 		Token:           getenv("LAZYCAKE_TOKEN"),
 		GatewayID:       getenv("LAZYCAKE_GATEWAY_ID"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
@@ -118,6 +126,7 @@ func (c Config) LogValue() slog.Value {
 	}
 	return slog.GroupValue(
 		slog.String("coordinator_addr", c.CoordinatorAddr),
+		slog.String("grpc_addr", c.GRPCAddr),
 		slog.String("token", redact(c.Token)),
 		slog.String("gateway_id", c.GatewayID),
 		slog.String("services", strings.Join(names, ",")),
