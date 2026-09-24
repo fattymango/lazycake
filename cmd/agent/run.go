@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/mkassab215/lazycake/internal/agent/bench"
 	"github.com/mkassab215/lazycake/internal/agent/capacity"
 	"github.com/mkassab215/lazycake/internal/agent/config"
 	"github.com/mkassab215/lazycake/internal/agent/conn"
@@ -131,12 +132,22 @@ func run() error {
 		AgentKeypair: tunnelKeypair,
 		LcinitPath:   lcinitPath,
 	}
+	benchTrigger := make(chan struct{}, 1)
 	runner.Handlers = conn.Handlers{
 		OnDispatch:     executor.HandleDispatch,
 		OnCancel:       func(ctx context.Context, c *lazycakev1.Cancel) { executor.CancelTask(ctx, c.GetTaskId()) },
 		RunningTaskIDs: ledger.TaskIDs,
-		OnRegistered:   func(*lazycakev1.RegisterAck) { executor.ReplayPending() },
+		OnRegistered: func(ack *lazycakev1.RegisterAck) {
+			executor.ReplayPending()
+			if ack.GetBenchmarkNow() {
+				select {
+				case benchTrigger <- struct{}{}:
+				default:
+				}
+			}
+		},
 	}
+	go runBenchLoop(ctx, ledger, runner, log, benchTrigger)
 
 	watcher := &lease.Watcher{
 		Deadline: runner.FenceDeadline,
@@ -155,6 +166,48 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// benchPeriod is how often the benchmark reruns on its own (task 4.1:
+// "every 24 hours"), independent of the coordinator ever asking for one.
+const benchPeriod = 24 * time.Hour
+
+// runBenchLoop drives internal/agent/bench on the cadence task 4.1 asks
+// for: once triggered (a fresh registration where the coordinator's
+// RegisterAck says BenchmarkNow, i.e. it has no score on file for this
+// node yet) or every benchPeriod after that, but never while any task is
+// actually running - a benchmark racing against a task's own CPU use
+// would just measure contention, not the host's real speed.
+func runBenchLoop(ctx context.Context, ledger *capacity.Ledger, sender lcexec.Sender, log *slog.Logger, trigger <-chan struct{}) {
+	ticker := time.NewTicker(time.Hour) // just how often to check whether benchPeriod has elapsed
+	defer ticker.Stop()
+	var last time.Time
+
+	runIfIdle := func() {
+		if len(ledger.TaskIDs()) > 0 {
+			log.Info("skipping scheduled benchmark, tasks are currently running")
+			return
+		}
+		score := bench.Run()
+		last = time.Now()
+		log.Info("benchmark complete", "score", score)
+		sender.Send(&lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_BenchReport{
+			BenchReport: &lazycakev1.BenchReport{Score: score},
+		}})
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-trigger:
+			runIfIdle()
+		case <-ticker.C:
+			if last.IsZero() || time.Since(last) >= benchPeriod {
+				runIfIdle()
+			}
+		}
+	}
 }
 
 // discoverLcinit looks for a "lcinit" binary next to the agent's own
