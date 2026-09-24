@@ -133,7 +133,7 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "first message must be Register")
 	}
 
-	nodeID, err := s.handleRegister(ctx, reg)
+	nodeID, needsBenchmark, err := s.handleRegister(ctx, reg)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 				NodeId:       nodeID,
 				HeartbeatS:   s.HeartbeatS,
 				LeaseS:       s.LeaseS,
-				BenchmarkNow: reg.GetOffer() == nil, // placeholder trigger; refined in phase 4
+				BenchmarkNow: needsBenchmark,
 			},
 		},
 	}); err != nil {
@@ -200,24 +200,26 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 	}
 }
 
-func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (string, error) {
+func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (nodeID string, needsBenchmark bool, err error) {
 	tok, err := s.Store.Authenticate(ctx, auth.Hash(reg.GetToken()))
 	if err != nil {
-		return "", status.Error(codes.Unauthenticated, "invalid token")
+		return "", false, status.Error(codes.Unauthenticated, "invalid token")
 	}
 	if tok.Kind != store.TokenAgent {
-		return "", status.Error(codes.PermissionDenied, "token is not an agent token")
+		return "", false, status.Error(codes.PermissionDenied, "token is not an agent token")
 	}
 
 	// Reuse the same node row across reconnects of the same agent process
 	// (task 3.3): a fresh node_id every time would mean a fresh, empty set
 	// of assigned tasks every time, making adoption impossible.
-	nodeID := id.New(id.Node)
+	nodeID = id.New(id.Node)
+	needsBenchmark = true // no prior node found = never benchmarked
 	if instanceID := reg.GetInstanceId(); instanceID != "" {
 		if existing, err := s.Store.GetNodeByInstanceID(ctx, tok.AccountID, instanceID); err == nil {
 			nodeID = existing.ID
+			needsBenchmark = existing.BenchScore == nil
 		} else if err != store.ErrNotFound {
-			return "", fmt.Errorf("looking up node by instance id: %w", err)
+			return "", false, fmt.Errorf("looking up node by instance id: %w", err)
 		}
 	}
 	caps := reg.GetCaps()
@@ -244,9 +246,9 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 		OfferDiskMB:   int(offer.GetDiskMb()),
 	}
 	if err := s.Store.UpsertNode(ctx, n); err != nil {
-		return "", fmt.Errorf("upserting node: %w", err)
+		return "", false, fmt.Errorf("upserting node: %w", err)
 	}
-	return nodeID, nil
+	return nodeID, needsBenchmark, nil
 }
 
 // adoptOrCancel implements task 3.3's reconnect adoption: for every task ID
@@ -309,6 +311,11 @@ func (s *Server) handleMessage(ctx context.Context, nodeID string, msg *lazycake
 		})
 	case *lazycakev1.AgentMessage_Logs:
 		return s.handleLogs(ctx, body.Logs)
+	case *lazycakev1.AgentMessage_BenchReport:
+		if err := s.Store.SetNodeBenchScore(ctx, nodeID, body.BenchReport.GetScore()); err != nil {
+			return fmt.Errorf("recording bench score: %w", err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown message type %T", body)
 	}

@@ -18,8 +18,17 @@ message AgentMessage {
     TaskStarted   started      = 7;
     TaskFinished  finished     = 8;
     LogBatch      logs         = 9;
+    BenchReport   bench_report = 10;
   }
 }
+
+// BenchReport carries a freshly-measured internal/agent/bench score to the
+// coordinator (IMPLEMENTATION.md task 4.1) - a dedicated message rather
+// than folding it into CapacityReport, since CapacityReport's free_cores
+// etc. are only ever sent when actually known and an empty/zero
+// CapacityReport would otherwise overwrite the scheduler's placement cache
+// with "this node has no free capacity."
+message BenchReport { double score = 1; }
 
 message CoordinatorMessage {
   oneof body {
