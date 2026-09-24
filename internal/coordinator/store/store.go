@@ -70,6 +70,21 @@ type Tasks interface {
 	// passed while still in an active state, for the reclaimer loop.
 	RequeueOverdue(ctx context.Context, now time.Time) ([]Task, error)
 
+	// RequeueTaskForRetry moves an overdue at_least_once task back to
+	// 'queued' with attempt incremented, clearing its node assignment and
+	// lease so any connected node can claim it fresh - never COALESCE'd
+	// like TransitionTask, since node_id/lease_expires_at/requeue_after
+	// must actually become NULL here, not stay pointed at the node that
+	// just missed its lease. Fails (ErrConflict) if id is not currently in
+	// one of fromStates.
+	RequeueTaskForRetry(ctx context.Context, id string, fromStates []TaskState) error
+
+	// AbandonTask moves an overdue task to 'abandoned' - the terminal state
+	// for a missed-lease at_most_once task, or an at_least_once task with
+	// no attempts left (IMPLEMENTATION.md task 3.4). Fails (ErrConflict) if
+	// id is not currently in one of fromStates.
+	AbandonTask(ctx context.Context, id string, fromStates []TaskState, at time.Time) error
+
 	// ExtendNodeRequeue pushes requeue_after forward (never backward) for
 	// every dispatched/running task on nodeID, on every heartbeat the
 	// coordinator receives from it - see PLAN.md "Lease and fencing" and
