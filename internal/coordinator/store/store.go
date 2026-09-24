@@ -18,6 +18,7 @@ type Store interface {
 	Logs
 	ImageCache
 	Gateways
+	Meters
 }
 
 type Accounts interface {
@@ -130,4 +131,19 @@ type Gateways interface {
 	// time (nil/empty otherwise - it isn't cleared on disconnect, so the
 	// last-known key stays around for display/debugging).
 	SetGatewayConnected(ctx context.Context, id string, connected bool, noisePubkey []byte) error
+}
+
+// Meters persists task_meters rows (IMPLEMENTATION.md task 4.2): duration
+// and normalised duration computed purely from the coordinator's own
+// receive-time clock, never from agent-reported timestamps.
+type Meters interface {
+	// RecordMeterStarted creates the row for taskID, capturing the
+	// coordinator's own receive time for its TaskStarted event.
+	RecordMeterStarted(ctx context.Context, taskID, nodeID string, at time.Time) error
+	// RecordMeterFinished sets finished_at, duration_s and normalised_s on
+	// an existing row. Fails with ErrNotFound if RecordMeterStarted was
+	// never called for taskID (should not happen - the state machine
+	// guarantees TaskStarted precedes TaskFinished).
+	RecordMeterFinished(ctx context.Context, taskID string, at time.Time, durationS, normalisedS float64) error
+	GetMeter(ctx context.Context, taskID string) (TaskMeter, error)
 }
