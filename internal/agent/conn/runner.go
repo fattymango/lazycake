@@ -136,7 +136,10 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		r.Handlers.OnRegistered(ack)
 	}
 
-	sendCh := make(chan *lazycakev1.AgentMessage, 256)
+	// 64 slots at up to a 64KB log batch each bounds outstanding send
+	// backlog to roughly the 4MB task 1.9 asks for when the coordinator is
+	// slow or unreachable; Send drops rather than blocking once this fills.
+	sendCh := make(chan *lazycakev1.AgentMessage, 64)
 	r.sendCh = sendCh
 	defer func() { r.sendCh = nil }()
 
