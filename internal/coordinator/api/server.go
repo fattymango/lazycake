@@ -70,6 +70,18 @@ type Server struct {
 	Log        *slog.Logger
 	HeartbeatS int32
 	LeaseS     int32
+	// LeaseMargin is added on top of LeaseS when computing a task's
+	// requeue_after, so the coordinator's reclaim always fires after the
+	// agent's own fence deadline (PLAN.md "Lease and fencing", task 3.1's
+	// invariant). Defaults to 15s if zero.
+	LeaseMargin time.Duration
+}
+
+func (s *Server) leaseMargin() time.Duration {
+	if s.LeaseMargin <= 0 {
+		return 15 * time.Second
+	}
+	return s.LeaseMargin
 }
 
 // noopEvents is used when Server.Events is nil so Connect never panics
@@ -259,8 +271,13 @@ func (s *Server) handleMessage(ctx context.Context, nodeID string, msg *lazycake
 }
 
 func (s *Server) handleHeartbeat(ctx context.Context, nodeID string, hb *lazycakev1.Heartbeat) error {
-	if err := s.Store.RecordHeartbeat(ctx, nodeID, s.now()); err != nil {
+	now := s.now()
+	if err := s.Store.RecordHeartbeat(ctx, nodeID, now); err != nil {
 		return fmt.Errorf("recording heartbeat: %w", err)
+	}
+	newRequeueAfter := now.Add(time.Duration(s.LeaseS)*time.Second + s.leaseMargin())
+	if err := s.Store.ExtendNodeRequeue(ctx, nodeID, newRequeueAfter); err != nil {
+		return fmt.Errorf("extending node requeue: %w", err)
 	}
 	return s.Registry.Send(nodeID, &lazycakev1.CoordinatorMessage{
 		Body: &lazycakev1.CoordinatorMessage_HeartbeatAck{

@@ -262,6 +262,20 @@ func (f *fakeStore) RequeueOverdue(context.Context, time.Time) ([]store.Task, er
 	panic("not used")
 }
 
+func (f *fakeStore) ExtendNodeRequeue(ctx context.Context, nodeID string, newRequeueAfter time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, t := range f.tasks {
+		if t.NodeID != nil && *t.NodeID == nodeID && (t.State == store.TaskDispatched || t.State == store.TaskRunning) {
+			if t.RequeueAfter == nil || t.RequeueAfter.Before(newRequeueAfter) {
+				t.RequeueAfter = &newRequeueAfter
+				f.tasks[id] = t
+			}
+		}
+	}
+	return nil
+}
+
 func (f *fakeStore) ListLogs(ctx context.Context, taskID string, sinceSeq int64) ([]store.LogLine, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
