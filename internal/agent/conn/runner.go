@@ -1,0 +1,231 @@
+// Package conn owns the agent's one long-lived connection to the
+// coordinator: register, heartbeat, and automatic reconnect with backoff.
+// It depends only on the generated lazycakev1.AgentServiceClient interface,
+// never on a concrete gRPC connection, so tests can inject a fake client.
+package conn
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"time"
+
+	"github.com/mkassab215/lazycake/internal/clock"
+	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
+)
+
+// Identity is the static information the agent presents at registration.
+type Identity struct {
+	Token      string
+	Hostname   string
+	Arch       string
+	CPUFlags   []string
+	Caps       *lazycakev1.Capabilities
+	Offer      *lazycakev1.Offer
+	BootID     string
+	InstanceID string
+	Images     []*lazycakev1.CachedImage
+}
+
+// Handlers are called as messages arrive from the coordinator. Any of them
+// may be nil, in which case the message is ignored.
+type Handlers struct {
+	OnRegistered   func(ack *lazycakev1.RegisterAck)
+	OnDispatch     func(ctx context.Context, d *lazycakev1.Dispatch)
+	OnCancel       func(ctx context.Context, c *lazycakev1.Cancel)
+	RunningTaskIDs func() []string // polled for every heartbeat
+}
+
+// Runner drives one Connect stream at a time and reconnects with backoff
+// when it drops, until its context is cancelled.
+type Runner struct {
+	Client   lazycakev1.AgentServiceClient
+	Identity Identity
+	Handlers Handlers
+	Clock    clock.Clock
+	Log      *slog.Logger
+	// Backoff controls reconnect timing; defaults to NewBackoff() (1s..60s)
+	// if nil. Exposed so tests can inject a fast backoff instead of
+	// sleeping through real reconnect delays.
+	Backoff *Backoff
+
+	// SendFn lets callers push AgentMessage values onto the active stream
+	// (used by the agent's dispatch-result reporting, task 1.8+). It is set
+	// internally once a stream is live; Send is a no-op before that.
+	sendCh chan *lazycakev1.AgentMessage
+}
+
+// Send queues an outbound message for the active stream. It drops the
+// message if no stream is currently up, since there is nothing useful to
+// retry onto - the caller's own state (task status in the store-of-record)
+// is what reconnection re-announces.
+func (r *Runner) Send(msg *lazycakev1.AgentMessage) {
+	ch := r.sendCh
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- msg:
+	default:
+		r.Log.Warn("agent send buffer full, dropping message")
+	}
+}
+
+// Run connects, registers, heartbeats, and reconnects on failure until ctx
+// is cancelled.
+func (r *Runner) Run(ctx context.Context) error {
+	backoff := r.Backoff
+	if backoff == nil {
+		backoff = NewBackoff()
+	}
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err := r.runOnce(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			r.Log.Warn("connection to coordinator lost", "error", err)
+		}
+		d := backoff.Next()
+		r.Log.Info("reconnecting to coordinator", "in", d)
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (r *Runner) runOnce(ctx context.Context) error {
+	stream, err := r.Client.Connect(ctx)
+	if err != nil {
+		return fmt.Errorf("opening connect stream: %w", err)
+	}
+
+	if err := stream.Send(&lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_Register{
+		Register: &lazycakev1.Register{
+			Token:      r.Identity.Token,
+			Hostname:   r.Identity.Hostname,
+			Arch:       r.Identity.Arch,
+			CpuFlags:   r.Identity.CPUFlags,
+			Caps:       r.Identity.Caps,
+			Offer:      r.Identity.Offer,
+			BootId:     r.Identity.BootID,
+			InstanceId: r.Identity.InstanceID,
+			Images:     r.Identity.Images,
+		},
+	}}); err != nil {
+		return fmt.Errorf("sending register: %w", err)
+	}
+
+	first, err := stream.Recv()
+	if err != nil {
+		return fmt.Errorf("waiting for register ack: %w", err)
+	}
+	ack := first.GetRegisterAck()
+	if ack == nil {
+		return fmt.Errorf("expected RegisterAck, got %T", first.GetBody())
+	}
+	r.Log.Info("registered with coordinator", "node_id", ack.GetNodeId(), "heartbeat_s", ack.GetHeartbeatS())
+	if r.Handlers.OnRegistered != nil {
+		r.Handlers.OnRegistered(ack)
+	}
+
+	sendCh := make(chan *lazycakev1.AgentMessage, 256)
+	r.sendCh = sendCh
+	defer func() { r.sendCh = nil }()
+
+	heartbeatEvery := time.Duration(ack.GetHeartbeatS()) * time.Second
+	if heartbeatEvery <= 0 {
+		heartbeatEvery = 15 * time.Second
+	}
+
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 2)
+	go r.sendLoop(streamCtx, stream, sendCh, heartbeatEvery, errCh)
+	go r.recvLoop(streamCtx, stream, errCh)
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *Runner) sendLoop(ctx context.Context, stream lazycakev1.AgentService_ConnectClient, out <-chan *lazycakev1.AgentMessage, heartbeatEvery time.Duration, errCh chan<- error) {
+	ticker := time.NewTicker(heartbeatEvery)
+	defer ticker.Stop()
+	var seq int64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			seq++
+			var running []string
+			if r.Handlers.RunningTaskIDs != nil {
+				running = r.Handlers.RunningTaskIDs()
+			}
+			if err := stream.Send(&lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_Heartbeat{
+				Heartbeat: &lazycakev1.Heartbeat{Seq: seq, RunningTaskIds: running},
+			}}); err != nil {
+				select {
+				case errCh <- fmt.Errorf("sending heartbeat: %w", err):
+				default:
+				}
+				return
+			}
+		case msg, ok := <-out:
+			if !ok {
+				return
+			}
+			if err := stream.Send(msg); err != nil {
+				select {
+				case errCh <- fmt.Errorf("sending message: %w", err):
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+func (r *Runner) recvLoop(ctx context.Context, stream lazycakev1.AgentService_ConnectClient, errCh chan<- error) {
+	for {
+		msg, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			select {
+			case errCh <- nil:
+			default:
+			}
+			return
+		}
+		if err != nil {
+			select {
+			case errCh <- fmt.Errorf("receiving message: %w", err):
+			default:
+			}
+			return
+		}
+		switch body := msg.GetBody().(type) {
+		case *lazycakev1.CoordinatorMessage_Dispatch:
+			if r.Handlers.OnDispatch != nil {
+				r.Handlers.OnDispatch(ctx, body.Dispatch)
+			}
+		case *lazycakev1.CoordinatorMessage_Cancel:
+			if r.Handlers.OnCancel != nil {
+				r.Handlers.OnCancel(ctx, body.Cancel)
+			}
+		case *lazycakev1.CoordinatorMessage_HeartbeatAck, *lazycakev1.CoordinatorMessage_RegisterAck:
+			// no-op: heartbeat/register acks need no action beyond receipt
+		}
+	}
+}
