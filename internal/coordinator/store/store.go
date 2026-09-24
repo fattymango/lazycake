@@ -65,6 +65,14 @@ type Tasks interface {
 	// RequeueOverdue returns the IDs of tasks whose requeue_after has
 	// passed while still in an active state, for the reclaimer loop.
 	RequeueOverdue(ctx context.Context, now time.Time) ([]Task, error)
+
+	// ExtendNodeRequeue pushes requeue_after forward (never backward) for
+	// every dispatched/running task on nodeID, on every heartbeat the
+	// coordinator receives from it - see PLAN.md "Lease and fencing" and
+	// task 3.1's invariant: the coordinator measures from when it
+	// *received* a heartbeat, which is never earlier than when the agent
+	// sent it.
+	ExtendNodeRequeue(ctx context.Context, nodeID string, newRequeueAfter time.Time) error
 }
 
 // TaskUpdate carries the optional fields TransitionTask may set alongside a

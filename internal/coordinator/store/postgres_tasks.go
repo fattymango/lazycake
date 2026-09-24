@@ -212,6 +212,18 @@ func (s *PostgresStore) RequeueOverdue(ctx context.Context, now time.Time) ([]Ta
 	return out, rows.Err()
 }
 
+func (s *PostgresStore) ExtendNodeRequeue(ctx context.Context, nodeID string, newRequeueAfter time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET requeue_after = $2
+		WHERE node_id = $1 AND state IN ('dispatched','running')
+			AND (requeue_after IS NULL OR requeue_after < $2)`,
+		nodeID, newRequeueAfter)
+	if err != nil {
+		return fmt.Errorf("extending node requeue: %w", err)
+	}
+	return nil
+}
+
 // orEmpty coalesces a nil slice to an empty one: passing nil as a pgx array
 // parameter binds SQL NULL, not '{}', which the NOT NULL columns here reject.
 func orEmpty(s []string) []string {
