@@ -9,4 +9,5 @@ One line per completed task: `<phase>.<task> — <what> — <date> — <commit>`
 - 1.1 — `store.Store` interface + `PostgresStore`, integration tests pass against live Postgres (run inside the podman-machine-default WSL VM) — 2026-09-24
 - 1.2 — `ClaimQueuedTask` via `SELECT ... FOR UPDATE SKIP LOCKED`, 20 concurrent claimers vs 20 tasks each claimed exactly once (`-race`, passing) — 2026-09-24
 - 1.3 — `api.Server` implements `AgentService.Connect`: auth, register, heartbeat ack, capacity/cache/log handling, task-event hooks behind a `TaskEvents` interface the scheduler will implement later — 2026-09-24
+- 1.4 — `conn.Runner` (register/heartbeat/reconnect w/ jittered backoff) + real wiring in cmd/coordinator and cmd/agent; manual kill -9 restart test: agent reconnects in ~10s — 2026-09-24
 
