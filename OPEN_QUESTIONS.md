@@ -267,3 +267,24 @@ adds cert provisioning to the demo's setup story, so it's deferred rather
 than built now — tracked here instead of skipped silently. Revisit before
 any non-localhost deployment.
 
+## Task 3.2: podman's log driver defaulting to journald broke `Runtime.Logs`
+
+While verifying task 3.2 (self-fencing), `TestPullCreateStartWaitLogsRemove`
+and `TestLogFlood` — both previously green per PROGRESS.md's task 1.6/1.9
+entries — started failing with empty log output, every run, not
+intermittently. Root cause: this WSL VM's podman was upgraded at some point
+between sessions (now reports API 6.0.2) and its host-level default log
+driver is `journald`, not `k8s-file`. `PodmanRuntime.Create` never set
+`HostConfig.LogConfig` explicitly, so containers inherited whatever the host
+defaulted to — and the Docker-compatible `ContainerLogs` API endpoint
+`PodmanRuntime.Logs` calls reads from the `k8s-file`/`json-file` log store,
+not journald, so it silently came back empty. `podman logs` from the CLI
+still worked fine (it knows to go to journald), masking this from a quick
+manual check. Fixed by pinning `LogConfig: container.LogConfig{Type:
+"k8s-file"}` explicitly in `internal/agent/runtime/podman.go`'s `Create`,
+rather than relying on the host's default — this is exactly the kind of
+host-dependent behavior task 1.6 already chose the Docker-compatible API to
+avoid, so pinning it is the fix, not a workaround. Not a regression from any
+task 3.2 code change; caught only because task 3.2's verify run happened to
+exercise the full integration suite.
+
