@@ -69,4 +69,9 @@ type Runtime interface {
 	// ListLabelled returns container IDs whose label key=value, for the
 	// startup reconciliation sweep (phase 3.7).
 	ListLabelled(ctx context.Context, key, value string) ([]string, error)
+	// Exec runs cmd inside a running container and waits for it to exit,
+	// for the small in-container setup steps the netns proxy needs
+	// (bringing up loopback, writing resolv.conf) that must happen inside
+	// the container's own mount namespace.
+	Exec(ctx context.Context, containerID string, cmd []string) error
 }

@@ -136,6 +136,82 @@ Not chasing it further - it's infrastructure archaeology, not a LazyCake
 bug, and the code already has honest, working fallback behaviour for
 exactly this situation (refuse to advertise capabilities that don't work).
 
+## Task 2.5: setns(CLONE_NEWUSER) from Go is fundamentally impossible
+
+The original design called for the agent to join a container's user+net
+namespaces directly via `unix.Setns` (the same technique the netns spike
+proved worked via `nsenter` from a shell). It does not work from inside a
+running Go program: `man 2 setns` documents that `CLONE_NEWUSER` fails with
+`EINVAL` when the caller is multithreaded, and every Go process is
+multithreaded - the runtime always has more than one OS thread alive
+(GC workers, sysmon, etc.), regardless of `runtime.LockOSThread()`. This
+was hit empirically: the direct-syscall version got exactly `EINVAL`
+joining the user namespace on a real container, matching the man page
+precisely once traced back to it.
+
+The fix (`internal/agent/netns/proxy.go`) is the architecture real
+container tooling (runc, CNI plugins) uses for the same reason: exec
+`nsenter --user=... --net=... --preserve-credentials -- <agent-binary>
+__netns_proxy`. `nsenter` is a small single-threaded C program - it does
+the `setns()` calls itself, before `execve()`-ing into our agent binary
+with a hidden subcommand, which then just runs already inside the joined
+namespaces (namespaces are inherited across exec with no further syscalls
+needed). `cmd/agent` intercepts `__netns_proxy` as its very first argument
+check, before any normal flag parsing, since this process is never typed
+by a human.
+
+That still leaves a real problem: a `--network=none` namespace has no
+route out to anywhere, including the relay. The `__netns_proxy` child
+(`internal/agent/netns/bind.go`) therefore only *binds* the stub resolver
+and per-target listeners - it does not serve them - and hands the bound
+file descriptors back to the parent over a control `AF_UNIX` socketpair
+using `SCM_RIGHTS` (`internal/agent/netns/fds.go`), then exits. A bound
+socket keeps working from whichever process holds its fd regardless of
+which network namespace that process is in; only the `bind()` call itself
+is namespace-sensitive. The parent - which has the host's normal
+networking - receives the fds, dials the relay, and does all the actual
+serving (`internal/agent/netns/serve.go`). This is the standard pattern
+for exactly this problem (see how `slirp4netns` and friends hand sockets
+across a namespace boundary) and it is genuinely necessary here, not
+over-engineering: without it, accepting a connection and relaying it out
+are stuck in namespaces that cannot both reach the container and the
+relay at the same time.
+
+## Task 2.5: `podman-machine-default`'s persistent API socket lives in a
+## different PID namespace than a freshly-attached `wsl -d` shell
+
+Discovered while making `TestTunnelIsolation` pass: `.State.Pid` returned
+by the podman API on `/run/user/1000/podman/podman.sock` (the persistent,
+systemd-socket-activated service that's been running since this VM's own
+boot) does not correspond to any process visible under `/proc` from a
+`wsl -d podman-machine-default -- <command>` session, even though `ps aux`
+in that same session shows the real container process under a *different*
+PID. Bare `podman` (no explicit socket) does not hit this problem, because
+it turns out not to talk to that persistent socket at all in this
+environment - it operates directly, so a container it starts is a normal
+descendant of the invoking shell.
+
+The fix used for `internal/e2e/tunnel_isolation_test.go`: start a **fresh**
+`podman system service` from the same shell/process tree the test itself
+runs in, and point `LAZYCAKE_TEST_PODMAN_SOCKET` at that instead of the
+pre-existing one - see the test runner scripts used throughout this
+session. Once the socket-owning daemon and the caller share the same PID
+namespace lineage, `.State.Pid` resolves correctly and `nsenter` can find
+it under `/proc`.
+
+**This matters for real deployment, not just this test environment.**
+`internal/agent/runtime.DefaultSocket()` prefers exactly the persistent
+`$XDG_RUNTIME_DIR/podman/podman.sock` path - the correct, standard choice
+on a normal Linux host, where there is one shared PID namespace for
+everything and this problem does not arise. It only surfaces in nested
+virtualization setups (this WSL2 "podman machine" architecture, specifically)
+where that persistent service's process tree apparently does not share a
+PID namespace with freshly-attached sessions. A real single-machine Linux
+deployment - which is this whole project's actual target per
+IMPLEMENTATION.md - is not expected to hit this. Noted here in detail so a
+future "netns proxy can't find /proc/<pid>/ns/user" report on some other
+nested/virtualized host has a documented starting point.
+
 ## docker/docker/client dependency pin
 
 Section 3's approved dependency list names `github.com/docker/docker/client`
