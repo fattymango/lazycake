@@ -36,3 +36,29 @@ spike 2.1, netns proxy 2.5, systemd slice 3.5) are run for real inside the
 podman machine now that it is available — not blocked, contrary to the
 initial assessment before that machine was discovered.
 
+## Capability probe on the podman-machine-default VM
+
+Task 1.5's probe (`agent probe`) is real - it shells out to podman and
+inspects actual OOM/throttle/fork behaviour - and it correctly fails most
+checks inside `podman-machine-default`, because that VM's own podman falls
+back to `--cgroup-manager=cgroupfs` (no working `systemd --user` D-Bus
+session even with lingering enabled and `/run/user/1000/bus` present; some
+transport-level D-Bus issue specific to this nested WSL setup). subuid and
+pids_limit pass there; memory, cpu and systemd_slice correctly fail with
+actionable messages. This is the probe doing its job, not a bug in it - a
+host with a real systemd user session and cgroups v2 delegation (the common
+case on an actual Linux desktop/server) should pass memory/cpu/systemd_slice
+too. Not chasing a fully-green run further in this nested environment; the
+mechanism (start containers, read real kernel-reported state) is what task
+1.5 asked for and it is verified working in both directions (pass and fail).
+
+## Transport security (deferred)
+
+The agent<->coordinator gRPC connection is plaintext (`insecure.NewCredentials()`)
+as of task 1.4. Auth is still real (bearer token, hashed, checked against
+`api_tokens`), but nothing encrypts the channel yet. TLS on the gRPC
+listener is a small, mechanical addition (server cert + `grpc.Creds`) but
+adds cert provisioning to the demo's setup story, so it's deferred rather
+than built now — tracked here instead of skipped silently. Revisit before
+any non-localhost deployment.
+
