@@ -15,5 +15,61 @@ services:
       timeout: 5s
       retries: 10
 
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: build
+    working_dir: /src
+    command: ["go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.28.0", "-dir", "migrations", "postgres", "postgres://lazycake:lazycake@postgres:5432/lazycake?sslmode=disable", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  coordinator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: coordinator
+    environment:
+      LAZYCAKE_DEV: "1"
+      LAZYCAKE_DATABASE_URL: postgres://lazycake:lazycake@postgres:5432/lazycake?sslmode=disable
+      LAZYCAKE_GRPC_ADDR: ":7443"
+      LAZYCAKE_SEED_DEMO_TOKEN: "demo-customer-token"
+    ports:
+      - "7443:7443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  agent1:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: agent
+    environment:
+      LAZYCAKE_DEV: "1"
+      LAZYCAKE_COORDINATOR_ADDR: coordinator:7443
+      LAZYCAKE_TOKEN: "demo-customer-token-agent"
+      LAZYCAKE_OFFER_CORES: "2"
+      LAZYCAKE_OFFER_MEMORY_MB: "2048"
+      LAZYCAKE_OFFER_DISK_MB: "8192"
+      XDG_RUNTIME_DIR: /run/lazycake-engine
+      CONTAINER_HOST: unix:///run/lazycake-engine/podman/podman.sock
+    volumes:
+      - ${LAZYCAKE_PODMAN_SOCKET:-/run/podman/podman.sock}:/run/lazycake-engine/podman/podman.sock
+    depends_on:
+      - coordinator
+
+  agent2:
+    extends:
+      service: agent1
+
+  agent3:
+    extends:
+      service: agent1
+
 volumes:
   lazycake-postgres:

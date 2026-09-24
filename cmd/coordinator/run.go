@@ -15,6 +15,7 @@ import (
 	"github.com/fattymango/lazycake/internal/coordinator/api"
 	"github.com/fattymango/lazycake/internal/coordinator/config"
 	"github.com/fattymango/lazycake/internal/coordinator/scheduler"
+	"github.com/fattymango/lazycake/internal/coordinator/seed"
 	"github.com/fattymango/lazycake/internal/coordinator/store"
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
@@ -43,6 +44,13 @@ func run() error {
 	}
 	defer st.Close()
 
+	if cfg.SeedDemoToken != "" {
+		if err := seed.EnsureDemoAccount(ctx, st, cfg.SeedDemoToken); err != nil {
+			return fmt.Errorf("seeding demo account: %w", err)
+		}
+		log.Info("seeded demo account act_demo")
+	}
+
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", cfg.GRPCAddr, err)
@@ -62,6 +70,7 @@ func run() error {
 		HeartbeatS: heartbeatS,
 		LeaseS:     leaseS,
 	})
+	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st})
 
 	go sched.Run(ctx, time.Second)
 

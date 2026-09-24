@@ -73,6 +73,55 @@ plumbing (dispatch, accept, start, finish, transition to failed) is
 verified correct by the fact that this test gets as far as an asserted
 mismatch on exit_reason rather than a timeout or a crash.
 
+## Task 1.10 demo: docker-compose works, the literal 3-agent chaos run is
+## environment-blocked on this machine (not a code defect)
+
+`deploy/docker-compose.yml` + `deploy/Dockerfile` are real and build/run
+correctly under `podman compose` (Docker Desktop is not used - per-user
+instruction - `podman compose` shells out to `docker-compose.exe` as a
+provider but wires it to talk to the podman socket, and that works fine):
+Postgres comes up healthy, a one-shot `migrate` service applies every
+migration, `coordinator` starts, seeds the demo account
+(`LAZYCAKE_SEED_DEMO_TOKEN`), and listens on 7443. `lcctl` is fully
+implemented (submit/status/logs/nodes) against a new `CustomerService` gRPC
+API (`proto/lazycake/v1/customer.proto` - not specified by
+IMPLEMENTATION.md, which only gives the agent-facing proto, so this is a
+from-scratch design: bearer-token auth via gRPC metadata, digest-pinned
+image validation, the 3-gateway cap from PLAN.md's overview enforced at
+submission even though gateways themselves don't exist until phase 2).
+
+**What doesn't complete on this machine:** the `agent1`/`agent2`/`agent3`
+containers (built with `podman-remote` + a symlink so the capability probe
+has a `podman` CLI to shell out to, `CONTAINER_HOST` pointed at the host's
+socket) correctly run `agent probe`, and it correctly reports
+`memory_limit: fail` - because, as documented repeatedly above (tasks 1.5,
+1.6, 1.8), this specific `podman-machine-default` WSL2 VM does not have a
+working `systemd --user` session, so podman falls back to `--cgroup-manager
+cgroupfs` and never actually delegates memory/cpu enforcement. The agent
+binary refuses to start without working memory+cpu enforcement (by design -
+that's the whole point of task 1.5's probe: never advertise billing-safe
+capacity you can't prove). Ran the same check twice more: once with a
+natively-run agent process pointed at the containerized coordinator (same
+result), and cpu_quota flipped pass/fail between runs (ratio hovering right
+at the 0.85 threshold) - this environment's cgroup enforcement isn't just
+missing, it's unreliable, which is itself useful evidence that "trust but
+verify with a real probe" is the right design, not paranoia.
+
+**This is not a claim that the system doesn't work.** `internal/e2e`'s
+`TestDispatchEndToEnd` (task 1.8) already proves the full submit -> queued
+-> dispatched -> running -> succeeded pipeline end to end for real,
+because that test harness builds the agent's `exec.Executor` directly and
+never goes through the `agent probe` gate - it's testing the dispatch and
+execution machinery, not host safety, and that machinery works. What's
+environment-blocked here specifically is *the literal CLI-driven demo
+through the production `agent` binary*, because that binary is correctly
+refusing to run unsafely on a host that can't back its own promises. On a
+normal Linux host (or this VM if someone gets its systemd user session
+working - `loginctl enable-linger` is already on, the D-Bus socket exists
+at `/run/user/1000/bus`, but connecting to it fails with "Transport
+endpoint is not connected" for reasons not chased down further here) this
+would just work, unmodified.
+
 ## docker/docker/client dependency pin
 
 Section 3's approved dependency list names `github.com/docker/docker/client`

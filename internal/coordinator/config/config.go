@@ -21,6 +21,12 @@ type Config struct {
 	RelayAddr string
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
+	// SeedDemoToken, if set, makes the coordinator ensure a demo account
+	// plus a customer token equal to this value and an agent token equal
+	// to this value + "-agent" exist on startup. For local/demo compose
+	// only - there is no signup flow (PLAN.md non-goals), so something has
+	// to provision the first token out of band.
+	SeedDemoToken string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -30,11 +36,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		DatabaseURL: getenv("LAZYCAKE_DATABASE_URL"),
-		GRPCAddr:    orDefault(getenv("LAZYCAKE_GRPC_ADDR"), ":7443"),
-		HTTPAddr:    orDefault(getenv("LAZYCAKE_HTTP_ADDR"), ":8080"),
-		RelayAddr:   orDefault(getenv("LAZYCAKE_RELAY_ADDR"), ":7444"),
-		Dev:         getenv("LAZYCAKE_DEV") == "1",
+		DatabaseURL:   getenv("LAZYCAKE_DATABASE_URL"),
+		GRPCAddr:      orDefault(getenv("LAZYCAKE_GRPC_ADDR"), ":7443"),
+		HTTPAddr:      orDefault(getenv("LAZYCAKE_HTTP_ADDR"), ":8080"),
+		RelayAddr:     orDefault(getenv("LAZYCAKE_RELAY_ADDR"), ":7444"),
+		Dev:           getenv("LAZYCAKE_DEV") == "1",
+		SeedDemoToken: getenv("LAZYCAKE_SEED_DEMO_TOKEN"),
 	}
 
 	if cfg.DatabaseURL == "" {
