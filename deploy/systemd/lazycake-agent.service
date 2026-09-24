@@ -1,0 +1,33 @@
+[Unit]
+Description=LazyCake host agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/agent
+Restart=on-failure
+RestartSec=2
+
+# IMPLEMENTATION.md task 3.5 - the whole point of this unit. Delegate=yes
+# lets podman's systemd cgroup manager create a transient scope
+# (libpod-<container_id>.scope) per container as a child of *this* unit's
+# own cgroup, instead of falling back to cgroupfs (see PLAN.md "cgroups v2
+# delegation is load-bearing" and OPEN_QUESTIONS.md for what it looks like
+# when this isn't available). KillMode=control-group is what turns a bare
+# `kill -9` on the agent's own PID into every container dying too: systemd
+# notices the main process exited, and because it's not KillMode=process,
+# it kills everything left in the unit's cgroup - podman's per-container
+# scopes included - rather than leaving them orphaned.
+Delegate=yes
+KillMode=control-group
+
+# Environment for the agent binary - see internal/agent/config.Load for the
+# full LAZYCAKE_* list. Uncomment and fill in for your deployment, or drop
+# an override in ~/.config/systemd/user/lazycake-agent.service.d/.
+# Environment=LAZYCAKE_COORDINATOR_ADDR=coordinator.example.com:7001
+# Environment=LAZYCAKE_TOKEN=changeme
+# Environment=LAZYCAKE_RELAY_ADDR=coordinator.example.com:7443
+
+[Install]
+WantedBy=default.target
