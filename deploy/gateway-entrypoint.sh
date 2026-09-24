@@ -34,6 +34,7 @@ INSTALL_TOKEN=$(sed -n 's/^install_token: //p' "$STATE")
 echo "gateway-entrypoint: starting gateway $GATEWAY_ID" >&2
 exec env \
   LAZYCAKE_COORDINATOR_ADDR="$RELAY_ADDR" \
+  LAZYCAKE_GRPC_ADDR="$CUSTOMER_API_ADDR" \
   LAZYCAKE_TOKEN="$INSTALL_TOKEN" \
   LAZYCAKE_GATEWAY_ID="$GATEWAY_ID" \
   LAZYCAKE_SERVICES="$GATEWAY_SERVICES" \

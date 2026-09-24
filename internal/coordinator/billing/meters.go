@@ -28,6 +28,10 @@ type Meters struct {
 	Store store.Store
 	Clock clock.Clock
 	Log   *slog.Logger
+	// Reconciler, if set, accumulates the three-point byte reconciliation
+	// (task 4.3) alongside duration metering. Nil disables it entirely -
+	// useful for tests that only care about duration/normalisation.
+	Reconciler *Reconciler
 }
 
 func (m *Meters) now() time.Time {
@@ -53,7 +57,12 @@ func (m *Meters) OnTaskStarted(ctx context.Context, nodeID, taskID string) error
 // * the node's current bench_score (1.0 if the node has never
 // benchmarked - see internal/agent/bench and task 4.1 - rather than
 // silently zeroing out its normalised duration).
-func (m *Meters) OnTaskFinished(ctx context.Context, nodeID, taskID string) error {
+func (m *Meters) OnTaskFinished(ctx context.Context, nodeID, taskID string, bytesAgent int64) error {
+	if m.Reconciler != nil {
+		m.Reconciler.RecordAgentBytes(taskID, bytesAgent)
+		m.Reconciler.Finalize(taskID)
+	}
+
 	meter, err := m.Store.GetMeter(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("looking up meter for %s: %w", taskID, err)

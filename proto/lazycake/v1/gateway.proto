@@ -1,0 +1,22 @@
+syntax = "proto3";
+package lazycake.v1;
+option go_package = "github.com/mkassab215/lazycake/internal/proto/lazycakev1";
+
+// GatewayService lets a gateway report the byte counts it observed
+// forwarding one task's traffic - the third independent measurement point
+// IMPLEMENTATION.md task 4.3's byte reconciliation needs, alongside the
+// agent's own TaskFinished report and the relay's stream counters.
+// Authenticated with the gateway's own bearer token (store.TokenGateway),
+// the same one it already uses to connect to the relay.
+service GatewayService {
+  rpc ReportBytes(ByteReport) returns (ByteReportAck);
+}
+
+message ByteReport {
+  string gateway_id     = 1;
+  string task_id        = 2;
+  int64  bytes_to_local = 3; // gateway -> local service
+  int64  bytes_to_task  = 4; // local service -> gateway -> task
+}
+
+message ByteReportAck {}

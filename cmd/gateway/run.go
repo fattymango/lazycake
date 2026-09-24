@@ -3,13 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/mkassab215/lazycake/internal/gateway/config"
 	"github.com/mkassab215/lazycake/internal/gateway/listener"
 	"github.com/mkassab215/lazycake/internal/logging"
+	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 	"github.com/mkassab215/lazycake/internal/tunnel/noise"
 	"github.com/mkassab215/lazycake/internal/tunnel/quic"
 )
@@ -42,11 +49,14 @@ func run() error {
 		return fmt.Errorf("connecting to relay: %w", err)
 	}
 
+	reportBytes := newByteReporter(cfg, log)
+
 	l := &listener.Listener{
 		Conn: conn, Keypair: keypair, Services: services, Log: log,
 		OnForward: func(s listener.ForwardStats) {
 			log.Info("forward closed", "task_id", s.TaskID, "service", s.Service,
 				"bytes_to_local", s.BytesToLocal, "bytes_to_task", s.BytesToTask)
+			reportBytes(s)
 		},
 	}
 
@@ -94,4 +104,38 @@ func loadOrCreateKeypair(path string) (noise.Keypair, error) {
 		return noise.Keypair{}, fmt.Errorf("writing %s: %w", path, err)
 	}
 	return kp, nil
+}
+
+// newByteReporter returns a function that reports one forwarded
+// connection's byte counts to the coordinator's GatewayService (task
+// 4.3's third reconciliation point), or a no-op if cfg.GRPCAddr wasn't
+// set - reporting is defense in depth for billing, not something the
+// gateway's actual job depends on, so it degrades gracefully rather than
+// failing startup.
+func newByteReporter(cfg config.Config, log *slog.Logger) func(listener.ForwardStats) {
+	if cfg.GRPCAddr == "" {
+		log.Warn("LAZYCAKE_GRPC_ADDR not set, byte reconciliation reports disabled")
+		return func(listener.ForwardStats) {}
+	}
+
+	conn, err := grpc.NewClient(cfg.GRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Warn("dialing coordinator gRPC for byte reports, disabling them", "addr", cfg.GRPCAddr, "error", err)
+		return func(listener.ForwardStats) {}
+	}
+	client := lazycakev1.NewGatewayServiceClient(conn)
+
+	return func(s listener.ForwardStats) {
+		ctx, cancel := context.WithTimeout(
+			metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+cfg.Token)),
+			10*time.Second)
+		defer cancel()
+		_, err := client.ReportBytes(ctx, &lazycakev1.ByteReport{
+			GatewayId: cfg.GatewayID, TaskId: s.TaskID,
+			BytesToLocal: s.BytesToLocal, BytesToTask: s.BytesToTask,
+		})
+		if err != nil {
+			log.Warn("reporting byte counts", "task_id", s.TaskID, "error", err)
+		}
+	}
 }
