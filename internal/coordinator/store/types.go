@@ -172,3 +172,24 @@ type CapacityFilter struct {
 	FreeMemoryMB int
 	FreeDiskMB   int
 }
+
+// GatewayService is one local TCP service a gateway is willing to forward
+// to, mirroring internal/gateway/config.Service.
+type GatewayService struct {
+	Name string `json:"name"`
+	Port int    `json:"port"`
+}
+
+// Gateway is a customer-installed relay endpoint, registered via
+// `lcctl gateway create` before the gateway process itself ever runs -
+// NoisePubkey starts empty and is filled in the first time it connects
+// (see internal/tunnel/quic.Relay's GatewayRegistry).
+type Gateway struct {
+	ID          string
+	AccountID   string
+	Label       string
+	NoisePubkey []byte
+	Services    []GatewayService
+	Connected   bool
+	CreatedAt   time.Time
+}

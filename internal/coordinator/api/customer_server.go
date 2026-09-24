@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"strings"
 	"time"
 
@@ -54,6 +57,20 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 	}
 	if len(req.GetGatewayIds()) > maxGateways {
 		return nil, status.Errorf(codes.InvalidArgument, "at most %d gateways per task, got %d", maxGateways, len(req.GetGatewayIds()))
+	}
+	for _, gwID := range req.GetGatewayIds() {
+		gw, err := s.Store.GetGateway(ctx, gwID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", gwID)
+			}
+			return nil, status.Errorf(codes.Internal, "getting gateway %s: %v", gwID, err)
+		}
+		if gw.AccountID != tok.AccountID {
+			// Same error as not-found: don't reveal that a gateway ID
+			// belongs to someone else.
+			return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", gwID)
+		}
 	}
 	limits := req.GetLimits()
 	if limits == nil || limits.GetWallTimeoutS() <= 0 {
@@ -206,6 +223,86 @@ func (s *CustomerServer) StreamLogs(req *lazycakev1.StreamLogsRequest, stream la
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+}
+
+func (s *CustomerServer) CreateGateway(ctx context.Context, req *lazycakev1.CreateGatewayRequest) (*lazycakev1.CreateGatewayResponse, error) {
+	tok, err := s.authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetLabel() == "" {
+		return nil, status.Error(codes.InvalidArgument, "label is required")
+	}
+
+	services, err := parseGatewayServices(req.GetServices())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	gatewayID := id.New(id.Gateway)
+	installToken, err := randomToken()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "generating install token: %v", err)
+	}
+
+	if err := s.Store.CreateGateway(ctx, store.Gateway{
+		ID: gatewayID, AccountID: tok.AccountID, Label: req.GetLabel(), Services: services,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "creating gateway: %v", err)
+	}
+	if err := s.Store.CreateToken(ctx, store.APIToken{
+		TokenHash: auth.Hash(installToken), AccountID: tok.AccountID, Kind: store.TokenGateway,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "creating gateway token: %v", err)
+	}
+
+	return &lazycakev1.CreateGatewayResponse{GatewayId: gatewayID, InstallToken: installToken}, nil
+}
+
+func parseGatewayServices(specs []string) ([]store.GatewayService, error) {
+	out := make([]store.GatewayService, 0, len(specs))
+	for _, spec := range specs {
+		name, portStr, ok := strings.Cut(spec, ":")
+		if !ok {
+			return nil, fmt.Errorf("malformed service %q, want name:port", spec)
+		}
+		var port int
+		if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil || port <= 0 {
+			return nil, fmt.Errorf("malformed port in service %q", spec)
+		}
+		out = append(out, store.GatewayService{Name: name, Port: port})
+	}
+	return out, nil
+}
+
+func randomToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (s *CustomerServer) ListGateways(ctx context.Context, _ *lazycakev1.ListGatewaysRequest) (*lazycakev1.ListGatewaysResponse, error) {
+	tok, err := s.authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	gateways, err := s.Store.ListGatewaysByAccount(ctx, tok.AccountID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "listing gateways: %v", err)
+	}
+	out := &lazycakev1.ListGatewaysResponse{}
+	for _, g := range gateways {
+		svcNames := make([]string, len(g.Services))
+		for i, svc := range g.Services {
+			svcNames[i] = fmt.Sprintf("%s:%d", svc.Name, svc.Port)
+		}
+		out.Gateways = append(out.Gateways, &lazycakev1.GatewayStatus{
+			GatewayId: g.ID, Label: g.Label, Connected: g.Connected, Services: svcNames,
+		})
+	}
+	return out, nil
 }
 
 func (s *CustomerServer) ListNodes(ctx context.Context, _ *lazycakev1.ListNodesRequest) (*lazycakev1.ListNodesResponse, error) {

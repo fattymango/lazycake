@@ -26,13 +26,9 @@ func run() error {
 	log := logging.New(os.Stderr, cfg.Dev)
 	log.Info("gateway starting", "config", cfg)
 
-	// A fresh keypair per run is a phase 2.4 simplification: real key
-	// persistence and publication happens at gateway registration (phase
-	// 2.7). Logged so it can be copied into the coordinator's gateway
-	// record by hand until that exists.
-	keypair, err := noise.GenerateKeypair()
+	keypair, err := loadOrCreateKeypair(keyPath())
 	if err != nil {
-		return fmt.Errorf("generating noise keypair: %w", err)
+		return fmt.Errorf("loading noise keypair: %w", err)
 	}
 	log.Info("noise static public key", "pubkey_hex", fmt.Sprintf("%x", keypair.Public))
 
@@ -41,7 +37,7 @@ func run() error {
 		services[s.Name] = s.Port
 	}
 
-	conn, err := quic.DialGateway(ctx, cfg.CoordinatorAddr, cfg.Token, gatewayIDFromToken(cfg.Token))
+	conn, err := quic.DialGateway(ctx, cfg.CoordinatorAddr, cfg.Token, cfg.GatewayID, keypair.Public)
 	if err != nil {
 		return fmt.Errorf("connecting to relay: %w", err)
 	}
@@ -66,9 +62,36 @@ func run() error {
 	}
 }
 
-// gatewayIDFromToken is a phase 2.4 stand-in for real gateway identity:
-// until registration (phase 2.7) assigns a gw_<ulid> ID stored alongside
-// the token, the gateway just is its own token for relay lookup purposes.
-func gatewayIDFromToken(token string) string {
-	return token
+// keyPath is where the gateway's Noise static key persists across
+// restarts, so its public key (published to the coordinator once, at
+// registration - see internal/coordinator/api/customer_server.go and
+// PLAN.md "static keys exchanged at gateway registration") doesn't rotate
+// out from under an already-configured task every time the process
+// restarts.
+func keyPath() string {
+	if p := os.Getenv("LAZYCAKE_GATEWAY_KEY_PATH"); p != "" {
+		return p
+	}
+	return "lazycake-gateway.key"
+}
+
+func loadOrCreateKeypair(path string) (noise.Keypair, error) {
+	if data, err := os.ReadFile(path); err == nil {
+		priv := make([]byte, len(data))
+		copy(priv, data)
+		pub, err := noise.PublicFromPrivate(priv)
+		if err != nil {
+			return noise.Keypair{}, fmt.Errorf("deriving public key from %s: %w", path, err)
+		}
+		return noise.Keypair{Public: pub, Private: priv}, nil
+	}
+
+	kp, err := noise.GenerateKeypair()
+	if err != nil {
+		return noise.Keypair{}, err
+	}
+	if err := os.WriteFile(path, kp.Private, 0o600); err != nil {
+		return noise.Keypair{}, fmt.Errorf("writing %s: %w", path, err)
+	}
+	return kp, nil
 }

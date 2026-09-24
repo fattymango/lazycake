@@ -19,10 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_SubmitTask_FullMethodName = "/lazycake.v1.CustomerService/SubmitTask"
-	CustomerService_GetTask_FullMethodName    = "/lazycake.v1.CustomerService/GetTask"
-	CustomerService_StreamLogs_FullMethodName = "/lazycake.v1.CustomerService/StreamLogs"
-	CustomerService_ListNodes_FullMethodName  = "/lazycake.v1.CustomerService/ListNodes"
+	CustomerService_SubmitTask_FullMethodName    = "/lazycake.v1.CustomerService/SubmitTask"
+	CustomerService_GetTask_FullMethodName       = "/lazycake.v1.CustomerService/GetTask"
+	CustomerService_StreamLogs_FullMethodName    = "/lazycake.v1.CustomerService/StreamLogs"
+	CustomerService_ListNodes_FullMethodName     = "/lazycake.v1.CustomerService/ListNodes"
+	CustomerService_CreateGateway_FullMethodName = "/lazycake.v1.CustomerService/CreateGateway"
+	CustomerService_ListGateways_FullMethodName  = "/lazycake.v1.CustomerService/ListGateways"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -37,6 +39,8 @@ type CustomerServiceClient interface {
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*TaskStatus, error)
 	StreamLogs(ctx context.Context, in *StreamLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskLogLine], error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
+	CreateGateway(ctx context.Context, in *CreateGatewayRequest, opts ...grpc.CallOption) (*CreateGatewayResponse, error)
+	ListGateways(ctx context.Context, in *ListGatewaysRequest, opts ...grpc.CallOption) (*ListGatewaysResponse, error)
 }
 
 type customerServiceClient struct {
@@ -96,6 +100,26 @@ func (c *customerServiceClient) ListNodes(ctx context.Context, in *ListNodesRequ
 	return out, nil
 }
 
+func (c *customerServiceClient) CreateGateway(ctx context.Context, in *CreateGatewayRequest, opts ...grpc.CallOption) (*CreateGatewayResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateGatewayResponse)
+	err := c.cc.Invoke(ctx, CustomerService_CreateGateway_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListGateways(ctx context.Context, in *ListGatewaysRequest, opts ...grpc.CallOption) (*ListGatewaysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListGatewaysResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListGateways_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CustomerServiceServer is the server API for CustomerService service.
 // All implementations must embed UnimplementedCustomerServiceServer
 // for forward compatibility.
@@ -108,6 +132,8 @@ type CustomerServiceServer interface {
 	GetTask(context.Context, *GetTaskRequest) (*TaskStatus, error)
 	StreamLogs(*StreamLogsRequest, grpc.ServerStreamingServer[TaskLogLine]) error
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
+	CreateGateway(context.Context, *CreateGatewayRequest) (*CreateGatewayResponse, error)
+	ListGateways(context.Context, *ListGatewaysRequest) (*ListGatewaysResponse, error)
 	mustEmbedUnimplementedCustomerServiceServer()
 }
 
@@ -129,6 +155,12 @@ func (UnimplementedCustomerServiceServer) StreamLogs(*StreamLogsRequest, grpc.Se
 }
 func (UnimplementedCustomerServiceServer) ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
+}
+func (UnimplementedCustomerServiceServer) CreateGateway(context.Context, *CreateGatewayRequest) (*CreateGatewayResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateGateway not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListGateways(context.Context, *ListGatewaysRequest) (*ListGatewaysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListGateways not implemented")
 }
 func (UnimplementedCustomerServiceServer) mustEmbedUnimplementedCustomerServiceServer() {}
 func (UnimplementedCustomerServiceServer) testEmbeddedByValue()                         {}
@@ -216,6 +248,42 @@ func _CustomerService_ListNodes_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_CreateGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateGatewayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).CreateGateway(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_CreateGateway_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).CreateGateway(ctx, req.(*CreateGatewayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListGateways_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListGatewaysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListGateways(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListGateways_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListGateways(ctx, req.(*ListGatewaysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CustomerService_ServiceDesc is the grpc.ServiceDesc for CustomerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -234,6 +302,14 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNodes",
 			Handler:    _CustomerService_ListNodes_Handler,
+		},
+		{
+			MethodName: "CreateGateway",
+			Handler:    _CustomerService_CreateGateway_Handler,
+		},
+		{
+			MethodName: "ListGateways",
+			Handler:    _CustomerService_ListGateways_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

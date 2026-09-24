@@ -69,6 +69,70 @@ func TestSubmitTaskRejectsTooManyGateways(t *testing.T) {
 	}
 }
 
+func TestSubmitTaskRejectsUnknownGateway(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
+	client := startCustomerTestServer(t, fs)
+
+	_, err := client.SubmitTask(authCtx("cust"), &lazycakev1.SubmitTaskRequest{
+		Image:      "alpine@sha256:abc",
+		Limits:     &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
+		GatewayIds: []string{"gw_nonexistent"},
+	})
+	if err == nil {
+		t.Fatal("expected error for an unknown gateway id")
+	}
+}
+
+func TestSubmitTaskRejectsOtherAccountsGateway(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("cust1")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
+	fs.gateways["gw_other"] = store.Gateway{ID: "gw_other", AccountID: "act_2", Label: "not yours"}
+	client := startCustomerTestServer(t, fs)
+
+	_, err := client.SubmitTask(authCtx("cust1"), &lazycakev1.SubmitTaskRequest{
+		Image:      "alpine@sha256:abc",
+		Limits:     &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
+		GatewayIds: []string{"gw_other"},
+	})
+	if err == nil {
+		t.Fatal("expected error submitting with another account's gateway")
+	}
+}
+
+func TestCreateAndListGateways(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
+	client := startCustomerTestServer(t, fs)
+
+	created, err := client.CreateGateway(authCtx("cust"), &lazycakev1.CreateGatewayRequest{
+		Label: "prod-db", Services: []string{"db:5432"},
+	})
+	if err != nil {
+		t.Fatalf("CreateGateway: %v", err)
+	}
+	if created.GetGatewayId() == "" || created.GetInstallToken() == "" {
+		t.Fatalf("expected a gateway id and install token, got %+v", created)
+	}
+
+	listed, err := client.ListGateways(authCtx("cust"), &lazycakev1.ListGatewaysRequest{})
+	if err != nil {
+		t.Fatalf("ListGateways: %v", err)
+	}
+	if len(listed.GetGateways()) != 1 || listed.GetGateways()[0].GetGatewayId() != created.GetGatewayId() {
+		t.Fatalf("expected the created gateway to be listed, got %+v", listed.GetGateways())
+	}
+
+	// The install token authenticates as a gateway token for that account.
+	tok, err := fs.Authenticate(context.Background(), auth.Hash(created.GetInstallToken()))
+	if err != nil {
+		t.Fatalf("install token does not authenticate: %v", err)
+	}
+	if tok.Kind != store.TokenGateway || tok.AccountID != "act_1" {
+		t.Fatalf("unexpected token: %+v", tok)
+	}
+}
+
 func TestSubmitAndGetTask(t *testing.T) {
 	fs := newFakeStore()
 	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})

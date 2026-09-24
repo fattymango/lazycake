@@ -14,6 +14,7 @@ import (
 	"io"
 
 	flynnnoise "github.com/flynn/noise"
+	"golang.org/x/crypto/curve25519"
 )
 
 var cipherSuite = flynnnoise.NewCipherSuite(flynnnoise.DH25519, flynnnoise.CipherChaChaPoly, flynnnoise.HashSHA256)
@@ -33,6 +34,17 @@ func GenerateKeypair() (Keypair, error) {
 		return Keypair{}, fmt.Errorf("generating noise keypair: %w", err)
 	}
 	return Keypair{Public: kp.Public, Private: kp.Private}, nil
+}
+
+// PublicFromPrivate derives a Curve25519 public key from a static private
+// key, for loading a persisted keypair back from just its private half
+// (see cmd/gateway's key persistence).
+func PublicFromPrivate(private []byte) ([]byte, error) {
+	pub, err := curve25519.X25519(private, curve25519.Basepoint)
+	if err != nil {
+		return nil, fmt.Errorf("deriving public key: %w", err)
+	}
+	return pub, nil
 }
 
 // maxPlaintext keeps each Noise message under the protocol's 65535-byte

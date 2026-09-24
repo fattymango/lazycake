@@ -9,6 +9,7 @@ package quic
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,6 +30,20 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, token string) (accountID string, err error)
 }
 
+// GatewayRegistry lets the relay verify a connecting gateway's identity
+// and record its published Noise key, without importing coordinator
+// packages directly - the coordinator wires its own store.Store-backed
+// implementation in.
+type GatewayRegistry interface {
+	// OwnsGateway reports whether gatewayID belongs to accountID, so a
+	// valid token for one account can't register as someone else's
+	// gateway ID.
+	OwnsGateway(ctx context.Context, accountID, gatewayID string) (bool, error)
+	// SetGatewayConnected records connectedness and, when connected is
+	// true, the Noise public key the gateway just published.
+	SetGatewayConnected(ctx context.Context, gatewayID string, connected bool, noisePubkey []byte) error
+}
+
 // StreamStats is reported once a relayed stream closes, for the
 // three-point byte reconciliation phase 4 builds on top of this.
 type StreamStats struct {
@@ -41,8 +56,9 @@ type StreamStats struct {
 // Relay is the coordinator's QUIC endpoint: agents and gateways both dial
 // it, and it pumps bytes between them.
 type Relay struct {
-	Auth Authenticator
-	Log  *slog.Logger
+	Auth     Authenticator
+	Gateways GatewayRegistry // may be nil: gateway ownership/pubkey persistence then just doesn't happen
+	Log      *slog.Logger
 
 	// OnStreamClosed, if set, is called once per relayed stream after it
 	// finishes, with final byte counts.
@@ -95,7 +111,8 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 		r.Log.Warn("reading control frame", "error", err)
 		return
 	}
-	if _, err := r.Auth.Authenticate(ctx, cf.Token); err != nil {
+	accountID, err := r.Auth.Authenticate(ctx, cf.Token)
+	if err != nil {
 		r.Log.Warn("relay auth failed", "role", cf.Role, "error", err)
 		conn.CloseWithError(1, "authentication failed")
 		return
@@ -103,6 +120,33 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 
 	switch cf.Role {
 	case "gateway":
+		if r.Gateways != nil {
+			owns, err := r.Gateways.OwnsGateway(ctx, accountID, cf.GatewayID)
+			if err != nil {
+				r.Log.Warn("checking gateway ownership", "gateway_id", cf.GatewayID, "error", err)
+				conn.CloseWithError(1, "internal error")
+				return
+			}
+			if !owns {
+				r.Log.Warn("gateway id does not belong to this account", "gateway_id", cf.GatewayID, "account_id", accountID)
+				conn.CloseWithError(1, "gateway id does not belong to this account")
+				return
+			}
+			pubkey, err := hex.DecodeString(cf.NoisePubkey)
+			if err != nil {
+				r.Log.Warn("decoding gateway noise pubkey", "gateway_id", cf.GatewayID, "error", err)
+				conn.CloseWithError(1, "malformed noise pubkey")
+				return
+			}
+			if err := r.Gateways.SetGatewayConnected(ctx, cf.GatewayID, true, pubkey); err != nil {
+				r.Log.Warn("recording gateway connection", "gateway_id", cf.GatewayID, "error", err)
+			}
+			defer func() {
+				if err := r.Gateways.SetGatewayConnected(context.Background(), cf.GatewayID, false, nil); err != nil {
+					r.Log.Warn("recording gateway disconnection", "gateway_id", cf.GatewayID, "error", err)
+				}
+			}()
+		}
 		r.registerGateway(cf.GatewayID, conn)
 		defer r.unregisterGateway(cf.GatewayID, conn)
 		<-conn.Context().Done()
