@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Same state -> color mapping as internal/coordinator/dashboard/index.html
+   (PLAN.md §6 names this file as the source of truth to reuse from). */
+@layer components {
+  .state-badge {
+    @apply inline-block text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap;
+  }
+  .state-queued { @apply text-queued border-queued; }
+  .state-reserved,
+  .state-dispatched { @apply text-dispatched border-dispatched; }
+  .state-running { @apply text-running border-running; }
+  .state-succeeded { @apply text-good border-good; }
+  .state-failed,
+  .state-abandoned { @apply text-bad border-bad; }
+  .state-fenced,
+  .state-cancelled { @apply text-warn border-warn; }
+}

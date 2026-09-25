@@ -1,0 +1,8 @@
+This directory holds the built web/ output (npm run build in web/, copied
+here as `web/dist/* -> internal/coordinator/webassets/dist/`) so
+webassets.go can go:embed it into the coordinator binary. It is
+intentionally checked into git as an empty placeholder (this file) so
+`go build ./...` keeps working with no frontend build present; deploy/Dockerfile's
+node stage overwrites this directory's contents before the Go build stage
+runs. Run `(cd web && npm ci && npm run build) && cp -r web/dist/. internal/coordinator/webassets/dist/`
+locally to populate it for a non-Docker build.

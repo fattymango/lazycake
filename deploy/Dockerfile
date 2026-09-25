@@ -1,10 +1,24 @@
 # Multi-stage build producing one small image per LazyCake binary. Build a
 # specific target with `--target coordinator|agent|gateway|lcctl`.
+
+# Builds the two portal SPAs (PLAN.md §6) so internal/coordinator/webassets
+# can go:embed them into the coordinator binary - the single-binary deploy
+# story doesn't change, npm is a build-time-only dependency. Only the
+# coordinator target actually needs this stage's output; the other targets
+# don't copy from it.
+FROM node:22-alpine AS web-build
+WORKDIR /web
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=web-build /web/dist/. internal/coordinator/webassets/dist/
 RUN go build -o /out/coordinator ./cmd/coordinator \
  && go build -o /out/agent ./cmd/agent \
  && go build -o /out/gateway ./cmd/gateway \
