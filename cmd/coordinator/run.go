@@ -72,6 +72,15 @@ func run() error {
 		log.Info("seeded demo account act_demo")
 	}
 
+	if cfg.SeedPortalCustomerUsername != "" && cfg.SeedPortalProviderUsername != "" && cfg.SeedPortalPassword != "" {
+		if err := seed.EnsurePortalDemoAccounts(ctx, st,
+			cfg.SeedPortalCustomerUsername, cfg.SeedPortalProviderUsername, cfg.SeedPortalPassword,
+		); err != nil {
+			return fmt.Errorf("seeding portal demo accounts: %w", err)
+		}
+		log.Info("seeded portal demo accounts", "customer", cfg.SeedPortalCustomerUsername, "provider", cfg.SeedPortalProviderUsername)
+	}
+
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", cfg.GRPCAddr, err)

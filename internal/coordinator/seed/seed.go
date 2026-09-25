@@ -10,8 +10,11 @@ import (
 	"errors"
 	"fmt"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
+	"github.com/mkassab215/lazycake/internal/id"
 )
 
 const demoAccountID = "act_demo"
@@ -77,6 +80,61 @@ func EnsurePlatformCanaryAccount(ctx context.Context, st store.Store) (accountID
 	}
 
 	return platformAccountID, platformGatewayID, nil
+}
+
+// portalDemoBalanceMicros is what the seeded customer account starts
+// with - enough to submit a comfortable number of small demo tasks
+// (matches EnsureDemoAccount's own act_demo funding) without ever
+// needing a manual "add funds" click just to try the portal out.
+const portalDemoBalanceMicros = 1_000_000_000
+
+// EnsurePortalDemoAccounts creates two demo portal login accounts
+// (idempotently, by username): a customer account, pre-funded so
+// submitting a task works immediately, and a provider account,
+// deliberately unfunded (a provider earns rather than spends - see
+// docs/01-dashboard-portals/OPEN_QUESTIONS.md). Both get the same
+// password - fine for a demo whose whole point is trying both roles
+// yourself, not a real multi-tenant security boundary. Same posture as
+// EnsureDemoAccount: gated behind an explicit opt-in
+// (cmd/coordinator/run.go only calls this when LAZYCAKE_SEED_PORTAL_*
+// env vars are set), never run unless asked, safe to call on every
+// startup since it's a no-op once the usernames already exist - so a
+// `podman compose down -v && up` reseeds them exactly like act_demo.
+func EnsurePortalDemoAccounts(ctx context.Context, st store.Store, customerUsername, providerUsername, password string) error {
+	if customerUsername == "" || providerUsername == "" || password == "" {
+		return fmt.Errorf("seed: customerUsername, providerUsername and password must all be set")
+	}
+	if err := ensurePortalAccount(ctx, st, customerUsername, password, store.RoleCustomer, portalDemoBalanceMicros); err != nil {
+		return fmt.Errorf("seeding portal customer account %q: %w", customerUsername, err)
+	}
+	if err := ensurePortalAccount(ctx, st, providerUsername, password, store.RoleProvider, 0); err != nil {
+		return fmt.Errorf("seeding portal provider account %q: %w", providerUsername, err)
+	}
+	return nil
+}
+
+func ensurePortalAccount(ctx context.Context, st store.Store, username, password string, role store.PortalRole, balanceMicros int64) error {
+	if _, err := st.GetPortalCredentialByUsername(ctx, username); err == nil {
+		return nil // already provisioned
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("checking for existing portal account: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	accountID := id.New(id.Account)
+	if err := st.CreateAccount(ctx, store.Account{ID: accountID, Name: username, BalanceMicros: balanceMicros}); err != nil {
+		return fmt.Errorf("creating account: %w", err)
+	}
+	if err := st.CreatePortalCredential(ctx, store.PortalCredential{
+		AccountID: accountID, Username: username, PasswordHash: string(hash), Role: role,
+	}); err != nil {
+		return fmt.Errorf("creating portal credential: %w", err)
+	}
+	return nil
 }
 
 func ensureToken(ctx context.Context, st store.Store, token string, kind store.TokenKind) error {
