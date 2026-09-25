@@ -215,7 +215,13 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 		return
 	}
 
-	id, err := e.Runtime.Create(runCtx, e.spec(d))
+	spec, err := e.spec(runCtx, d)
+	if err != nil {
+		log.Error("resolving container spec", "error", err)
+		sendFinished(-1, "error")
+		return
+	}
+	id, err := e.Runtime.Create(runCtx, spec)
 	if err != nil {
 		log.Error("creating container", "error", err)
 		sendFinished(-1, "error")
@@ -309,13 +315,17 @@ func (e *Executor) startTunnel(ctx context.Context, containerID string, d *lazyc
 	return proxy, nil
 }
 
-func (e *Executor) spec(d *lazycakev1.Dispatch) runtime.Spec {
+func (e *Executor) spec(ctx context.Context, d *lazycakev1.Dispatch) (runtime.Spec, error) {
 	entrypoint, args, mounts := d.GetEntrypoint(), d.GetArgs(), []runtime.Mount(nil)
 	if e.LcinitPath != "" {
-		entrypoint, args, mounts = e.wrapWithLcinit(d)
+		var err error
+		entrypoint, args, mounts, err = e.wrapWithLcinit(ctx, d)
+		if err != nil {
+			return runtime.Spec{}, err
+		}
 	}
 	return runtime.Spec{
-		Name:       "lazycake-" + d.GetTaskId(),
+		Name:       fmt.Sprintf("lazycake-%s-%d", d.GetTaskId(), d.GetAttempt()),
 		Image:      d.GetImage(),
 		Entrypoint: entrypoint,
 		Args:       args,
@@ -332,7 +342,7 @@ func (e *Executor) spec(d *lazycakev1.Dispatch) runtime.Spec {
 			"lazycake.instance_id": e.InstanceID,
 			"lazycake.boot_id":     e.BootID,
 		},
-	}
+	}, nil
 }
 
 // wrapWithLcinit rewrites a task's entrypoint to run through
@@ -340,18 +350,34 @@ func (e *Executor) spec(d *lazycakev1.Dispatch) runtime.Spec {
 // its own child, so the container's actual PID 1 is lcinit, still
 // enforcing wall_timeout_s even if the agent process and systemd unit that
 // dispatched it are both gone by the time it matters.
-func (e *Executor) wrapWithLcinit(d *lazycakev1.Dispatch) (entrypoint, args []string, mounts []runtime.Mount) {
+//
+// lcinit has to be told explicitly what to exec - unlike a normal
+// container start, the engine never gets a chance to apply the image's own
+// Entrypoint/Cmd, since lcinit itself is what's actually configured as the
+// container's entrypoint. So when the dispatch didn't override the
+// command (the common case for an image like cmd/refworkload that's meant
+// to just run via its own ENTRYPOINT), this resolves the image's default
+// here instead of silently handing lcinit nothing to run.
+func (e *Executor) wrapWithLcinit(ctx context.Context, d *lazycakev1.Dispatch) (entrypoint, args []string, mounts []runtime.Mount, err error) {
+	taskEntrypoint, taskArgs := d.GetEntrypoint(), d.GetArgs()
+	if len(taskEntrypoint) == 0 && len(taskArgs) == 0 {
+		taskEntrypoint, taskArgs, err = e.Runtime.ImageEntrypoint(ctx, d.GetImage())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("resolving default command for %s: %w", d.GetImage(), err)
+		}
+	}
+
 	lcinitArgs := []string{}
 	if wallTimeoutS := d.GetLimits().GetWallTimeoutS(); wallTimeoutS > 0 {
 		lcinitArgs = append(lcinitArgs, fmt.Sprintf("--max-duration=%ds", wallTimeoutS))
 	}
 	lcinitArgs = append(lcinitArgs, "--")
-	lcinitArgs = append(lcinitArgs, d.GetEntrypoint()...)
-	lcinitArgs = append(lcinitArgs, d.GetArgs()...)
+	lcinitArgs = append(lcinitArgs, taskEntrypoint...)
+	lcinitArgs = append(lcinitArgs, taskArgs...)
 
 	return []string{"/.lazycake/init"}, lcinitArgs, []runtime.Mount{
 		{HostPath: e.LcinitPath, ContainerPath: "/.lazycake/init", ReadOnly: true},
-	}
+	}, nil
 }
 
 func rejected(taskID, reason string) *lazycakev1.AgentMessage {

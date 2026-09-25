@@ -42,6 +42,10 @@ func run() error {
 	log := logging.New(os.Stderr, cfg.Dev)
 	log.Info("agent starting", "config", cfg)
 
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
+		return fmt.Errorf("creating data dir: %w", err)
+	}
+
 	probeCtx, cancelProbe := context.WithTimeout(ctx, 30*time.Second)
 	report, err := probe.Run(probeCtx, probe.DefaultOptions())
 	cancelProbe()

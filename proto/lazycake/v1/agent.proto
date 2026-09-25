@@ -115,6 +115,13 @@ message Dispatch {
   string isolation      = 8;
   repeated TunnelTarget targets = 9;
   int64 lease_expires_unix_ms = 10;
+  // attempt is how many times this task has been dispatched before,
+  // starting at 0 for the first attempt - see store.Task.Attempt. The
+  // agent uses it to make its container name unique per attempt, so a
+  // retry redispatched to a different node never collides with a
+  // container an earlier (possibly still-running, possibly just
+  // unreachable) attempt left behind.
+  int32 attempt = 11;
 }
 
 message Limits {
