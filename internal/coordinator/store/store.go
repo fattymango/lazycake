@@ -57,6 +57,10 @@ type Tasks interface {
 	CreateTask(ctx context.Context, t Task) error
 	GetTask(ctx context.Context, id string) (Task, error)
 	ListTasksByNode(ctx context.Context, nodeID string, states []TaskState) ([]Task, error)
+	// ListRecentTasks returns the most recently created tasks fleet-wide,
+	// newest first, for task 6.2's dashboard initial snapshot (the live
+	// table itself is then kept current via task 6.1's SSE events).
+	ListRecentTasks(ctx context.Context, limit int) ([]Task, error)
 
 	// ClaimQueuedTask atomically picks one queued task matching filter,
 	// moves it to 'reserved' with the given node and lease, and returns it.
@@ -163,6 +167,11 @@ type Ledger interface {
 	// LedgerEntriesForAccount lists every ledger row for an account,
 	// oldest first.
 	LedgerEntriesForAccount(ctx context.Context, accountID string) ([]LedgerEntry, error)
+	// LedgerTotals sums every charge and credit ever recorded, fleet-wide -
+	// task 6.2's dashboard "running total of charges and credits". Both
+	// returned values are positive magnitudes (charges are stored negative
+	// internally; this returns their absolute total).
+	LedgerTotals(ctx context.Context) (totalChargesMicros, totalCreditsMicros int64, err error)
 }
 
 // Holds persists task_holds (task 4.5): "Deduct a hold at dispatch, settle

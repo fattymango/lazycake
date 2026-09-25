@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -232,6 +233,20 @@ func (f *fakeStore) ListTasksByNode(ctx context.Context, nodeID string, states [
 		if t.NodeID != nil && *t.NodeID == nodeID && want[t.State] {
 			out = append(out, t)
 		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ListRecentTasks(ctx context.Context, limit int) ([]store.Task, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Task
+	for _, t := range f.tasks {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
@@ -476,6 +491,21 @@ func (f *fakeStore) LedgerEntriesForAccount(ctx context.Context, accountID strin
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeStore) LedgerTotals(ctx context.Context) (int64, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var charges, credits int64
+	for _, e := range f.ledger {
+		switch e.Kind {
+		case "charge":
+			charges += -e.AmountMicros
+		case "credit":
+			credits += e.AmountMicros
+		}
+	}
+	return charges, credits, nil
 }
 
 func (f *fakeStore) PlaceHold(ctx context.Context, taskID, accountID string, amountMicros int64) error {

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LazyCake</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121826; --border: #232c3d; --text: #e6edf3;
+    --muted: #8b98a9; --accent: #4fd1c5; --good: #3fb950; --warn: #d29922;
+    --bad: #f85149; --queued: #8b98a9; --running: #4fd1c5; --dispatched: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin-bottom: 24px; }
+  .sub .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; }
+  .sub .dot.live { background: var(--good); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 12px; }
+  .totals { display: flex; gap: 24px; }
+  .totals .stat { flex: 1; }
+  .totals .stat .val { font-size: 26px; font-weight: 600; }
+  .totals .stat .label { color: var(--muted); font-size: 12px; }
+  .node { border-bottom: 1px solid var(--border); padding: 10px 0; }
+  .node:last-child { border-bottom: none; }
+  .node-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .node-name { font-weight: 600; }
+  .node-name .id { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+  .badge.connected { color: var(--good); border-color: var(--good); }
+  .badge.disconnected { color: var(--bad); border-color: var(--bad); }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .bar-label { width: 46px; color: var(--muted); font-size: 11px; }
+  .bar { flex: 1; height: 6px; background: #1c2433; border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); }
+  .trust-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .trust-fill.low { background: var(--bad); }
+  .trust-fill.mid { background: var(--warn); }
+  .trust-fill.high { background: var(--good); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  tr.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { background: rgba(79,209,197,.25); } to { background: transparent; } }
+  .state { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .state-queued { color: var(--queued); border-color: var(--queued); }
+  .state-reserved, .state-dispatched { color: var(--dispatched); border-color: var(--dispatched); }
+  .state-running { color: var(--running); border-color: var(--running); }
+  .state-succeeded { color: var(--good); border-color: var(--good); }
+  .state-failed, .state-abandoned { color: var(--bad); border-color: var(--bad); }
+  .state-fenced, .state-cancelled { color: var(--warn); border-color: var(--warn); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  #task-panel { max-height: 480px; overflow-y: auto; }
+</style>
+</head>
+<body>
+  <h1>LazyCake</h1>
+  <div class="sub"><span id="live-dot" class="dot"></span><span id="live-text">connecting…</span></div>
+
+  <div class="panel" style="margin-bottom:20px">
+    <h2>Ledger</h2>
+    <div class="totals">
+      <div class="stat"><div id="total-charges" class="val">$0.00</div><div class="label">total charged to customers</div></div>
+      <div class="stat"><div id="total-credits" class="val">$0.00</div><div class="label">total credited to hosts</div></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Nodes</h2>
+      <div id="nodes"></div>
+    </div>
+    <div class="panel" id="task-panel">
+      <h2>Tasks</h2>
+      <table>
+        <thead><tr><th>Task</th><th>State</th><th>Node</th><th>Image</th></tr></thead>
+        <tbody id="tasks"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var nodesEl = document.getElementById("nodes");
+  var tasksEl = document.getElementById("tasks");
+  var chargesEl = document.getElementById("total-charges");
+  var creditsEl = document.getElementById("total-credits");
+  var liveDot = document.getElementById("live-dot");
+  var liveText = document.getElementById("live-text");
+
+  var nodes = {};   // id -> node view
+  var tasks = {};   // id -> task view
+  var taskOrder = []; // ids, most recent first
+
+  function money(micros) {
+    return "$" + (micros / 1e6).toFixed(4);
+  }
+
+  function trustClass(score) {
+    if (score < 0.35) return "low";
+    if (score < 0.7) return "mid";
+    return "high";
+  }
+
+  function renderNodes() {
+    var ids = Object.keys(nodes).sort();
+    nodesEl.innerHTML = ids.map(function (id) {
+      var n = nodes[id];
+      var usedCores = 0, usedMem = 0;
+      Object.keys(tasks).forEach(function (tid) {
+        var t = tasks[tid];
+        if (t.node_id === id && (t.state === "running" || t.state === "dispatched")) {
+          usedCores += t.cores || 0;
+          usedMem += t.memory_mb || 0;
+        }
+      });
+      var corePct = n.offer_cores > 0 ? Math.min(100, 100 * usedCores / n.offer_cores) : 0;
+      var memPct = n.offer_memory_mb > 0 ? Math.min(100, 100 * usedMem / n.offer_memory_mb) : 0;
+      var trustPct = Math.round(n.trust_score * 100);
+      return (
+        '<div class="node">' +
+          '<div class="node-head">' +
+            '<div class="node-name">' + escapeHTML(n.hostname || n.id) + '<span class="id">' + escapeHTML(n.id) + '</span></div>' +
+            '<span class="badge ' + (n.connected ? "connected" : "disconnected") + '">' + (n.connected ? "connected" : "disconnected") + '</span>' +
+          '</div>' +
+          '<div class="bar-row"><span class="bar-label">cpu</span><div class="bar"><div class="bar-fill" style="width:' + corePct + '%"></div></div></div>' +
+          '<div class="bar-row"><span class="bar-label">mem</span><div class="bar"><div class="bar-fill" style="width:' + memPct + '%"></div></div></div>' +
+          '<div class="trust-row"><span class="bar-label">trust</span><div class="bar"><div class="bar-fill trust-fill ' + trustClass(n.trust_score) + '" style="width:' + trustPct + '%"></div></div><span class="mono">' + n.trust_score.toFixed(2) + '</span></div>' +
+        '</div>'
+      );
+    }).join("") || '<div class="mono">no nodes yet</div>';
+  }
+
+  function renderTasks(flashID) {
+    tasksEl.innerHTML = taskOrder.slice(0, 100).map(function (id) {
+      var t = tasks[id];
+      if (!t) return "";
+      var cls = t.id === flashID ? " flash" : "";
+      return (
+        '<tr class="row' + cls + '">' +
+          '<td class="mono">' + escapeHTML(t.id) + '</td>' +
+          '<td><span class="state state-' + escapeHTML(t.state) + '">' + escapeHTML(t.state) + '</span></td>' +
+          '<td class="mono">' + escapeHTML(t.node_id || "") + '</td>' +
+          '<td class="mono">' + escapeHTML(t.image || "") + '</td>' +
+        '</tr>'
+      );
+    }).join("");
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function applyTaskState(ev) {
+    var t = tasks[ev.task_id];
+    if (!t) {
+      t = { id: ev.task_id, image: "" };
+      tasks[ev.task_id] = t;
+      taskOrder.unshift(ev.task_id);
+    }
+    t.state = ev.state;
+    if (ev.node_id) t.node_id = ev.node_id;
+    renderTasks(ev.task_id);
+  }
+
+  function loadState() {
+    fetch("/api/state").then(function (r) { return r.json(); }).then(function (s) {
+      nodes = {};
+      (s.nodes || []).forEach(function (n) { nodes[n.id] = n; });
+      tasks = {};
+      taskOrder = [];
+      (s.tasks || []).forEach(function (t) {
+        tasks[t.id] = { id: t.id, state: t.state, node_id: t.node_id, image: t.image, cores: t.cores, memory_mb: t.memory_mb };
+        taskOrder.push(t.id);
+      });
+      chargesEl.textContent = money((s.totals && s.totals.charges_micros) || 0);
+      creditsEl.textContent = money((s.totals && s.totals.credits_micros) || 0);
+      renderNodes();
+      renderTasks();
+    }).catch(function () { /* dashboard still works once SSE reconnects */ });
+  }
+
+  function connect() {
+    var es = new EventSource("/events");
+    es.onopen = function () {
+      liveDot.className = "dot live";
+      liveText.textContent = "live";
+    };
+    es.onerror = function () {
+      liveDot.className = "dot";
+      liveText.textContent = "reconnecting…";
+    };
+    es.onmessage = function (msg) {
+      var ev;
+      try { ev = JSON.parse(msg.data); } catch (e) { return; }
+      switch (ev.type) {
+        case "task_state":
+          applyTaskState(ev);
+          break;
+        case "node_connected":
+          if (nodes[ev.node_id]) nodes[ev.node_id].connected = true;
+          renderNodes();
+          break;
+        case "node_disconnected":
+          if (nodes[ev.node_id]) nodes[ev.node_id].connected = false;
+          renderNodes();
+          break;
+        case "capacity":
+          renderNodes();
+          break;
+      }
+    };
+  }
+
+  loadState();
+  connect();
+  // Ledger totals and trust scores change slowly enough that a light
+  // periodic refresh of the snapshot keeps them honest without needing a
+  // dedicated event type for every number on the page.
+  setInterval(loadState, 15000);
+})();
+</script>
+</body>
+</html>

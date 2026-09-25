@@ -129,6 +129,25 @@ func (s *PostgresStore) ListTasksByNode(ctx context.Context, nodeID string, stat
 	return out, rows.Err()
 }
 
+func (s *PostgresStore) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+taskColumns+` FROM tasks ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing recent tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning task: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ClaimQueuedTask implements the SELECT ... FOR UPDATE SKIP LOCKED pattern
 // from IMPLEMENTATION.md task 1.2: multiple coordinator replicas can call
 // this concurrently and each queued task is claimed by exactly one of them.

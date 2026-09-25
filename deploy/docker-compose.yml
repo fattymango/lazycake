@@ -36,10 +36,12 @@ services:
       LAZYCAKE_DATABASE_URL: postgres://lazycake:lazycake@postgres:5432/lazycake?sslmode=disable
       LAZYCAKE_GRPC_ADDR: ":7443"
       LAZYCAKE_RELAY_ADDR: ":7444"
+      LAZYCAKE_HTTP_ADDR: ":8080"
       LAZYCAKE_SEED_DEMO_TOKEN: "demo-customer-token"
     ports:
       - "7443:7443"
       - "7444:7444/udp"
+      - "8080:8080" # dashboard + SSE (tasks 6.1/6.2), http://localhost:8080
     depends_on:
       postgres:
         condition: service_healthy

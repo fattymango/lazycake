@@ -69,3 +69,15 @@ func (s *PostgresStore) LedgerEntriesForAccount(ctx context.Context, accountID s
 	}
 	return out, rows.Err()
 }
+
+func (s *PostgresStore) LedgerTotals(ctx context.Context) (totalChargesMicros, totalCreditsMicros int64, err error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT
+			COALESCE(-SUM(amount_micros) FILTER (WHERE kind = 'charge'), 0),
+			COALESCE(SUM(amount_micros) FILTER (WHERE kind = 'credit'), 0)
+		FROM ledger_entries`)
+	if err := row.Scan(&totalChargesMicros, &totalCreditsMicros); err != nil {
+		return 0, 0, fmt.Errorf("summing ledger totals: %w", err)
+	}
+	return totalChargesMicros, totalCreditsMicros, nil
+}
