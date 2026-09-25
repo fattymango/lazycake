@@ -57,6 +57,21 @@ func (r *PodmanRuntime) Pull(ctx context.Context, image string) (int64, error) {
 	return inspect.Size, nil
 }
 
+// ImageEntrypoint returns image's own built-in Entrypoint and Cmd, for a
+// caller that needs to run a task's default command explicitly (see
+// exec.Executor.wrapWithLcinit) rather than relying on the engine to apply
+// the image's defaults itself.
+func (r *PodmanRuntime) ImageEntrypoint(ctx context.Context, image string) (entrypoint, cmd []string, err error) {
+	inspect, _, err := r.cli.ImageInspectWithRaw(ctx, image)
+	if err != nil {
+		return nil, nil, fmt.Errorf("inspecting %s: %w", image, err)
+	}
+	if inspect.Config == nil {
+		return nil, nil, nil
+	}
+	return []string(inspect.Config.Entrypoint), []string(inspect.Config.Cmd), nil
+}
+
 func (r *PodmanRuntime) Create(ctx context.Context, spec Spec) (string, error) {
 	cfg := &container.Config{
 		Image:      spec.Image,

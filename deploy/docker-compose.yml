@@ -112,6 +112,15 @@ services:
       LAZYCAKE_OFFER_DISK_MB: "8192"
       XDG_RUNTIME_DIR: /run/lazycake-engine
       CONTAINER_HOST: unix:///run/lazycake-engine/podman/podman.sock
+      # The agent talks to the *host's* engine over the socket below as a
+      # sibling, not a child - any HostPath it bind-mounts into a task
+      # container (internal/agent/exec/executor.go's lcinit mount) is
+      # resolved by that host engine against the real host filesystem, not
+      # this container's own. cmd/agent/run.go's discoverLcinit default
+      # (next to the agent binary, inside this image) is therefore wrong
+      # here; point this at a real path on the VM host holding a built
+      # cmd/lcinit binary instead.
+      LAZYCAKE_LCINIT_PATH: ${LAZYCAKE_LCINIT_PATH:?set to a host filesystem path (not a path inside this container) holding a built cmd/lcinit binary, e.g. $(pwd)/bin/lcinit}
     volumes:
       - ${LAZYCAKE_PODMAN_SOCKET:-/run/podman/podman.sock}:/run/lazycake-engine/podman/podman.sock
     depends_on:

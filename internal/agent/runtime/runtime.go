@@ -67,6 +67,10 @@ type Runtime interface {
 	// Pull fetches image (a digest reference) if not already cached and
 	// returns its size in bytes.
 	Pull(ctx context.Context, image string) (sizeBytes int64, err error)
+	// ImageEntrypoint returns the image's own built-in Entrypoint and Cmd,
+	// for a caller that needs to run a task's default command explicitly
+	// rather than relying on the engine to apply the image's defaults.
+	ImageEntrypoint(ctx context.Context, image string) (entrypoint, cmd []string, err error)
 	Create(ctx context.Context, spec Spec) (containerID string, err error)
 	Start(ctx context.Context, id string) error
 	// Wait blocks until the container exits.

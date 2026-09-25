@@ -291,6 +291,7 @@ func (s *Scheduler) dispatchMessage(ctx context.Context, t store.Task, leaseExpi
 				},
 				Targets:            targets,
 				LeaseExpiresUnixMs: leaseExpires.UnixMilli(),
+				Attempt:            int32(t.Attempt),
 			},
 		},
 	}, nil

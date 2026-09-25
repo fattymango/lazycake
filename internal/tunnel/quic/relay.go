@@ -23,6 +23,13 @@ import (
 // anything for this long, per IMPLEMENTATION.md task 2.3.
 const streamIdleTimeout = 30 * time.Second
 
+// connConfig keeps the underlying QUIC connection itself alive across long
+// stretches with no relayed stream open (e.g. a gateway just sitting there
+// waiting for work) - without an explicit KeepAlivePeriod below quic-go's
+// default 30s MaxIdleTimeout, the connection times out from inactivity even
+// though nothing is actually wrong, and the gateway has to redial.
+var connConfig = &quicgo.Config{KeepAlivePeriod: 10 * time.Second}
+
 // Authenticator validates a bearer token and returns the account it
 // belongs to. The coordinator's store.Store satisfies a trivial adapter
 // of this; tunnel/quic never imports coordinator packages directly.
@@ -77,7 +84,7 @@ func (r *Relay) Serve(ctx context.Context, addr string) error {
 	if err != nil {
 		return fmt.Errorf("building TLS config: %w", err)
 	}
-	ln, err := quicgo.ListenAddr(addr, tlsConf, nil)
+	ln, err := quicgo.ListenAddr(addr, tlsConf, connConfig)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", addr, err)
 	}

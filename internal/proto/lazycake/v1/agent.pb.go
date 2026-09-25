@@ -1051,8 +1051,15 @@ type Dispatch struct {
 	Isolation          string                 `protobuf:"bytes,8,opt,name=isolation,proto3" json:"isolation,omitempty"`
 	Targets            []*TunnelTarget        `protobuf:"bytes,9,rep,name=targets,proto3" json:"targets,omitempty"`
 	LeaseExpiresUnixMs int64                  `protobuf:"varint,10,opt,name=lease_expires_unix_ms,json=leaseExpiresUnixMs,proto3" json:"lease_expires_unix_ms,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// attempt is how many times this task has been dispatched before,
+	// starting at 0 for the first attempt - see store.Task.Attempt. The
+	// agent uses it to make its container name unique per attempt, so a
+	// retry redispatched to a different node never collides with a
+	// container an earlier (possibly still-running, possibly just
+	// unreachable) attempt left behind.
+	Attempt       int32 `protobuf:"varint,11,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Dispatch) Reset() {
@@ -1151,6 +1158,13 @@ func (x *Dispatch) GetTargets() []*TunnelTarget {
 func (x *Dispatch) GetLeaseExpiresUnixMs() int64 {
 	if x != nil {
 		return x.LeaseExpiresUnixMs
+	}
+	return 0
+}
+
+func (x *Dispatch) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
 	}
 	return 0
 }
@@ -1819,7 +1833,7 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"CacheDelta\x120\n" +
 	"\x06pulled\x18\x01 \x03(\v2\x18.lazycake.v1.CachedImageR\x06pulled\x12\x18\n" +
-	"\aevicted\x18\x02 \x03(\tR\aevicted\"\xa4\x03\n" +
+	"\aevicted\x18\x02 \x03(\tR\aevicted\"\xbe\x03\n" +
 	"\bDispatch\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x1e\n" +
@@ -1833,7 +1847,8 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\tisolation\x18\b \x01(\tR\tisolation\x123\n" +
 	"\atargets\x18\t \x03(\v2\x19.lazycake.v1.TunnelTargetR\atargets\x121\n" +
 	"\x15lease_expires_unix_ms\x18\n" +
-	" \x01(\x03R\x12leaseExpiresUnixMs\x1a6\n" +
+	" \x01(\x03R\x12leaseExpiresUnixMs\x12\x18\n" +
+	"\aattempt\x18\v \x01(\x05R\aattempt\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xfc\x01\n" +
