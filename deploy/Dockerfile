@@ -9,7 +9,8 @@ RUN go build -o /out/coordinator ./cmd/coordinator \
  && go build -o /out/agent ./cmd/agent \
  && go build -o /out/gateway ./cmd/gateway \
  && go build -o /out/lcctl ./cmd/lcctl \
- && CGO_ENABLED=0 go build -o /out/lcinit ./cmd/lcinit
+ && CGO_ENABLED=0 go build -o /out/lcinit ./cmd/lcinit \
+ && CGO_ENABLED=0 go build -o /out/refworkload ./cmd/refworkload
 
 FROM alpine:3.20 AS coordinator
 RUN apk add --no-cache ca-certificates
@@ -45,3 +46,10 @@ FROM alpine:3.20 AS lcctl
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/lcctl /usr/local/bin/lcctl
 ENTRYPOINT ["/usr/local/bin/lcctl"]
+
+# refworkload (task 6.3's reference workload, Monte Carlo option pricing)
+# is what actually gets dispatched to agents, so its image needs to be
+# small and digest-pinnable on its own, not bundled with anything else.
+FROM alpine:3.20 AS refworkload
+COPY --from=build /out/refworkload /usr/local/bin/refworkload
+ENTRYPOINT ["/usr/local/bin/refworkload"]

@@ -11,6 +11,7 @@ build:
 	$(GO) build -o $(BIN)/gateway ./cmd/gateway
 	$(GO) build -o $(BIN)/lcctl ./cmd/lcctl
 	$(GO) build -o $(BIN)/lcinit ./cmd/lcinit
+	$(GO) build -o $(BIN)/refworkload ./cmd/refworkload
 
 test:
 	$(GO) test -race ./...
