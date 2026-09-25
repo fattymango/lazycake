@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,6 +25,8 @@ type fakeStore struct {
 	idemKeys map[[2]string]string // (account_id, idempotency_key) -> task_id
 	gateways map[string]store.Gateway
 	meters   map[string]store.TaskMeter
+	ledger   []store.LedgerEntry
+	ledgerN  int
 }
 
 func newFakeStore() *fakeStore {
@@ -430,6 +433,47 @@ func (f *fakeStore) GetMeter(ctx context.Context, taskID string) (store.TaskMete
 		return store.TaskMeter{}, store.ErrNotFound
 	}
 	return m, nil
+}
+
+func (f *fakeStore) SettleTask(ctx context.Context, taskID, customerAccountID, hostAccountID string, priceMicros int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if priceMicros < 0 {
+		return fmt.Errorf("priceMicros must be >= 0, got %d", priceMicros)
+	}
+	customer, ok := f.accounts[customerAccountID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	host, ok := f.accounts[hostAccountID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	f.ledgerN++
+	f.ledger = append(f.ledger,
+		store.LedgerEntry{ID: fmt.Sprintf("ldg_%d", f.ledgerN), TaskID: taskID, AccountID: customerAccountID, Kind: "charge", AmountMicros: -priceMicros},
+	)
+	f.ledgerN++
+	f.ledger = append(f.ledger,
+		store.LedgerEntry{ID: fmt.Sprintf("ldg_%d", f.ledgerN), TaskID: taskID, AccountID: hostAccountID, Kind: "credit", AmountMicros: priceMicros},
+	)
+	customer.BalanceMicros -= priceMicros
+	host.BalanceMicros += priceMicros
+	f.accounts[customerAccountID] = customer
+	f.accounts[hostAccountID] = host
+	return nil
+}
+
+func (f *fakeStore) LedgerEntriesForAccount(ctx context.Context, accountID string) ([]store.LedgerEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.LedgerEntry
+	for _, e := range f.ledger {
+		if e.AccountID == accountID {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 var _ store.Store = (*fakeStore)(nil)

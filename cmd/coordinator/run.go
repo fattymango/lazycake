@@ -80,7 +80,8 @@ func run() error {
 		},
 		Log: log,
 	}
-	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log, Reconciler: reconciler}
+	ledger := &billing.Ledger{Store: st, Rates: billing.DefaultRates(), Log: log}
+	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log, Reconciler: reconciler, Ledger: ledger}
 
 	grpcServer := grpc.NewServer()
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{

@@ -19,6 +19,7 @@ type Store interface {
 	ImageCache
 	Gateways
 	Meters
+	Ledger
 }
 
 type Accounts interface {
@@ -146,4 +147,19 @@ type Meters interface {
 	// guarantees TaskStarted precedes TaskFinished).
 	RecordMeterFinished(ctx context.Context, taskID string, at time.Time, durationS, normalisedS float64) error
 	GetMeter(ctx context.Context, taskID string) (TaskMeter, error)
+}
+
+// Ledger persists ledger_entries and applies their balance effect
+// (IMPLEMENTATION.md task 4.4).
+type Ledger interface {
+	// SettleTask writes one charge row (against customerAccountID) and
+	// one credit row (against hostAccountID) for taskID, both for
+	// priceMicros, and applies both balance deltas - all in one
+	// transaction, so an account's ledger rows always sum to its balance
+	// history. priceMicros must be >= 0 (the charge is stored negated,
+	// the credit as-is).
+	SettleTask(ctx context.Context, taskID, customerAccountID, hostAccountID string, priceMicros int64) error
+	// LedgerEntriesForAccount lists every ledger row for an account,
+	// oldest first.
+	LedgerEntriesForAccount(ctx context.Context, accountID string) ([]LedgerEntry, error)
 }
