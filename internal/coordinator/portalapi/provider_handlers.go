@@ -178,14 +178,6 @@ func (s *Server) handleInstallToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// installCommand builds a real, runnable podman command against this
-// repo's own agent image (deploy/Dockerfile's "agent" target) and the
-// agent's actual LAZYCAKE_* env vars (internal/agent/config), the same
-// shape deploy/docker-compose.yml's agent1 service uses. It assumes the
-// image was already built locally (`podman build --target agent -f
-// deploy/Dockerfile -t lazycake-agent .`) - a real one-line "docker pull
-// and run" story needs a published image registry, which is a deployment
-// decision this code has no business making up (see OPEN_QUESTIONS.md).
 // defaultOfferCores/MemoryMB/DiskMB match deploy/docker-compose.yml's own
 // agent1 example values - real numbers, not placeholders, so the command
 // installCommand returns is actually runnable as-is (a bare "<cores>" is
@@ -209,6 +201,21 @@ const (
 // -t lazycake-agent .`) - a real one-line "docker pull and run" story
 // needs a published image registry, which is a deployment decision this
 // code has no business making up (see OPEN_QUESTIONS.md).
+//
+// The podman.sock bind mount defaults to the *rootless* path,
+// /run/user/$(id -u)/podman/podman.sock - "$(id -u)" is a real shell
+// command substitution, evaluated by whatever shell actually runs this
+// command, not a placeholder the person pasting it has to notice and
+// edit first (that was tried first: a same-line "# rootless podman: use
+// ... instead" comment. Two different people copy-pasted the command
+// with the rootful path left in anyway and got a silent, confusing
+// "permission denied" deep in the agent's own capability-probe logs, no
+// error at the podman-run step itself to catch it - a trailing comment
+// that's easy to not read is the wrong fix when the command can just be
+// correct by default instead). Rootless is also genuinely the common
+// case for "lend spare capacity from a machine you personally use,"
+// this product's actual target - a rootful engine is the one that now
+// gets the fallback comment.
 func (s *Server) installCommand(token string) string {
 	coordinatorAddr := s.CoordinatorAddr
 	if coordinatorAddr == "" {
@@ -220,17 +227,10 @@ func (s *Server) installCommand(token string) string {
 		" -e LAZYCAKE_OFFER_CORES=" + defaultOfferCores +
 		" -e LAZYCAKE_OFFER_MEMORY_MB=" + defaultOfferMemoryMB +
 		" -e LAZYCAKE_OFFER_DISK_MB=" + defaultOfferDiskMB +
-		" -v /run/podman/podman.sock:/run/lazycake-engine/podman/podman.sock" +
+		` -v /run/user/$(id -u)/podman/podman.sock:/run/lazycake-engine/podman/podman.sock` +
 		" -e XDG_RUNTIME_DIR=/run/lazycake-engine -e CONTAINER_HOST=unix:///run/lazycake-engine/podman/podman.sock" +
 		" lazycake-agent" +
-		// A trailing "# ..." is a valid same-line shell comment, so this
-		// stays copy-paste-safe while still flagging the one thing that
-		// varies by host and can't be defaulted: /run/podman/podman.sock
-		// above assumes a rootful engine. On a rootless host (the common
-		// case - see docs/00-core-platform/OPEN_QUESTIONS.md), swap it for
-		// /run/user/<uid>/podman/podman.sock, the same fix
-		// deploy/docker-compose.yml's own LAZYCAKE_PODMAN_SOCKET needs.
-		" # rootless podman: use /run/user/$(id -u)/podman/podman.sock instead of /run/podman/podman.sock"
+		" # rootful podman instead? use /run/podman/podman.sock in the -v flag above"
 }
 
 func (s *Server) handleProviderLedger(w http.ResponseWriter, r *http.Request) {
