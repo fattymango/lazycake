@@ -1,10 +1,24 @@
 package portalapi
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/events"
 )
+
+// sseKeepalive is how often handleAccountEvents writes a no-op comment
+// line to an otherwise-idle stream. Without this, a quiet account (no
+// task/node activity for a while) sits with zero bytes flowing, which is
+// exactly what an idle-connection timeout somewhere in the chain - a
+// browser, an intermediate proxy (this stream goes through Vite's dev
+// proxy in front of the coordinator, unlike internal/coordinator/
+// dashboard's own /events, which the browser hits directly) - will close,
+// triggering EventSource's auto-reconnect and making the UI flap between
+// live and "reconnecting" forever even though nothing is actually wrong.
+// Same fix, same reasoning, as internal/tunnel/quic's KeepAlivePeriod.
+const sseKeepalive = 15 * time.Second
 
 // eventView is the wire shape of one SSE frame on the account-scoped
 // stream, matching web/src/shared/types.ts's PortalEvent - the same
@@ -45,15 +59,22 @@ func (s *Server) handleAccountEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
 
 	ch, cancel := s.Bus.SubscribeAccount(sess.AccountID)
 	defer cancel()
 
+	ticker := time.NewTicker(sseKeepalive)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-ticker.C:
+			fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
 		case ev, ok := <-ch:
 			if !ok {
 				return
