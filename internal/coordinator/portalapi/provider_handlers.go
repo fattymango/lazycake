@@ -186,18 +186,51 @@ func (s *Server) handleInstallToken(w http.ResponseWriter, r *http.Request) {
 // deploy/Dockerfile -t lazycake-agent .`) - a real one-line "docker pull
 // and run" story needs a published image registry, which is a deployment
 // decision this code has no business making up (see OPEN_QUESTIONS.md).
+// defaultOfferCores/MemoryMB/DiskMB match deploy/docker-compose.yml's own
+// agent1 example values - real numbers, not placeholders, so the command
+// installCommand returns is actually runnable as-is (a bare "<cores>" is
+// valid JSON but not valid shell: bash parses "<" as redirection, so a
+// literal placeholder there breaks copy-paste instead of just being a
+// no-op reminder to edit it). The doc comment below is where "adjust
+// these" belongs, not the command itself.
+const (
+	defaultOfferCores    = "2"
+	defaultOfferMemoryMB = "2048"
+	defaultOfferDiskMB   = "8192"
+)
+
+// installCommand builds a real, runnable, copy-pasteable podman command
+// against this repo's own agent image (deploy/Dockerfile's "agent"
+// target) and the agent's actual LAZYCAKE_* env vars (internal/agent/
+// config), the same shape deploy/docker-compose.yml's agent1 service
+// uses - offer_cores/memory/disk are real defaults to edit after pasting,
+// not placeholders to fill in before it'll run. Assumes the image was
+// already built locally (`podman build --target agent -f deploy/Dockerfile
+// -t lazycake-agent .`) - a real one-line "docker pull and run" story
+// needs a published image registry, which is a deployment decision this
+// code has no business making up (see OPEN_QUESTIONS.md).
 func (s *Server) installCommand(token string) string {
 	coordinatorAddr := s.CoordinatorAddr
 	if coordinatorAddr == "" {
-		coordinatorAddr = "<coordinator-host>:7443"
+		coordinatorAddr = "COORDINATOR_HOST:7443"
 	}
 	return "podman run -d --name lazycake-agent" +
 		" -e LAZYCAKE_COORDINATOR_ADDR=" + coordinatorAddr +
 		" -e LAZYCAKE_TOKEN=" + token +
-		" -e LAZYCAKE_OFFER_CORES=<cores> -e LAZYCAKE_OFFER_MEMORY_MB=<memory_mb> -e LAZYCAKE_OFFER_DISK_MB=<disk_mb>" +
+		" -e LAZYCAKE_OFFER_CORES=" + defaultOfferCores +
+		" -e LAZYCAKE_OFFER_MEMORY_MB=" + defaultOfferMemoryMB +
+		" -e LAZYCAKE_OFFER_DISK_MB=" + defaultOfferDiskMB +
 		" -v /run/podman/podman.sock:/run/lazycake-engine/podman/podman.sock" +
 		" -e XDG_RUNTIME_DIR=/run/lazycake-engine -e CONTAINER_HOST=unix:///run/lazycake-engine/podman/podman.sock" +
-		" lazycake-agent"
+		" lazycake-agent" +
+		// A trailing "# ..." is a valid same-line shell comment, so this
+		// stays copy-paste-safe while still flagging the one thing that
+		// varies by host and can't be defaulted: /run/podman/podman.sock
+		// above assumes a rootful engine. On a rootless host (the common
+		// case - see docs/00-core-platform/OPEN_QUESTIONS.md), swap it for
+		// /run/user/<uid>/podman/podman.sock, the same fix
+		// deploy/docker-compose.yml's own LAZYCAKE_PODMAN_SOCKET needs.
+		" # rootless podman: use /run/user/$(id -u)/podman/podman.sock instead of /run/podman/podman.sock"
 }
 
 func (s *Server) handleProviderLedger(w http.ResponseWriter, r *http.Request) {
