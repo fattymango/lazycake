@@ -192,6 +192,24 @@ func (s *PostgresStore) ListNodes(ctx context.Context) ([]Node, error) {
 	return out, rows.Err()
 }
 
+func (s *PostgresStore) ListNodesByAccount(ctx context.Context, accountID string) ([]Node, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+nodeColumns+` FROM nodes WHERE account_id = $1 ORDER BY created_at`, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes by account: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Node
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning node: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

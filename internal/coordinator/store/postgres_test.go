@@ -25,7 +25,7 @@ func testStore(t *testing.T) *PostgresStore {
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
 
-	_, err = s.pool.Exec(ctx, `TRUNCATE task_logs, node_images, tasks, nodes, api_tokens, accounts CASCADE`)
+	_, err = s.pool.Exec(ctx, `TRUNCATE task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }

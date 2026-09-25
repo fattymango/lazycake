@@ -29,6 +29,9 @@ type fakeStore struct {
 	ledger   []store.LedgerEntry
 	ledgerN  int
 	holds    map[string]store.LedgerEntry // task_id -> {account_id, amount_micros}
+
+	portalCreds map[string]store.PortalCredential // account_id -> credential
+	sessions    map[string]store.Session          // string(id_hash) -> session
 }
 
 func newFakeStore() *fakeStore {
@@ -176,6 +179,18 @@ func (f *fakeStore) ListNodes(ctx context.Context) ([]store.Node, error) {
 	return out, nil
 }
 
+func (f *fakeStore) ListNodesByAccount(ctx context.Context, accountID string) ([]store.Node, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Node
+	for _, n := range f.nodes {
+		if n.AccountID == accountID {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) SetNodeBenchScore(ctx context.Context, id string, score float64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -243,6 +258,22 @@ func (f *fakeStore) ListRecentTasks(ctx context.Context, limit int) ([]store.Tas
 	var out []store.Task
 	for _, t := range f.tasks {
 		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ListTasksByAccount(ctx context.Context, accountID string, limit int) ([]store.Task, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Task
+	for _, t := range f.tasks {
+		if t.AccountID == accountID {
+			out = append(out, t)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	if len(out) > limit {
@@ -539,6 +570,65 @@ func (f *fakeStore) AvailableBalance(ctx context.Context, accountID string) (int
 		}
 	}
 	return a.BalanceMicros - held, nil
+}
+
+func (f *fakeStore) CreatePortalCredential(ctx context.Context, c store.PortalCredential) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.portalCreds == nil {
+		f.portalCreds = map[string]store.PortalCredential{}
+	}
+	for _, existing := range f.portalCreds {
+		if existing.Username == c.Username {
+			return store.ErrDuplicate
+		}
+	}
+	f.portalCreds[c.AccountID] = c
+	return nil
+}
+
+func (f *fakeStore) GetPortalCredentialByUsername(ctx context.Context, username string) (store.PortalCredential, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.portalCreds {
+		if c.Username == username {
+			return c, nil
+		}
+	}
+	return store.PortalCredential{}, store.ErrNotFound
+}
+
+func (f *fakeStore) CreateSession(ctx context.Context, s store.Session) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sessions == nil {
+		f.sessions = map[string]store.Session{}
+	}
+	f.sessions[string(s.IDHash)] = s
+	return nil
+}
+
+func (f *fakeStore) GetSession(ctx context.Context, idHash []byte) (store.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sessions[string(idHash)]
+	if !ok || s.RevokedAt != nil || s.ExpiresAt.Before(time.Now()) {
+		return store.Session{}, store.ErrNotFound
+	}
+	return s, nil
+}
+
+func (f *fakeStore) RevokeSession(ctx context.Context, idHash []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sessions[string(idHash)]
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	s.RevokedAt = &now
+	f.sessions[string(idHash)] = s
+	return nil
 }
 
 var _ store.Store = (*fakeStore)(nil)

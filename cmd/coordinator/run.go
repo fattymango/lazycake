@@ -19,6 +19,7 @@ import (
 	"github.com/mkassab215/lazycake/internal/coordinator/config"
 	"github.com/mkassab215/lazycake/internal/coordinator/dashboard"
 	"github.com/mkassab215/lazycake/internal/coordinator/events"
+	"github.com/mkassab215/lazycake/internal/coordinator/portalapi"
 	coordrelay "github.com/mkassab215/lazycake/internal/coordinator/relay"
 	"github.com/mkassab215/lazycake/internal/coordinator/scheduler"
 	"github.com/mkassab215/lazycake/internal/coordinator/seed"
@@ -157,7 +158,8 @@ func run() error {
 		LeaseS:     leaseS,
 		Bus:        bus,
 	})
-	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st, Rates: rates, Bus: bus})
+	customerServer := &api.CustomerServer{Store: st, Rates: rates, Bus: bus}
+	lazycakev1.RegisterCustomerServiceServer(grpcServer, customerServer)
 	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: gatewayFanout{reconciler, sched.Canary}})
 
 	go sched.Run(ctx, time.Second)
@@ -179,14 +181,21 @@ func run() error {
 	log.Info("tunnel relay listening", "addr", cfg.RelayAddr)
 
 	dash := &dashboard.Server{Store: st, Bus: bus, Trust: sched.Trust, Log: log}
-	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: dash.Handler()}
+	portal := &portalapi.Server{
+		Store: st, Customer: customerServer, Bus: bus, Log: log,
+		Dev: cfg.Dev, CoordinatorAddr: cfg.PublicGRPCAddr,
+	}
+	httpMux := http.NewServeMux()
+	httpMux.Handle("/api/portal/", portal.Handler())
+	httpMux.Handle("/", dash.Handler())
+	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
 	httpErr := make(chan error, 1)
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			httpErr <- err
 		}
 	}()
-	log.Info("dashboard/SSE listening", "addr", cfg.HTTPAddr)
+	log.Info("dashboard/portal API listening", "addr", cfg.HTTPAddr)
 
 	select {
 	case <-ctx.Done():
@@ -201,7 +210,7 @@ func run() error {
 	case err := <-relayErr:
 		return fmt.Errorf("tunnel relay: %w", err)
 	case err := <-httpErr:
-		return fmt.Errorf("dashboard/SSE server: %w", err)
+		return fmt.Errorf("dashboard/portal API server: %w", err)
 	}
 }
 

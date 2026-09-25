@@ -137,7 +137,7 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "first message must be Register")
 	}
 
-	nodeID, needsBenchmark, err := s.handleRegister(ctx, reg)
+	nodeID, accountID, needsBenchmark, err := s.handleRegister(ctx, reg)
 	if err != nil {
 		return err
 	}
@@ -148,14 +148,14 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 	if err := s.Store.SetNodeConnected(ctx, nodeID, true); err != nil {
 		log.Error("marking node connected", "error", err)
 	}
-	s.Bus.Publish(events.Event{Type: "node_connected", AtMS: s.now().UnixMilli(), NodeID: nodeID})
+	s.Bus.Publish(events.Event{Type: "node_connected", AtMS: s.now().UnixMilli(), AccountID: accountID, NodeID: nodeID})
 	defer func() {
 		s.Registry.Remove(nodeID, send)
 		// Use a background context: stream.Context() is already cancelled here.
 		if err := s.Store.SetNodeConnected(context.Background(), nodeID, false); err != nil {
 			log.Error("marking node disconnected", "error", err)
 		}
-		s.Bus.Publish(events.Event{Type: "node_disconnected", AtMS: s.now().UnixMilli(), NodeID: nodeID})
+		s.Bus.Publish(events.Event{Type: "node_disconnected", AtMS: s.now().UnixMilli(), AccountID: accountID, NodeID: nodeID})
 		log.Info("agent disconnected")
 	}()
 
@@ -194,7 +194,7 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 		if err != nil {
 			return err
 		}
-		if err := s.handleMessage(ctx, nodeID, msg); err != nil {
+		if err := s.handleMessage(ctx, nodeID, accountID, msg); err != nil {
 			log.Error("handling agent message", "error", err)
 		}
 
@@ -206,13 +206,13 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 	}
 }
 
-func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (nodeID string, needsBenchmark bool, err error) {
+func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (nodeID, accountID string, needsBenchmark bool, err error) {
 	tok, err := s.Store.Authenticate(ctx, auth.Hash(reg.GetToken()))
 	if err != nil {
-		return "", false, status.Error(codes.Unauthenticated, "invalid token")
+		return "", "", false, status.Error(codes.Unauthenticated, "invalid token")
 	}
 	if tok.Kind != store.TokenAgent {
-		return "", false, status.Error(codes.PermissionDenied, "token is not an agent token")
+		return "", "", false, status.Error(codes.PermissionDenied, "token is not an agent token")
 	}
 
 	// Reuse the same node row across reconnects of the same agent process
@@ -225,7 +225,7 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 			nodeID = existing.ID
 			needsBenchmark = existing.BenchScore == nil
 		} else if err != store.ErrNotFound {
-			return "", false, fmt.Errorf("looking up node by instance id: %w", err)
+			return "", "", false, fmt.Errorf("looking up node by instance id: %w", err)
 		}
 	}
 	caps := reg.GetCaps()
@@ -252,9 +252,9 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 		OfferDiskMB:   int(offer.GetDiskMb()),
 	}
 	if err := s.Store.UpsertNode(ctx, n); err != nil {
-		return "", false, fmt.Errorf("upserting node: %w", err)
+		return "", "", false, fmt.Errorf("upserting node: %w", err)
 	}
-	return nodeID, needsBenchmark, nil
+	return nodeID, tok.AccountID, needsBenchmark, nil
 }
 
 // adoptOrCancel implements task 3.3's reconnect adoption: for every task ID
@@ -289,12 +289,12 @@ func (s *Server) adoptOrCancel(ctx context.Context, nodeID string, runningTaskID
 	}
 }
 
-func (s *Server) handleMessage(ctx context.Context, nodeID string, msg *lazycakev1.AgentMessage) error {
+func (s *Server) handleMessage(ctx context.Context, nodeID, accountID string, msg *lazycakev1.AgentMessage) error {
 	switch body := msg.GetBody().(type) {
 	case *lazycakev1.AgentMessage_Heartbeat:
 		return s.handleHeartbeat(ctx, nodeID, body.Heartbeat)
 	case *lazycakev1.AgentMessage_Capacity:
-		return s.handleCapacity(ctx, nodeID, body.Capacity)
+		return s.handleCapacity(ctx, nodeID, accountID, body.Capacity)
 	case *lazycakev1.AgentMessage_CacheDelta:
 		return s.handleCacheDelta(ctx, nodeID, body.CacheDelta)
 	case *lazycakev1.AgentMessage_Accepted:
@@ -343,14 +343,14 @@ func (s *Server) handleHeartbeat(ctx context.Context, nodeID string, hb *lazycak
 	})
 }
 
-func (s *Server) handleCapacity(ctx context.Context, nodeID string, cap *lazycakev1.CapacityReport) error {
+func (s *Server) handleCapacity(ctx context.Context, nodeID, accountID string, cap *lazycakev1.CapacityReport) error {
 	if offer := cap.GetOffer(); offer != nil {
 		if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb())); err != nil {
 			return fmt.Errorf("setting node offer: %w", err)
 		}
 	}
 	s.Bus.Publish(events.Event{
-		Type: "capacity", AtMS: s.now().UnixMilli(), NodeID: nodeID,
+		Type: "capacity", AtMS: s.now().UnixMilli(), AccountID: accountID, NodeID: nodeID,
 		FreeCores: cap.GetFreeCores(), FreeMemoryMB: cap.GetFreeMemoryMb(), FreeDiskMB: cap.GetFreeDiskMb(),
 	})
 	return s.capacity().OnCapacityReport(ctx, nodeID, CapacityReportEvent{

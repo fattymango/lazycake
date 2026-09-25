@@ -30,10 +30,12 @@ func (s *Scheduler) OnTaskRejected(ctx context.Context, nodeID, taskID, reason s
 	// agent's own admission control - a separate check from the
 	// coordinator's optimistic capacity filter - refused it before Pull
 	// ever ran.
+	var accountID string
 	if task, err := s.Store.GetTask(ctx, taskID); err == nil {
 		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
+		accountID = task.AccountID
 	}
-	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: taskID, NodeID: nodeID, State: string(store.TaskQueued)})
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), AccountID: accountID, TaskID: taskID, NodeID: nodeID, State: string(store.TaskQueued)})
 	return nil
 }
 
@@ -44,16 +46,19 @@ func (s *Scheduler) OnTaskStarted(ctx context.Context, nodeID, taskID string, at
 		return fmt.Errorf("marking task running: %w", err)
 	}
 	s.Log.Info("task started", "task_id", taskID, "node_id", nodeID)
-	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: taskID, NodeID: nodeID, State: string(store.TaskRunning)})
-	if err := s.billing().OnTaskStarted(ctx, nodeID, taskID); err != nil {
-		s.Log.Error("metering task started", "task_id", taskID, "node_id", nodeID, "error", err)
-	}
 
 	// Started can only arrive after the agent's own Pull->Create->Start
 	// sequence has already pulled the image successfully (task 5.4) - this
-	// is the earliest correct point to release a cold-pull slot.
+	// is the earliest correct point to release a cold-pull slot. Fetched
+	// once and reused for the event's AccountID (task 7.3) too.
+	var accountID string
 	if task, err := s.Store.GetTask(ctx, taskID); err == nil {
 		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
+		accountID = task.AccountID
+	}
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), AccountID: accountID, TaskID: taskID, NodeID: nodeID, State: string(store.TaskRunning)})
+	if err := s.billing().OnTaskStarted(ctx, nodeID, taskID); err != nil {
+		s.Log.Error("metering task started", "task_id", taskID, "node_id", nodeID, "error", err)
 	}
 	return nil
 }
@@ -69,14 +74,17 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		return fmt.Errorf("marking task finished: %w", err)
 	}
 	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason, "state", to)
-	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: ev.TaskID, NodeID: nodeID, State: string(to)})
 
 	// Safety net for a cold-pull slot never released at OnTaskStarted -
 	// e.g. the pull itself failed, so Started was never sent at all
-	// (task 5.4). A no-op if OnTaskStarted already released it.
+	// (task 5.4). A no-op if OnTaskStarted already released it. Fetched
+	// once and reused for the event's AccountID (task 7.3) too.
+	var accountID string
 	if task, err := s.Store.GetTask(ctx, ev.TaskID); err == nil {
 		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
+		accountID = task.AccountID
 	}
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), AccountID: accountID, TaskID: ev.TaskID, NodeID: nodeID, State: string(to)})
 
 	if err := s.billing().OnTaskFinished(ctx, nodeID, ev); err != nil {
 		s.Log.Error("metering task finished", "task_id", ev.TaskID, "node_id", nodeID, "error", err)

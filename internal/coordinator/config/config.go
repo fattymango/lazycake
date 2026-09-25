@@ -19,6 +19,14 @@ type Config struct {
 	HTTPAddr string
 	// RelayAddr is the UDP address the QUIC tunnel relay listens on.
 	RelayAddr string
+	// PublicGRPCAddr is the host:port an agent should actually dial to
+	// reach GRPCAddr - not necessarily the same string when GRPCAddr is a
+	// bind address behind NAT, a container network, or a reverse proxy.
+	// Used only to build the install command portalapi's "add a machine"
+	// endpoint shows (IMPLEMENTATION.md task 7.5). Falls back to GRPCAddr
+	// when unset, which is correct for local/demo compose but not most
+	// real deployments - an operator behind NAT must set this explicitly.
+	PublicGRPCAddr string
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 	// SeedDemoToken, if set, makes the coordinator ensure a demo account
@@ -43,6 +51,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Dev:           getenv("LAZYCAKE_DEV") == "1",
 		SeedDemoToken: getenv("LAZYCAKE_SEED_DEMO_TOKEN"),
 	}
+	cfg.PublicGRPCAddr = orDefault(getenv("LAZYCAKE_PUBLIC_GRPC_ADDR"), cfg.GRPCAddr)
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("LAZYCAKE_DATABASE_URL is required")
@@ -64,6 +73,7 @@ func (c Config) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("database_url", redactURL(c.DatabaseURL)),
 		slog.String("grpc_addr", c.GRPCAddr),
+		slog.String("public_grpc_addr", c.PublicGRPCAddr),
 		slog.String("http_addr", c.HTTPAddr),
 		slog.String("relay_addr", c.RelayAddr),
 		slog.Bool("dev", c.Dev),
