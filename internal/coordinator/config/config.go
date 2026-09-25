@@ -35,6 +35,16 @@ type Config struct {
 	// only - there is no signup flow (PLAN.md non-goals), so something has
 	// to provision the first token out of band.
 	SeedDemoToken string
+	// SeedPortalCustomerUsername/SeedPortalProviderUsername/
+	// SeedPortalPassword, if all three are set, make the coordinator
+	// ensure two portal login accounts exist on startup (seed.
+	// EnsurePortalDemoAccounts): a pre-funded customer account and an
+	// unfunded provider account, same password. Local/demo compose only -
+	// same posture as SeedDemoToken, just for the portal's username/
+	// password login instead of a bearer token.
+	SeedPortalCustomerUsername string
+	SeedPortalProviderUsername string
+	SeedPortalPassword         string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -50,6 +60,10 @@ func Load(getenv func(string) string) (Config, error) {
 		RelayAddr:     orDefault(getenv("LAZYCAKE_RELAY_ADDR"), ":7444"),
 		Dev:           getenv("LAZYCAKE_DEV") == "1",
 		SeedDemoToken: getenv("LAZYCAKE_SEED_DEMO_TOKEN"),
+
+		SeedPortalCustomerUsername: getenv("LAZYCAKE_SEED_PORTAL_CUSTOMER_USERNAME"),
+		SeedPortalProviderUsername: getenv("LAZYCAKE_SEED_PORTAL_PROVIDER_USERNAME"),
+		SeedPortalPassword:         getenv("LAZYCAKE_SEED_PORTAL_PASSWORD"),
 	}
 	cfg.PublicGRPCAddr = orDefault(getenv("LAZYCAKE_PUBLIC_GRPC_ADDR"), cfg.GRPCAddr)
 

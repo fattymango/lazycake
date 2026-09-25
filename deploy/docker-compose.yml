@@ -38,6 +38,14 @@ services:
       LAZYCAKE_RELAY_ADDR: ":7444"
       LAZYCAKE_HTTP_ADDR: ":8080"
       LAZYCAKE_SEED_DEMO_TOKEN: "demo-customer-token"
+      # Portal login demo accounts (seed.EnsurePortalDemoAccounts) - a
+      # pre-funded customer account and an unfunded provider account,
+      # same password, recreated automatically on every fresh database
+      # (idempotent by username, same posture as LAZYCAKE_SEED_DEMO_TOKEN
+      # above). Local/demo compose only.
+      LAZYCAKE_SEED_PORTAL_CUSTOMER_USERNAME: "kassab"
+      LAZYCAKE_SEED_PORTAL_PROVIDER_USERNAME: "kassab1"
+      LAZYCAKE_SEED_PORTAL_PASSWORD: "password123"
       # host:port an agent should actually dial - shown verbatim in the
       # provider portal's "add a machine" install snippet (task 7.5).
       # Override for your own deployment; this default is only correct
