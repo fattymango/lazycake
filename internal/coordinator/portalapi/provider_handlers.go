@@ -202,6 +202,13 @@ const (
 // needs a published image registry, which is a deployment decision this
 // code has no business making up (see OPEN_QUESTIONS.md).
 //
+// --replace: a fixed container name means minting a second token and
+// re-running the command (retrying after a mistake, or just trying it
+// again) collides with whatever "lazycake-agent" already exists instead
+// of just working - hit live, more than once. --replace makes re-running
+// this command idempotent instead of requiring a manual `podman rm -f`
+// first.
+//
 // The podman.sock bind mount defaults to the *rootless* path,
 // /run/user/$(id -u)/podman/podman.sock - "$(id -u)" is a real shell
 // command substitution, evaluated by whatever shell actually runs this
@@ -221,7 +228,7 @@ func (s *Server) installCommand(token string) string {
 	if coordinatorAddr == "" {
 		coordinatorAddr = "COORDINATOR_HOST:7443"
 	}
-	return "podman run -d --name lazycake-agent" +
+	return "podman run -d --replace --name lazycake-agent" +
 		" -e LAZYCAKE_COORDINATOR_ADDR=" + coordinatorAddr +
 		" -e LAZYCAKE_TOKEN=" + token +
 		" -e LAZYCAKE_OFFER_CORES=" + defaultOfferCores +
