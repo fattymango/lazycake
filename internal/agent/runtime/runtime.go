@@ -76,7 +76,15 @@ type Runtime interface {
 	// Wait blocks until the container exits.
 	Wait(ctx context.Context, id string) (Result, error)
 	Stop(ctx context.Context, id string, grace time.Duration) error
-	Logs(ctx context.Context, id string) (io.ReadCloser, error)
+	// Logs returns the container's combined stdout/stderr. follow=true
+	// opens a live tail (for streaming a running or about-to-run
+	// container); follow=false returns the complete persisted log
+	// content and then EOFs - the reliable path once a container has
+	// already exited, since a follow-mode attach's own "watch for new
+	// writes" setup can race a container that finishes fast enough to
+	// exit before that watch is actually armed, silently missing output
+	// that genuinely exists on disk (see exec.Executor's use of both).
+	Logs(ctx context.Context, id string, follow bool) (io.ReadCloser, error)
 	Remove(ctx context.Context, id string) error
 	// ListLabelled returns container IDs whose label key=value.
 	ListLabelled(ctx context.Context, key, value string) ([]string, error)

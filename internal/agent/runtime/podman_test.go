@@ -56,7 +56,7 @@ func TestPullCreateStartWaitLogsRemove(t *testing.T) {
 	require.Equal(t, 0, result.ExitCode)
 	require.False(t, result.OOMKilled)
 
-	rc, err := rt.Logs(context.Background(), id)
+	rc, err := rt.Logs(context.Background(), id, false)
 	require.NoError(t, err)
 	buf, err := io.ReadAll(io.LimitReader(rc, 4096))
 	rc.Close()

@@ -154,9 +154,9 @@ func (r *PodmanRuntime) Stop(ctx context.Context, id string, grace time.Duration
 	return nil
 }
 
-func (r *PodmanRuntime) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+func (r *PodmanRuntime) Logs(ctx context.Context, id string, follow bool) (io.ReadCloser, error) {
 	rc, err := r.cli.ContainerLogs(ctx, id, types.ContainerLogsOptions{
-		ShowStdout: true, ShowStderr: true, Follow: true,
+		ShowStdout: true, ShowStderr: true, Follow: follow,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("streaming logs for %s: %w", id, err)
