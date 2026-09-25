@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,6 +29,19 @@ const (
 	heartbeatS = 15
 	leaseS     = 60
 )
+
+// gatewayFanout routes GatewayService.ReportBytes to both byte
+// reconciliation (task 4.3) and canary detection (task 5.2) - the same
+// one gateway report is proof relevant to both.
+type gatewayFanout struct {
+	reconciler *billing.Reconciler
+	canaries   *scheduler.CanaryTracker
+}
+
+func (f gatewayFanout) RecordGatewayBytes(taskID string, bytes int64) {
+	f.reconciler.RecordGatewayBytes(taskID, bytes)
+	f.canaries.RecordGatewayActivity(taskID)
+}
 
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -63,6 +77,34 @@ func run() error {
 	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
 	sched.Trust.Store = st
 	sched.Trust.Log = log
+
+	// Canary injection (task 5.2). The account/gateway row always exist -
+	// seeding is idempotent and cheap - but injection only does anything
+	// useful once an operator actually runs a gateway process under
+	// platformGatewayID; until then it fails closed (see
+	// seed.EnsurePlatformCanaryAccount's own doc comment).
+	platformAccountID, platformGatewayID, err := seed.EnsurePlatformCanaryAccount(ctx, st)
+	if err != nil {
+		return fmt.Errorf("seeding platform canary account: %w", err)
+	}
+	sched.PlatformAccountID = platformAccountID
+	sched.PlatformGatewayID = platformGatewayID
+	// CanaryImage is deliberately left unset by default: task 5.2's
+	// workload has to be a real digest-pinned image an operator actually
+	// builds and publishes (a small program that connects to
+	// CanaryTargetHostname:CanaryTargetPort and produces a known,
+	// verifiable result - PLAN.md's "known expected output hash" is not
+	// implemented in this codebase, see OPEN_QUESTIONS.md), which is a
+	// deployment decision this code has no business making up. Injection
+	// (maybeDispatchCanary) checks CanaryImage != "" and no-ops until one
+	// is configured, same fail-closed posture as the gateway process
+	// itself. Set via LAZYCAKE_CANARY_* if/when a real workload exists.
+	sched.CanaryImage = os.Getenv("LAZYCAKE_CANARY_IMAGE")
+	sched.CanaryEntrypoint = splitNonEmpty(os.Getenv("LAZYCAKE_CANARY_ENTRYPOINT"))
+	sched.CanaryArgs = splitNonEmpty(os.Getenv("LAZYCAKE_CANARY_ARGS"))
+	sched.CanaryTargetHostname = envOr("LAZYCAKE_CANARY_TARGET_HOSTNAME", "canary-target")
+	sched.CanaryTargetPort = 7
+	sched.CanaryExpectedRuntimeS = 10
 
 	// Three-point byte reconciliation (task 4.3): the relay's own stream
 	// counters and the gateway's ReportBytes RPC both feed the same
@@ -106,7 +148,7 @@ func run() error {
 		LeaseS:     leaseS,
 	})
 	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st, Rates: rates})
-	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: reconciler})
+	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: gatewayFanout{reconciler, sched.Canary}})
 
 	go sched.Run(ctx, time.Second)
 
@@ -136,4 +178,21 @@ func run() error {
 	case err := <-relayErr:
 		return fmt.Errorf("tunnel relay: %w", err)
 	}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// splitNonEmpty splits a comma-separated env value into a slice, or nil if
+// it's empty - distinguishing "not configured" from "configured as an
+// empty list" matters for scheduler.Scheduler.CanaryEntrypoint/CanaryArgs.
+func splitNonEmpty(v string) []string {
+	if v == "" {
+		return nil
+	}
+	return strings.Split(v, ",")
 }

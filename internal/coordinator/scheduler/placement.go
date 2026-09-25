@@ -7,6 +7,7 @@ import (
 
 	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
+	"github.com/mkassab215/lazycake/internal/id"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 )
 
@@ -39,6 +40,9 @@ func (s *Scheduler) tick(ctx context.Context) {
 		}
 		// "Below 0.2, stop dispatching and freeze the balance" (task 5.3).
 		if s.Trust.Banned(n.ID) {
+			continue
+		}
+		if s.maybeDispatchCanary(ctx, n) {
 			continue
 		}
 		if err := s.tryPlaceOne(ctx, n); err != nil && err != store.ErrNoTask {
@@ -93,6 +97,64 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	}
 	s.Log.Info("task dispatched", "task_id", task.ID, "node_id", n.ID, "image", task.Image)
 	return nil
+}
+
+// maybeDispatchCanary implements task 5.2's injection half: with
+// probability canaryRate(trust score), send this node a canary instead of
+// a real queued task, indistinguishable from one in the Dispatch message
+// itself - it's a normal store.Task, built and sent through the exact same
+// dispatchMessage path as anything else. Returns true if a canary was
+// (attempted to be) sent, so the caller skips a real dispatch this tick.
+func (s *Scheduler) maybeDispatchCanary(ctx context.Context, n store.Node) bool {
+	if s.PlatformGatewayID == "" || s.PlatformAccountID == "" || s.CanaryImage == "" {
+		return false // not configured - no platform account/gateway/workload to canary against
+	}
+	if s.rand() >= canaryRate(s.Trust.Score(n.ID)) {
+		return false
+	}
+
+	task := store.Task{
+		ID: id.New(id.Task), AccountID: s.PlatformAccountID, State: store.TaskQueued,
+		Image: s.CanaryImage, Entrypoint: s.CanaryEntrypoint, Args: s.CanaryArgs,
+		Limits: store.Limits{
+			CPUCores: 0.1, MemoryMB: 64, DiskMB: 100,
+			WallTimeoutS: s.CanaryExpectedRuntimeS + 10,
+		},
+		Requirements: store.Requirements{Arch: n.Arch, Isolation: "podman"},
+		TunnelTargets: []store.TunnelTarget{
+			{GatewayID: s.PlatformGatewayID, Hostname: s.CanaryTargetHostname, Port: s.CanaryTargetPort},
+		},
+		GatewayIDs: []string{s.PlatformGatewayID},
+		Delivery:   store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+	}
+	if err := s.Store.CreateTask(ctx, task); err != nil {
+		s.Log.Warn("creating canary task", "node_id", n.ID, "error", err)
+		return false
+	}
+	if err := s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskQueued}, store.TaskReserved,
+		store.TaskUpdate{NodeID: &n.ID}); err != nil {
+		s.Log.Warn("reserving canary task", "node_id", n.ID, "task_id", task.ID, "error", err)
+		return false
+	}
+
+	leaseExpires := s.now().Add(time.Duration(s.LeaseS)*time.Second + leaseMargin)
+	msg, err := s.dispatchMessage(ctx, task, leaseExpires)
+	if err != nil {
+		s.Log.Warn("building canary dispatch message", "node_id", n.ID, "task_id", task.ID, "error", err)
+		return false
+	}
+	if err := s.Dispatch.Send(n.ID, msg); err != nil {
+		s.Log.Warn("sending canary dispatch", "node_id", n.ID, "task_id", task.ID, "error", err)
+		return false
+	}
+	if err := s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskDispatched, store.TaskUpdate{}); err != nil {
+		s.Log.Warn("marking canary dispatched", "node_id", n.ID, "task_id", task.ID, "error", err)
+		return false
+	}
+
+	s.Canary.Expect(task.ID, n.ID, s.CanaryExpectedRuntimeS)
+	s.Log.Info("canary dispatched", "node_id", n.ID, "task_id", task.ID)
+	return true
 }
 
 func isolationsFor(n store.Node) []string {
