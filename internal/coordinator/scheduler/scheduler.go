@@ -65,6 +65,11 @@ type Scheduler struct {
 	// all agree.
 	Rates pricing.Rates
 
+	// SpecDrift is task 5.1's node-honesty check, fed one observation per
+	// billable task finish (see OnTaskFinished). Always non-nil - New()
+	// sets it.
+	SpecDrift *SpecDriftTracker
+
 	// LeaseS is how long a dispatched task's lease is before the agent
 	// self-fences if it hears nothing (phase 3 uses this fully; phase 1
 	// just needs a value for requeue_after).
@@ -83,8 +88,9 @@ type rejectKey struct {
 func New(st store.Store, dispatch Dispatcher, ck clock.Clock, log *slog.Logger, leaseS int32) *Scheduler {
 	return &Scheduler{
 		Store: st, Dispatch: dispatch, Clock: ck, Log: log, LeaseS: leaseS,
-		freeCap:  make(map[string]store.CapacityFilter),
-		rejected: make(map[rejectKey]time.Time),
+		freeCap:   make(map[string]store.CapacityFilter),
+		rejected:  make(map[rejectKey]time.Time),
+		SpecDrift: NewSpecDriftTracker(),
 	}
 }
 
