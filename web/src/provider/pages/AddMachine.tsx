@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiPost, ApiError } from "@shared/api";
+import { copyToClipboard } from "@shared/clipboard";
 import { Panel } from "@shared/components/Panel";
 import { Button, FormError } from "@shared/components/Form";
 import type { InstallToken } from "@shared/types";
@@ -22,12 +23,15 @@ export function AddMachine() {
     }
   }
 
-  function handleCopy() {
+  async function handleCopy() {
     if (!result) return;
-    navigator.clipboard.writeText(result.install_command).then(() => {
+    const ok = await copyToClipboard(result.install_command);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    } else {
+      setError("couldn't copy automatically — select the command above and copy it manually");
+    }
   }
 
   return (
