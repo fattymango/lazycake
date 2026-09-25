@@ -200,3 +200,47 @@ have a real backend to be pointed at and exercised in an actual browser,
 which has not been done yet; task 7.10 (retire landing page, relocate
 `/ops`, serve the built frontend from the coordinator binary) is not
 started.
+
+- **Live verification pass (2026-09-25, commit `03a9c0c`) - the two
+  halves actually run together, on real infrastructure, for the first
+  time.** Checked out this branch on a VM with a working rootless podman
+  engine (the same one `docs/00-core-platform/PROGRESS.md`'s VM-side
+  session used) and ran the whole thing for real rather than reading the
+  code: applied migrations 012/013 against live Postgres, ran
+  `go test -tags integration -p 1` across `store`/`portalapi`/`events`
+  (all pass), rebuilt the coordinator image (frontend `npm run build`
+  runs inside `deploy/Dockerfile`'s new node stage and embeds cleanly via
+  `internal/coordinator/webassets`), and ran `npm run dev` against the
+  live coordinator through Vite's `/api/portal` proxy.
+
+  Exercised the real customer flow through the new HTTP API specifically
+  (not the pre-existing gRPC path): signup → login → dev-mode balance
+  add → `POST .../tasks` → watched `queued → succeeded`, `exit_code: 0`,
+  on a real connected agent. Exercised the real provider flow: signup →
+  minted an install token → started a **real agent process** with it →
+  it registered and showed up in `GET .../nodes`, correctly scoped to
+  that account and no other.
+
+  **Found and fixed one real bug this surfaced, not visible from reading
+  the code:** `installCommand`'s `LAZYCAKE_OFFER_CORES=<cores>` etc. were
+  literal angle-bracket placeholder text, not real values - looks fine
+  printed in JSON, but bash parses an unquoted `<` as redirection, so
+  copy-pasting the command as shown into a real shell fails immediately
+  (`bash: cores: No such file or directory`) - caught only because the
+  actual "copy this into a real terminal" step was actually attempted,
+  not just verified by test assertions checking for a substring. Fixed to
+  use real default values (matching `docker-compose.yml`'s own agent1
+  example: 2 cores, 2048MB, 8192MB). While in there, also flagged (as a
+  same-line shell comment, so it stays copy-paste-safe) the pre-existing,
+  separately-known rootful-vs-rootless `podman.sock` path assumption -
+  not a new bug, but the same class of "looks right, isn't" gap, worth
+  fixing in the same pass. Re-verified after the fix: minted a fresh
+  token, ran the corrected command with the rootless substitution applied
+  (`podman build --target agent -t lazycake-agent .` first, per the
+  command's own doc comment), and confirmed the agent registered.
+
+  Not yet done: the actual React UI has not been visually inspected in a
+  real browser by this session (only served/compiled/data-verified) -
+  the project owner has been testing it directly in their own browser in
+  parallel, which is in fact how the `<cores>` bug was first noticed (a
+  copy-paste from the live UI failing in a real terminal).
