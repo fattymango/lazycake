@@ -61,6 +61,8 @@ func run() error {
 
 	registry := api.NewRegistry()
 	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
+	sched.Trust.Store = st
+	sched.Trust.Log = log
 
 	// Three-point byte reconciliation (task 4.3): the relay's own stream
 	// counters and the gateway's ReportBytes RPC both feed the same
@@ -79,6 +81,10 @@ func run() error {
 			return *t.NodeID, nil
 		},
 		Log: log,
+		// Byte divergence drops trust (task 5.3).
+		OnFlagged: func(nodeID, taskID string, rec billing.Reconciliation) {
+			sched.Trust.ByteDivergence(nodeID)
+		},
 	}
 	// One Rates value shared by the dispatch-time hold, the submission-time
 	// affordability check, and the eventual settlement (task 4.5), so all

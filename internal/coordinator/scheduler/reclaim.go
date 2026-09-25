@@ -43,5 +43,17 @@ func (s *Scheduler) reclaimOverdue(ctx context.Context) {
 			continue
 		}
 		s.Log.Warn("task abandoned after missed lease", "task_id", t.ID, "delivery", t.Delivery)
+
+		// An abandoned task never reaches OnTaskFinished (the agent is
+		// gone, there's no TaskFinished to receive), so nothing else ever
+		// releases its dispatch-time hold (task 4.5) or drops the node's
+		// trust (task 5.3, PLAN.md "a host that vanishes ... is paid
+		// nothing") - both have to happen here instead.
+		if err := s.Store.ReleaseHold(ctx, t.ID); err != nil {
+			s.Log.Warn("releasing hold for abandoned task", "task_id", t.ID, "error", err)
+		}
+		if t.NodeID != nil {
+			s.Trust.Abandoned(*t.NodeID)
+		}
 	}
 }

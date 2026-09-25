@@ -56,15 +56,22 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		s.Log.Error("metering task finished", "task_id", ev.TaskID, "node_id", nodeID, "error", err)
 	}
 
-	// Spec drift (task 5.1) needs normalised_s, which billing just
-	// persisted above - read it back rather than restructuring
-	// BillingEvents to hand it over directly, since spec drift is a
-	// scheduler-owned concern billing has no reason to know about.
+	// Clean completion / spec drift (tasks 5.1, 5.3): the host actually
+	// ran the task and reported honestly, whatever the customer's own
+	// exit code was - same classification billing.billable() uses, since
+	// it's the same underlying question ("did this host do real work").
 	if to == store.TaskSucceeded || to == store.TaskFailed {
+		s.Trust.CleanCompletion(nodeID)
+
+		// normalised_s was just persisted by billing above - read it back
+		// rather than restructuring BillingEvents to hand it over
+		// directly, since spec drift is a scheduler-owned concern billing
+		// has no reason to know about.
 		if meter, err := s.Store.GetMeter(ctx, ev.TaskID); err == nil && meter.NormalisedS != nil {
 			ratio, flagged := s.SpecDrift.Observe(nodeID, *meter.NormalisedS)
 			if flagged {
 				s.Log.Warn("spec drift detected", "node_id", nodeID, "task_id", ev.TaskID, "rolling_ratio", ratio)
+				s.Trust.SpecDrift(nodeID)
 			}
 		}
 	}
