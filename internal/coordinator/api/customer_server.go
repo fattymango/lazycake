@@ -71,69 +71,123 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 		return nil, err
 	}
 
-	if !strings.Contains(req.GetImage(), "@sha256:") {
-		return nil, status.Error(codes.InvalidArgument, "image must be digest-pinned, e.g. repo@sha256:...")
-	}
-	if len(req.GetTargets()) > maxGateways {
-		return nil, status.Errorf(codes.InvalidArgument, "at most %d gateways per task, got %d", maxGateways, len(req.GetTargets()))
-	}
-	targets := make([]store.TunnelTarget, len(req.GetTargets()))
-	gatewayIDs := make([]string, len(req.GetTargets()))
-	for i, spec := range req.GetTargets() {
-		if spec.GetHostname() == "" || spec.GetPort() <= 0 {
-			return nil, status.Errorf(codes.InvalidArgument, "target %d: hostname and port are required", i)
-		}
-		gw, err := s.Store.GetGateway(ctx, spec.GetGatewayId())
-		if err != nil {
-			if err == store.ErrNotFound {
-				return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GetGatewayId())
-			}
-			return nil, status.Errorf(codes.Internal, "getting gateway %s: %v", spec.GetGatewayId(), err)
-		}
-		if gw.AccountID != tok.AccountID {
-			// Same error as not-found: don't reveal that a gateway ID
-			// belongs to someone else.
-			return nil, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GetGatewayId())
-		}
-		targets[i] = store.TunnelTarget{GatewayID: spec.GetGatewayId(), Hostname: spec.GetHostname(), Port: spec.GetPort()}
-		gatewayIDs[i] = spec.GetGatewayId()
-	}
 	limits := req.GetLimits()
 	if limits == nil || limits.GetWallTimeoutS() <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "limits.wall_timeout_s is required and must be > 0")
 	}
-
-	delivery := store.AtMostOnce
-	if req.GetDelivery() == string(store.AtLeastOnce) {
-		delivery = store.AtLeastOnce
+	targets := make([]TunnelTargetSpec, len(req.GetTargets()))
+	for i, spec := range req.GetTargets() {
+		targets[i] = TunnelTargetSpec{GatewayID: spec.GetGatewayId(), Hostname: spec.GetHostname(), Port: spec.GetPort()}
 	}
 
-	taskID := id.New(id.Task)
-	var idemKey *string
-	if req.GetIdempotencyKey() != "" {
-		k := req.GetIdempotencyKey()
-		idemKey = &k
-	}
-
-	task := store.Task{
-		ID: taskID, AccountID: tok.AccountID, State: store.TaskQueued,
-		IdempotencyKey: idemKey,
-		Image:          req.GetImage(),
-		Entrypoint:     req.GetEntrypoint(),
-		Args:           req.GetArgs(),
-		Env:            req.GetEnv(),
-		Workdir:        req.GetWorkdir(),
+	task, err := s.SubmitTaskForAccount(ctx, tok.AccountID, SubmitTaskParams{
+		Image: req.GetImage(), Entrypoint: req.GetEntrypoint(), Args: req.GetArgs(),
+		Env: req.GetEnv(), Workdir: req.GetWorkdir(),
 		Limits: store.Limits{
 			CPUCores: limits.GetCpuCores(), MemoryMB: int(limits.GetMemoryMb()), DiskMB: int(limits.GetDiskMb()),
 			TmpfsMB: int(limits.GetTmpfsMb()), PIDs: int(limits.GetPids()),
 			WallTimeoutS: int(limits.GetWallTimeoutS()), NoOutputTimeoutS: int(limits.GetNoOutputTimeoutS()),
 			EgressMB: int(limits.GetEgressMb()),
 		},
-		Requirements:  store.Requirements{Arch: "amd64", Isolation: "podman", Confidentiality: "none"},
-		GatewayIDs:    gatewayIDs,
-		TunnelTargets: targets,
-		Delivery:      delivery,
-		Retry:         store.Retry{MaxAttempts: 1},
+		Targets: targets, Delivery: req.GetDelivery(), IdempotencyKey: req.GetIdempotencyKey(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &lazycakev1.SubmitTaskResponse{TaskId: task.ID}, nil
+}
+
+// TunnelTargetSpec is SubmitTaskParams' transport-agnostic form of a tunnel
+// target, mirroring lazycakev1.TunnelTargetSpec.
+type TunnelTargetSpec struct {
+	GatewayID string
+	Hostname  string
+	Port      int32
+}
+
+// SubmitTaskParams is the account-scoped, transport-agnostic form of a
+// task submission - shared by the gRPC SubmitTask RPC above and
+// portalapi's POST /api/portal/customer/tasks (IMPLEMENTATION.md task
+// 7.4), so the digest-pin check, gateway-ownership check, and balance
+// affordability check exist in exactly one place regardless of which
+// transport a submission arrives over.
+type SubmitTaskParams struct {
+	Image          string
+	Entrypoint     []string
+	Args           []string
+	Env            map[string]string
+	Workdir        string
+	Limits         store.Limits
+	Targets        []TunnelTargetSpec
+	Delivery       string
+	IdempotencyKey string
+}
+
+// SubmitTaskForAccount validates and creates a task for accountID, exactly
+// as the gRPC SubmitTask RPC does for whichever account its bearer token
+// resolves to. Returned errors are *status.Error (codes.InvalidArgument,
+// codes.FailedPrecondition, codes.AlreadyExists, codes.Internal) even
+// though this method itself is transport-agnostic, so callers on any
+// transport - gRPC directly, or portalapi mapping codes to HTTP statuses -
+// get the same, single source of truth for what a given failure means.
+func (s *CustomerServer) SubmitTaskForAccount(ctx context.Context, accountID string, p SubmitTaskParams) (store.Task, error) {
+	if !strings.Contains(p.Image, "@sha256:") {
+		return store.Task{}, status.Error(codes.InvalidArgument, "image must be digest-pinned, e.g. repo@sha256:...")
+	}
+	if len(p.Targets) > maxGateways {
+		return store.Task{}, status.Errorf(codes.InvalidArgument, "at most %d gateways per task, got %d", maxGateways, len(p.Targets))
+	}
+	targets := make([]store.TunnelTarget, len(p.Targets))
+	gatewayIDs := make([]string, len(p.Targets))
+	for i, spec := range p.Targets {
+		if spec.Hostname == "" || spec.Port <= 0 {
+			return store.Task{}, status.Errorf(codes.InvalidArgument, "target %d: hostname and port are required", i)
+		}
+		gw, err := s.Store.GetGateway(ctx, spec.GatewayID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				return store.Task{}, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GatewayID)
+			}
+			return store.Task{}, status.Errorf(codes.Internal, "getting gateway %s: %v", spec.GatewayID, err)
+		}
+		if gw.AccountID != accountID {
+			// Same error as not-found: don't reveal that a gateway ID
+			// belongs to someone else.
+			return store.Task{}, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GatewayID)
+		}
+		targets[i] = store.TunnelTarget{GatewayID: spec.GatewayID, Hostname: spec.Hostname, Port: spec.Port}
+		gatewayIDs[i] = spec.GatewayID
+	}
+	if p.Limits.WallTimeoutS <= 0 {
+		return store.Task{}, status.Error(codes.InvalidArgument, "limits.wall_timeout_s is required and must be > 0")
+	}
+
+	delivery := store.AtMostOnce
+	if p.Delivery == string(store.AtLeastOnce) {
+		delivery = store.AtLeastOnce
+	}
+
+	taskID := id.New(id.Task)
+	var idemKey *string
+	if p.IdempotencyKey != "" {
+		k := p.IdempotencyKey
+		idemKey = &k
+	}
+
+	task := store.Task{
+		ID: taskID, AccountID: accountID, State: store.TaskQueued,
+		IdempotencyKey: idemKey,
+		Image:          p.Image,
+		Entrypoint:     p.Entrypoint,
+		Args:           p.Args,
+		Env:            p.Env,
+		Workdir:        p.Workdir,
+		Limits:         p.Limits,
+		Requirements:   store.Requirements{Arch: "amd64", Isolation: "podman", Confidentiality: "none"},
+		GatewayIDs:     gatewayIDs,
+		TunnelTargets:  targets,
+		Delivery:       delivery,
+		Retry:          store.Retry{MaxAttempts: 1},
 	}
 	if delivery == store.AtLeastOnce {
 		task.Retry.MaxAttempts = 3
@@ -148,23 +202,25 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 	// raw balance, so this remains a real limit across many concurrently
 	// in-flight tasks, not just a one-time gate at submission.
 	worstCase := pricing.WorstCase(s.rates(), task.Limits)
-	available, err := s.Store.AvailableBalance(ctx, tok.AccountID)
+	available, err := s.Store.AvailableBalance(ctx, accountID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "checking account balance: %v", err)
+		return store.Task{}, status.Errorf(codes.Internal, "checking account balance: %v", err)
 	}
 	if available < worstCase {
-		return nil, status.Errorf(codes.FailedPrecondition,
+		return store.Task{}, status.Errorf(codes.FailedPrecondition,
 			"insufficient balance: available %d micros, worst case for this task is %d micros", available, worstCase)
 	}
 
 	if err := s.Store.CreateTask(ctx, task); err != nil {
 		if err == store.ErrDuplicate {
-			return nil, status.Error(codes.AlreadyExists, "idempotency_key already used")
+			return store.Task{}, status.Error(codes.AlreadyExists, "idempotency_key already used")
 		}
-		return nil, status.Errorf(codes.Internal, "creating task: %v", err)
+		return store.Task{}, status.Errorf(codes.Internal, "creating task: %v", err)
 	}
-	s.Bus.Publish(events.Event{Type: "task_state", AtMS: time.Now().UnixMilli(), TaskID: taskID, State: string(store.TaskQueued)})
-	return &lazycakev1.SubmitTaskResponse{TaskId: taskID}, nil
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: time.Now().UnixMilli(), AccountID: accountID, TaskID: taskID, State: string(store.TaskQueued)})
+
+	task.CreatedAt = time.Now()
+	return task, nil
 }
 
 func (s *CustomerServer) GetTask(ctx context.Context, req *lazycakev1.GetTaskRequest) (*lazycakev1.TaskStatus, error) {

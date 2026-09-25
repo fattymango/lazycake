@@ -221,6 +221,37 @@ type LedgerEntry struct {
 	CreatedAt    time.Time
 }
 
+// PortalRole is one of the two portal_credentials.role/sessions.role CHECK
+// values (IMPLEMENTATION.md task 7.1) - fixed at signup by which portal an
+// account registered on, never a per-request choice.
+type PortalRole string
+
+const (
+	RoleCustomer PortalRole = "customer"
+	RoleProvider PortalRole = "provider"
+)
+
+// PortalCredential is one portal_credentials row: a human's login for one
+// of the two portals, at most one per account.
+type PortalCredential struct {
+	AccountID    string
+	Username     string
+	PasswordHash string
+	Role         PortalRole
+	CreatedAt    time.Time
+}
+
+// Session is one sessions row: a signed-in portal login, looked up by the
+// hash of the random ID a browser holds as its session cookie.
+type Session struct {
+	IDHash    []byte
+	AccountID string
+	Role      PortalRole
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+}
+
 // Gateway is a customer-installed relay endpoint, registered via
 // `lcctl gateway create` before the gateway process itself ever runs -
 // NoisePubkey starts empty and is filled in the first time it connects

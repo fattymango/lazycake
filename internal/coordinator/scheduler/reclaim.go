@@ -39,7 +39,7 @@ func (s *Scheduler) reclaimOverdue(ctx context.Context) {
 			if t.NodeID != nil {
 				nodeID = *t.NodeID
 			}
-			s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), TaskID: t.ID, NodeID: nodeID, State: string(store.TaskQueued)})
+			s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), AccountID: t.AccountID, TaskID: t.ID, NodeID: nodeID, State: string(store.TaskQueued)})
 			continue
 		}
 		if err := s.Store.AbandonTask(ctx, t.ID, []store.TaskState{t.State}, now); err != nil {
@@ -53,7 +53,7 @@ func (s *Scheduler) reclaimOverdue(ctx context.Context) {
 		if t.NodeID != nil {
 			abandonedNodeID = *t.NodeID
 		}
-		s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), TaskID: t.ID, NodeID: abandonedNodeID, State: string(store.TaskAbandoned)})
+		s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), AccountID: t.AccountID, TaskID: t.ID, NodeID: abandonedNodeID, State: string(store.TaskAbandoned)})
 
 		// An abandoned task never reaches OnTaskFinished (the agent is
 		// gone, there's no TaskFinished to receive), so nothing else ever

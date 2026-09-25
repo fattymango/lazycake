@@ -21,6 +21,7 @@ type Store interface {
 	Meters
 	Ledger
 	Holds
+	PortalAuth
 }
 
 type Accounts interface {
@@ -46,6 +47,11 @@ type Nodes interface {
 	// as the same node (task 3.3). Returns ErrNotFound if none matches.
 	GetNodeByInstanceID(ctx context.Context, accountID, instanceID string) (Node, error)
 	ListNodes(ctx context.Context) ([]Node, error)
+	// ListNodesByAccount returns only accountID's own nodes (task 7.3: the
+	// provider portal's own machine list - nobody sees another account's
+	// nodes through it, unlike the fleet-wide ListNodes the /ops dashboard
+	// uses).
+	ListNodesByAccount(ctx context.Context, accountID string) ([]Node, error)
 	SetNodeConnected(ctx context.Context, id string, connected bool) error
 	RecordHeartbeat(ctx context.Context, id string, at time.Time) error
 	SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB int) error
@@ -61,6 +67,10 @@ type Tasks interface {
 	// newest first, for task 6.2's dashboard initial snapshot (the live
 	// table itself is then kept current via task 6.1's SSE events).
 	ListRecentTasks(ctx context.Context, limit int) ([]Task, error)
+	// ListTasksByAccount returns accountID's own tasks, newest first, for
+	// task 7.3's customer portal task history - nobody sees another
+	// account's tasks through it.
+	ListTasksByAccount(ctx context.Context, accountID string, limit int) ([]Task, error)
 
 	// ClaimQueuedTask atomically picks one queued task matching filter,
 	// moves it to 'reserved' with the given node and lease, and returns it.
@@ -188,4 +198,28 @@ type Holds interface {
 	// AvailableBalance returns accountID's balance_micros minus the sum
 	// of its active holds.
 	AvailableBalance(ctx context.Context, accountID string) (int64, error)
+}
+
+// PortalAuth persists portal_credentials and sessions (task 7.1/7.2): a
+// human's username/password login for one of the two portals, and the
+// cookie-backed sessions it issues. Entirely separate from Tokens - a
+// password authenticates a human in a browser, a bearer token a machine
+// caller, no shared code path (PLAN.md §2).
+type PortalAuth interface {
+	// CreatePortalCredential creates one row. Fails with ErrDuplicate if
+	// username is already taken.
+	CreatePortalCredential(ctx context.Context, c PortalCredential) error
+	// GetPortalCredentialByUsername looks up a credential for login.
+	// Returns ErrNotFound if no such username exists.
+	GetPortalCredentialByUsername(ctx context.Context, username string) (PortalCredential, error)
+
+	// CreateSession creates one row.
+	CreateSession(ctx context.Context, s Session) error
+	// GetSession looks up a session by the hash of its cookie ID. Returns
+	// ErrNotFound if it doesn't exist, is revoked, or has expired -
+	// callers never need to check those fields themselves.
+	GetSession(ctx context.Context, idHash []byte) (Session, error)
+	// RevokeSession marks a session revoked (logout). A no-op, not an
+	// error, if it doesn't exist or is already revoked.
+	RevokeSession(ctx context.Context, idHash []byte) error
 }

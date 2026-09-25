@@ -27,61 +27,70 @@ decided or silently skipped — same spirit as
   toolchain dependency in an otherwise Go-only repo, embedded via
   `go:embed` so the single-binary deploy story is unchanged.
 
-## Left for the implementer
+## Left for the implementer — resolved, once actually implemented
 
-- **Task 7.4:** whether `portalapi` calls into `api.CustomerServer`'s
-  logic via an extracted shared helper or direct method calls with a
-  constructed context — depends on what the real code looks like once
-  you're in it. Fixed constraint either way: no duplicated validation.
-- **Task 7.2:** exact shape of the failed-login lockout (in-memory map
-  keyed by username is the suggested starting point — simplest thing
-  that stops naive brute-forcing, not meant to survive a coordinator
-  restart or scale past one replica).
+- **Task 7.4:** `portalapi` calls into `api.CustomerServer` via a new
+  exported `SubmitTaskForAccount` extracted from the gRPC `SubmitTask`'s
+  body (transport-agnostic params in, `*status.Error` out either way) -
+  the "direct method calls with a constructed context" option, since
+  `SubmitTask` already had `tok.AccountID` as its only real dependency on
+  the gRPC-specific auth path once separated out. No duplicated
+  validation: `customer_server_test.go`'s existing digest-pin/gateway-
+  ownership tests exercise the exact same code either RPC or HTTP calls
+  into.
+- **Task 7.2:** the lockout is exactly the suggested in-memory map keyed
+  by username (`portalapi/lockout.go`), 10 failures in 5 minutes locking a
+  username out for 5 minutes. As flagged when this was only a plan: it
+  does not survive a coordinator restart and does not coordinate across
+  replicas - unchanged scope, now implemented rather than just described.
 
-## Frontend built ahead of the backend (7.6-7.9 before 7A)
+## Frontend built ahead of the backend (7.6-7.9 before 7A) — reconciled
 
-Explicit project-owner direction, overriding `IMPLEMENTATION.md`'s own
-stated order ("7A must land before 7B can call real endpoints"): build the
-Phase 7B frontend now, with Phase 7A (`portalapi`, tasks 7.1-7.5) not yet
-started. Consequences worth flagging rather than discovering later:
+The frontend (7.6-7.9) was built before the backend (7.1-7.5) existed, on
+explicit project-owner direction, against a best-effort reading of
+`PLAN.md`'s Appendix table. Now that 7A is implemented, here's how that
+guess actually turned out - checked field-by-field against
+`internal/coordinator/portalapi`'s real wire shapes:
 
-- **API surface the frontend assumes** (`web/src/shared/types.ts`,
-  `api.ts`): built from `PLAN.md`'s Appendix table and
-  `internal/coordinator/store/types.go`'s existing Go structs, not from a
-  real handler. Where the plan's endpoint list didn't fully specify a
-  shape, the frontend picked the simplest reasonable one — check these
-  against whatever 7A actually implements:
-  - `GET /api/portal/customer/me` returns `balance_micros` *and*
-    `available_balance_micros` (the plan's "balance + available balance");
-    `GET /api/portal/provider/me` returns `lifetime_earnings_micros`.
-  - `POST /api/portal/customer/tasks` request/response both assumed to be
-    close to `store.Task`/its create request, flattened to snake_case the
-    same way `dashboard`'s `taskView` flattens `store.Task` today.
-  - `GET /api/portal/customer/tasks/{id}/logs` is assumed to be an SSE
-    stream of individual `LogLine`s (one JSON object per `data:` line,
-    matching `store.LogLine`), not a one-shot JSON array — "same polling
-    shape `StreamLogs` already uses server-side" read as "stream it", not
-    "return a snapshot".
-  - `GET /api/portal/provider/nodes/{id}/tasks` — **invented**, not in the
-    plan's endpoint table. `IMPLEMENTATION.md` task 7.5 says machine detail
-    needs `ListTasksByNode` (which already exists at the store layer) but
-    the Appendix only lists `GET /api/portal/provider/nodes[/{id}]`. Either
-    fold recent tasks into the node-detail response, or confirm this
-    sub-path, when building 7.5.
-  - `POST /api/portal/customer/balance/add` assumed to take
-    `{amount_micros}` and return nothing meaningful (frontend just re-fetches
-    `/me` and `/ledger` after).
-  - Account-scoped SSE (`GET /api/portal/{role}/events`) assumed to emit
-    the same shape as the existing fleet-wide `/events` (task 6.1's
-    `events.Event`), just filtered to the caller's account — see
-    `PortalEvent` in `types.ts`.
-- **`web/`'s own build has not been run or verified** — no npm registry
-  access in this sandboxed session. `deploy/Dockerfile`'s new `web-build`
-  stage and `internal/coordinator/webassets`'s embed were checked for
-  internal consistency (`go build ./...` / `go vet` pass with an empty
-  placeholder `dist/`) but `npm ci && npm run build` itself has not
-  actually been executed anywhere. Run it as the very first check before
-  relying on anything else here.
+- **Matches exactly, no changes needed on either side:** `GET .../me` for
+  both roles, `POST/GET .../tasks`, `GET .../tasks/{id}`, gateway list/create,
+  ledger entries, node list/detail, install-token response, and the SSE
+  log stream's per-line shape. The frontend's guesses at
+  `available_balance_micros`, `lifetime_earnings_micros`, and a flattened
+  snake_case task/node/gateway view (mirroring
+  `internal/coordinator/dashboard`'s own existing convention) all landed
+  correctly.
+- **`GET /api/portal/provider/nodes/{id}/tasks`** - the frontend's own
+  invented endpoint (not in the plan's Appendix table) - was implemented
+  exactly as guessed: its own route rather than folding into node detail,
+  so a long task history doesn't inflate every node-detail response.
+- **Known, documented deltas, neither side wrong so much as not fully
+  specified by the plan:**
+  - `taskView` never sets `price_micros` - the frontend's `Task` type
+    marks it optional and the UI already renders "—" for `undefined`, so
+    this is a real gap (a settled task's actual price isn't surfaced yet)
+    rather than a breaking mismatch. Closing it means joining
+    `task_meters`/pricing into `toTaskView`, not done here.
+  - The account-scoped SSE stream emits `events.Event`'s real shape
+    verbatim (`task_state`, `node_connected`, `node_disconnected`,
+    *and* `capacity` - the frontend's `PortalEvent` union doesn't model
+    `capacity`, but an unrecognized `type` is silently ignored by its
+    `switch`, so this is harmless dead data, not a bug). The frontend also
+    expects a `"balance"` event type the backend never emits - there is no
+    such `events.Event` type, and nothing currently publishes one on
+    `AdjustBalance`; a balance change is only ever picked up by the
+    frontend's own re-fetch after an action it just took itself, not
+    pushed live. Worth adding if a portal ever needs to reflect another
+    session's balance change (e.g. two tabs open) without a manual
+    refresh.
+  - `POST /api/portal/customer/balance/add` is **not** gated behind
+    `cfg.Dev` at the handler level - it exists and works in every
+    deployment, clearly labeled dev-only in its doc comment and in the
+    frontend's own UI copy, but nothing stops it from being hit in a
+    real deployment today. Whether it should 404 outside `cfg.Dev` (and
+    who decides "dev" at the HTTP layer vs. relying on network
+    exposure/documentation) is a deployment decision, not something baked
+    into `portalapi` itself - flagging it rather than deciding it here.
 
 ## Real gaps this base does not close
 
@@ -96,3 +105,17 @@ started. Consequences worth flagging rather than discovering later:
 - **No session-management UI** (view/revoke other sessions) — deliberately
   cut (`PLAN.md` §8). `RevokeSession` exists at the store layer for the
   logout flow itself; nothing else calls it.
+- **The install command assumes a locally-built `lazycake-agent` image**
+  (`podman build --target agent -f deploy/Dockerfile -t lazycake-agent .`)
+  and a real, reachable `LAZYCAKE_PUBLIC_GRPC_ADDR`. There is no published
+  image registry, so a true one-line "copy, paste, done" self-service story
+  needs one - a deployment decision, not something to invent here.
+- **`go test -tags=integration ./...` is not safe to run with Go's default
+  package parallelism** now that two packages (`store`, `portalapi`) share
+  one real Postgres database and both truncate it per test. Use `-p 1`
+  (sequential packages) or accept that `make test-integration` may
+  intermittently fail with a row that "shouldn't" be missing - a
+  pre-existing characteristic of `store`'s own test convention, only now
+  visible because `portalapi` is the second integration-tagged package
+  to use it. Not fixed here (see `PROGRESS.md`'s 7.1-7.5 entry) - real
+  isolation would mean per-test transactions or per-package schemas.
