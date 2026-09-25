@@ -68,7 +68,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	}
 
 	if s.inCooldown(n.ID, task.ID) {
-		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	// Fleet-wide cold-pull cap (task 5.4): if this node doesn't already
@@ -83,7 +83,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	}
 	if !warm && !s.ColdPull.TryStart(digest, n.ID) {
 		s.Log.Info("deferring dispatch, fleet-wide cold-pull cap reached", "node_id", n.ID, "task_id", task.ID, "digest", digest)
-		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	// Deduct a hold at dispatch (task 4.5), before the task is actually
@@ -98,7 +98,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		if !warm {
 			s.ColdPull.Finish(digest, n.ID)
 		}
-		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	msg, err := s.dispatchMessage(ctx, task, requeueAfter.Add(-leaseMargin))
@@ -107,14 +107,28 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		if !warm {
 			s.ColdPull.Finish(digest, n.ID)
 		}
-		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 	if err := s.Dispatch.Send(n.ID, msg); err != nil {
 		s.Log.Warn("dispatch send failed, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
 		if !warm {
 			s.ColdPull.Finish(digest, n.ID)
 		}
-		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+		// Self-healing: a send failure here means the registry already
+		// doesn't have this node (see api.Registry.Send's "node not
+		// connected" error), so nodes.connected is stale - most often
+		// because the coordinator's own process was killed before its
+		// Connect handler's disconnect-cleanup defer got to run (see
+		// api.Server.Connect), not anything the node did wrong. Left
+		// uncorrected, this node stays "connected" in the DB forever and
+		// every future tick tries and fails to dispatch to it again
+		// before any real node gets a turn - a genuine starvation bug,
+		// caught live: a task bounced between claim and revert against a
+		// long-dead node indefinitely, never reaching a healthy one.
+		if err := s.Store.SetNodeConnected(ctx, n.ID, false); err != nil {
+			s.Log.Warn("marking stale node disconnected", "node_id", n.ID, "error", err)
+		}
+		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	if err := s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskDispatched, store.TaskUpdate{}); err != nil {

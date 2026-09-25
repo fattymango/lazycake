@@ -351,6 +351,30 @@ func (f *fakeStore) RequeueTaskForRetry(ctx context.Context, id string, fromStat
 	return nil
 }
 
+func (f *fakeStore) ReleaseReservedTask(ctx context.Context, id string, fromStates []store.TaskState) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	matched := false
+	for _, s := range fromStates {
+		if t.State == s {
+			matched = true
+		}
+	}
+	if !matched {
+		return store.ErrConflict
+	}
+	t.State = store.TaskQueued
+	t.NodeID = nil
+	t.LeaseExpiresAt = nil
+	t.RequeueAfter = nil
+	f.tasks[id] = t
+	return nil
+}
+
 func (f *fakeStore) AbandonTask(ctx context.Context, id string, fromStates []store.TaskState, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
