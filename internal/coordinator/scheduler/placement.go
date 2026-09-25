@@ -70,6 +70,21 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
 	}
 
+	// Fleet-wide cold-pull cap (task 5.4): if this node doesn't already
+	// have the image and the cap is already held by maxConcurrentColdPulls
+	// other nodes, put the task back rather than start a 4th concurrent
+	// pull - it'll be picked up next tick, either by one of those nodes
+	// once it's warm or by a different, already-warm node.
+	digest := imageDigest(task.Image)
+	warm, err := s.nodeHasImage(ctx, n.ID, digest)
+	if err != nil {
+		s.Log.Warn("checking image cache, proceeding as cold", "node_id", n.ID, "digest", digest, "error", err)
+	}
+	if !warm && !s.ColdPull.TryStart(digest, n.ID) {
+		s.Log.Info("deferring dispatch, fleet-wide cold-pull cap reached", "node_id", n.ID, "task_id", task.ID, "digest", digest)
+		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+	}
+
 	// Deduct a hold at dispatch (task 4.5), before the task is actually
 	// sent anywhere; a retried task keeps the hold from its first dispatch
 	// (ErrDuplicate here just means "already held," not a problem - the
@@ -79,16 +94,25 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	worstCase := pricing.WorstCase(s.rates(), task.Limits)
 	if err := s.Store.PlaceHold(ctx, task.ID, task.AccountID, worstCase); err != nil && err != store.ErrDuplicate {
 		s.Log.Warn("placing balance hold, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
+		if !warm {
+			s.ColdPull.Finish(digest, n.ID)
+		}
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
 	}
 
 	msg, err := s.dispatchMessage(ctx, task, requeueAfter.Add(-leaseMargin))
 	if err != nil {
 		s.Log.Warn("building dispatch message, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
+		if !warm {
+			s.ColdPull.Finish(digest, n.ID)
+		}
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
 	}
 	if err := s.Dispatch.Send(n.ID, msg); err != nil {
 		s.Log.Warn("dispatch send failed, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
+		if !warm {
+			s.ColdPull.Finish(digest, n.ID)
+		}
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
 	}
 
@@ -155,6 +179,31 @@ func (s *Scheduler) maybeDispatchCanary(ctx context.Context, n store.Node) bool 
 	s.Canary.Expect(task.ID, n.ID, s.CanaryExpectedRuntimeS)
 	s.Log.Info("canary dispatched", "node_id", n.ID, "task_id", task.ID)
 	return true
+}
+
+// imageDigest extracts the "sha256:..." portion of a digest-pinned image
+// reference ("repo@sha256:..."), matching how CustomerServer.SubmitTask
+// already validates every task's image is pinned in the first place.
+func imageDigest(image string) string {
+	for i := len(image) - 1; i >= 0; i-- {
+		if image[i] == '@' {
+			return image[i+1:]
+		}
+	}
+	return image
+}
+
+func (s *Scheduler) nodeHasImage(ctx context.Context, nodeID, digest string) (bool, error) {
+	nodes, err := s.Store.NodesWithImage(ctx, digest)
+	if err != nil {
+		return false, err
+	}
+	for _, id := range nodes {
+		if id == nodeID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func isolationsFor(n store.Node) []string {

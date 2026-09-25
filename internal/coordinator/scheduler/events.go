@@ -25,6 +25,13 @@ func (s *Scheduler) OnTaskRejected(ctx context.Context, nodeID, taskID, reason s
 	if err != nil && err != store.ErrConflict {
 		return fmt.Errorf("requeueing rejected task: %w", err)
 	}
+	// A rejected task never pulled anything on this node (task 5.4): the
+	// agent's own admission control - a separate check from the
+	// coordinator's optimistic capacity filter - refused it before Pull
+	// ever ran.
+	if task, err := s.Store.GetTask(ctx, taskID); err == nil {
+		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
+	}
 	return nil
 }
 
@@ -37,6 +44,13 @@ func (s *Scheduler) OnTaskStarted(ctx context.Context, nodeID, taskID string, at
 	s.Log.Info("task started", "task_id", taskID, "node_id", nodeID)
 	if err := s.billing().OnTaskStarted(ctx, nodeID, taskID); err != nil {
 		s.Log.Error("metering task started", "task_id", taskID, "node_id", nodeID, "error", err)
+	}
+
+	// Started can only arrive after the agent's own Pull->Create->Start
+	// sequence has already pulled the image successfully (task 5.4) - this
+	// is the earliest correct point to release a cold-pull slot.
+	if task, err := s.Store.GetTask(ctx, taskID); err == nil {
+		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
 	}
 	return nil
 }
@@ -52,6 +66,14 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		return fmt.Errorf("marking task finished: %w", err)
 	}
 	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason, "state", to)
+
+	// Safety net for a cold-pull slot never released at OnTaskStarted -
+	// e.g. the pull itself failed, so Started was never sent at all
+	// (task 5.4). A no-op if OnTaskStarted already released it.
+	if task, err := s.Store.GetTask(ctx, ev.TaskID); err == nil {
+		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
+	}
+
 	if err := s.billing().OnTaskFinished(ctx, nodeID, ev); err != nil {
 		s.Log.Error("metering task finished", "task_id", ev.TaskID, "node_id", nodeID, "error", err)
 	}

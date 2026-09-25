@@ -413,3 +413,28 @@ need to register against, but running that process (and whatever local
 service the canary workload talks to) is a deployment step, not something
 this codebase does for you.
 
+## Task 5.4: placement scoring formula is not wired into the dispatch loop
+
+`scheduler.PlacementScore` implements task 5.4's exact formula (`base_fit +
+cache_bonus*(image_size_gb/2) - queue_penalty*tasks_assigned_to_node +
+trust_weight*trust_score`) as a pure, tested function, but nothing calls
+it from the real dispatch path. The reason is architectural, not an
+oversight: `tryPlaceOne` (built in phase 1 and unchanged in shape since)
+is *node-driven* - for each connected node, `ClaimQueuedTask`'s SQL grabs
+any one fitting queued task via `SELECT ... FOR UPDATE SKIP LOCKED`. The
+formula as written is *task-driven* - for a given task, score every
+candidate node and pick the best - which is a different query shape
+entirely (list queued tasks, cross-join candidate nodes, evaluate each
+pair, pick a winner, then still need `SKIP LOCKED`-equivalent concurrency
+safety against other coordinator replicas or ticks racing the same
+choice). Moving to that shape is a real rewrite of the claim path, not
+something to bolt on in the time this session had left.
+
+What *is* wired into the real path, and is task 5.4's own literal "Done
+when" criterion, is the fleet-wide cold-pull cap
+(`scheduler.ColdPullLimiter`, `coldpull.go`): `tryPlaceOne` checks
+`Store.NodesWithImage` before claiming further, and refuses to start a 4th
+concurrent cold pull of the same digest, requeueing the task for a later
+tick instead. That part is genuinely load-bearing in the real dispatch
+loop, not just a tested-in-isolation function like the scoring formula is.
+
