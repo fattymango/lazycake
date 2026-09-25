@@ -73,6 +73,9 @@ type Reconciler struct {
 	// directly, matching the DI pattern the rest of the coordinator uses.
 	ResolveNodeID func(ctx context.Context, taskID string) (string, error)
 	Log           Logger
+	// OnFlagged, if set, is called after a flagged reconciliation is
+	// logged - task 5.3 wires this to drop the node's trust score.
+	OnFlagged func(nodeID, taskID string, rec Reconciliation)
 
 	mu      sync.Mutex
 	pending map[string]*partialCounts
@@ -156,6 +159,9 @@ func (r *Reconciler) finalizeNow(taskID string) {
 			"task_id", taskID, "node_id", nodeID,
 			"bytes_agent", rec.BytesAgent, "bytes_relay", rec.BytesRelay, "bytes_gateway", rec.BytesGateway,
 			"divergence_pct", fmt.Sprintf("%.2f", rec.DivergencePct*100))
+		if r.OnFlagged != nil {
+			r.OnFlagged(nodeID, taskID, rec)
+		}
 		return
 	}
 	r.Log.Info("byte reconciliation within threshold",

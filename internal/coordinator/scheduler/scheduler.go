@@ -69,6 +69,11 @@ type Scheduler struct {
 	// billable task finish (see OnTaskFinished). Always non-nil - New()
 	// sets it.
 	SpecDrift *SpecDriftTracker
+	// Trust is task 5.3's per-node trust score, fed by SpecDrift, byte
+	// reconciliation (task 4.3, wired in cmd/coordinator), canaries (task
+	// 5.2) and this scheduler's own clean-completion/abandonment events.
+	// Always non-nil - New() sets it.
+	Trust *TrustTracker
 
 	// LeaseS is how long a dispatched task's lease is before the agent
 	// self-fences if it hears nothing (phase 3 uses this fully; phase 1
@@ -91,6 +96,7 @@ func New(st store.Store, dispatch Dispatcher, ck clock.Clock, log *slog.Logger, 
 		freeCap:   make(map[string]store.CapacityFilter),
 		rejected:  make(map[rejectKey]time.Time),
 		SpecDrift: NewSpecDriftTracker(),
+		Trust:     NewTrustTracker(),
 	}
 }
 

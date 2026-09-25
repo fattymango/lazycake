@@ -37,6 +37,10 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if !n.Connected {
 			continue
 		}
+		// "Below 0.2, stop dispatching and freeze the balance" (task 5.3).
+		if s.Trust.Banned(n.ID) {
+			continue
+		}
 		if err := s.tryPlaceOne(ctx, n); err != nil && err != store.ErrNoTask {
 			s.Log.Error("placing task", "node_id", n.ID, "error", err)
 		}
