@@ -77,6 +77,43 @@ func TestCheckMemoryLimitNotEnforced(t *testing.T) {
 	}
 }
 
+// TestCheckMemoryLimitENOSPC covers the other real enforcement path: on a
+// real kernel, a tmpfs write that exceeds memory.max fails with ENOSPC
+// rather than triggering the OOM killer - the write syscall just errors out
+// and the process (here, dd) is free to exit non-zero on its own instead of
+// being killed. This is standard, documented cgroup v2 behaviour, not a
+// sign enforcement is missing, and was found live on a real Ubuntu VM
+// (WSL2's kernel never enforces this at all, so it never surfaced there).
+func TestCheckMemoryLimitENOSPC(t *testing.T) {
+	fr := newFakeRunner().
+		on("run", CmdResult{ExitCode: 1}).
+		on("inspect", CmdResult{Stdout: "false\n"}).
+		on("logs", CmdResult{Stderr: "62+1 records in\n62+0 records out\n65536000 bytes copied\n"})
+	pm := Podman{Runner: fr, ProbeImage: "alpine"}
+
+	res := pm.CheckMemoryLimit(context.Background())
+	if res.Status != Pass {
+		t.Fatalf("expected Pass on a short ENOSPC write, got %s (%s)", res.Status, res.Detail)
+	}
+}
+
+// TestCheckMemoryLimitFullWriteExitedNonZero guards against the ENOSPC path
+// masking an unrelated failure: a full 128MB write that happens to exit
+// non-zero for some other reason must still fail the check, since the
+// memory limit plainly did not stop anything.
+func TestCheckMemoryLimitFullWriteExitedNonZero(t *testing.T) {
+	fr := newFakeRunner().
+		on("run", CmdResult{ExitCode: 1}).
+		on("inspect", CmdResult{Stdout: "false\n"}).
+		on("logs", CmdResult{Stderr: "128+0 records in\n128+0 records out\n134217728 bytes copied\nsh: some unrelated error\n"})
+	pm := Podman{Runner: fr, ProbeImage: "alpine"}
+
+	res := pm.CheckMemoryLimit(context.Background())
+	if res.Status != Fail {
+		t.Fatalf("expected Fail when the full write completed despite a nonzero exit, got %s", res.Status)
+	}
+}
+
 func TestCheckCPUQuotaThrottled(t *testing.T) {
 	fr := newFakeRunner().
 		on("run", CmdResult{Stdout: "500000\n"}). // capped: half the work
