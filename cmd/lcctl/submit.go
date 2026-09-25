@@ -23,6 +23,7 @@ func newSubmitCmd() *cobra.Command {
 		idempotencyKey string
 		targetSpecs    []string
 		count          int
+		delivery       string
 	)
 
 	cmd := &cobra.Command{
@@ -35,6 +36,9 @@ func newSubmitCmd() *cobra.Command {
 			}
 			if count < 1 {
 				return fmt.Errorf("--count must be >= 1")
+			}
+			if delivery != "" && delivery != "at_most_once" && delivery != "at_least_once" {
+				return fmt.Errorf("--delivery must be at_most_once or at_least_once, got %q", delivery)
 			}
 			targets, err := parseTargetSpecs(targetSpecs)
 			if err != nil {
@@ -60,7 +64,8 @@ func newSubmitCmd() *cobra.Command {
 				Limits: &lazycakev1.TaskLimits{
 					CpuCores: cpu, MemoryMb: memoryMB, DiskMb: diskMB, WallTimeoutS: timeoutS,
 				},
-				Targets: targets,
+				Targets:  targets,
+				Delivery: delivery,
 			}
 
 			if count == 1 {
@@ -86,6 +91,8 @@ func newSubmitCmd() *cobra.Command {
 		"gateway_id:hostname:port the task may reach (repeatable, max 3), e.g. gw_abc:db.acme.com:5432")
 	cmd.Flags().IntVar(&count, "count", 1,
 		"submit this many identical tasks concurrently (task 6.3: a single command fanning out across the fleet)")
+	cmd.Flags().StringVar(&delivery, "delivery", "",
+		"at_most_once (default) or at_least_once - retried tasks come back to queued for a fresh node on a missed lease (task 3.4)")
 
 	return cmd
 }
