@@ -20,6 +20,7 @@ type Store interface {
 	Gateways
 	Meters
 	Ledger
+	Holds
 }
 
 type Accounts interface {
@@ -162,4 +163,20 @@ type Ledger interface {
 	// LedgerEntriesForAccount lists every ledger row for an account,
 	// oldest first.
 	LedgerEntriesForAccount(ctx context.Context, accountID string) ([]LedgerEntry, error)
+}
+
+// Holds persists task_holds (task 4.5): "Deduct a hold at dispatch, settle
+// at completion." A hold reserves part of an account's balance against one
+// in-flight task without moving any money.
+type Holds interface {
+	// PlaceHold reserves amountMicros of accountID's balance against
+	// taskID. Fails with ErrDuplicate if a hold already exists for taskID
+	// (a task is only ever dispatched once at a time).
+	PlaceHold(ctx context.Context, taskID, accountID string, amountMicros int64) error
+	// ReleaseHold removes taskID's hold. A no-op, not an error, if none
+	// exists - e.g. a task that never reached dispatch.
+	ReleaseHold(ctx context.Context, taskID string) error
+	// AvailableBalance returns accountID's balance_micros minus the sum
+	// of its active holds.
+	AvailableBalance(ctx context.Context, accountID string) (int64, error)
 }

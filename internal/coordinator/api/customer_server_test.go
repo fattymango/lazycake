@@ -41,6 +41,17 @@ func authCtx(token string) context.Context {
 	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token))
 }
 
+// mustFundAccount gives accountID enough balance to clear task 4.5's
+// submission-time affordability check for any task this test file
+// submits, so tests unrelated to balance enforcement don't need to think
+// about it.
+func mustFundAccount(t *testing.T, fs *fakeStore, accountID string) {
+	t.Helper()
+	if err := fs.CreateAccount(context.Background(), store.Account{ID: accountID, Name: accountID, BalanceMicros: 10_000_000}); err != nil {
+		t.Fatalf("funding account %s: %v", accountID, err)
+	}
+}
+
 func TestSubmitTaskRequiresDigestPinnedImage(t *testing.T) {
 	fs := newFakeStore()
 	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
@@ -145,6 +156,7 @@ func TestCreateAndListGateways(t *testing.T) {
 func TestSubmitAndGetTask(t *testing.T) {
 	fs := newFakeStore()
 	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
+	mustFundAccount(t, fs, "act_1")
 	client := startCustomerTestServer(t, fs)
 
 	resp, err := client.SubmitTask(authCtx("cust"), &lazycakev1.SubmitTaskRequest{
@@ -171,6 +183,7 @@ func TestGetTaskOtherAccountNotFound(t *testing.T) {
 	fs := newFakeStore()
 	fs.addToken(string(auth.Hash("cust1")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
 	fs.addToken(string(auth.Hash("cust2")), store.APIToken{AccountID: "act_2", Kind: store.TokenCustomer})
+	mustFundAccount(t, fs, "act_1")
 	client := startCustomerTestServer(t, fs)
 
 	resp, err := client.SubmitTask(authCtx("cust1"), &lazycakev1.SubmitTaskRequest{
@@ -190,6 +203,7 @@ func TestGetTaskOtherAccountNotFound(t *testing.T) {
 func TestStreamLogsNoFollow(t *testing.T) {
 	fs := newFakeStore()
 	fs.addToken(string(auth.Hash("cust")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
+	mustFundAccount(t, fs, "act_1")
 	client := startCustomerTestServer(t, fs)
 
 	resp, err := client.SubmitTask(authCtx("cust"), &lazycakev1.SubmitTaskRequest{
