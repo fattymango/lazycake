@@ -355,3 +355,28 @@ the session's own operating instructions. The algorithm itself is sound;
 this is a measurement-environment limitation, not a code defect, and is
 exactly what task 4.1 already anticipated by requiring an idle node.
 
+## Ops note: podman-machine-default's DNS breaks on every WSL2 restart
+
+Two things reset every time this WSL2 VM restarts (machine sleep/shutdown,
+`wsl --shutdown`, host reboot) and have to be redone before any integration
+test that pulls an image can run:
+
+1. `/run/user/1000` doesn't exist yet (no user D-Bus/session bootstrap in
+   this VM - same underlying gap as the `systemctl --user` limitation
+   documented above). Fix: `sudo mkdir -p /run/user/1000 && sudo chown
+   user:user /run/user/1000 && sudo chmod 700 /run/user/1000`, then start a
+   fresh `podman system service --time=0 unix:///tmp/fresh-podman.sock &`
+   (the persistent boot-time podman.sock still has the PID-namespace
+   mismatch issue from task 1.5/1.6, so tests should keep pointing
+   `LAZYCAKE_TEST_PODMAN_SOCKET` at the fresh one either way).
+2. `/etc/wsl.conf` has `generateResolvConf = false`, so `/etc/resolv.conf`'s
+   `nameserver` line is whatever it was the last time it was written by
+   hand - and WSL2's internal NAT gateway IP changes across restarts, so
+   that stale nameserver stops resolving anything (`lookup
+   registry-1.docker.io: Temporary failure in name resolution`). Fix:
+   `sudo sh -c "echo nameserver $(ip route | awk '/^default/{print $3}') >
+   /etc/resolv.conf"` to point it at the current gateway.
+
+Neither is a code defect; both are one-time-per-VM-restart setup steps for
+this specific dev environment.
+
