@@ -42,10 +42,7 @@ func (s *Scheduler) OnTaskStarted(ctx context.Context, nodeID, taskID string, at
 }
 
 func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.TaskFinishedEvent) error {
-	to := store.TaskFailed
-	if ev.ExitReason == "exited" && ev.ExitCode == 0 {
-		to = store.TaskSucceeded
-	}
+	to := terminalState(ev.ExitReason, ev.ExitCode)
 	exitCode := int(ev.ExitCode)
 	exitReason := ev.ExitReason
 	err := s.Store.TransitionTask(ctx, ev.TaskID,
@@ -54,11 +51,33 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 	if err != nil && err != store.ErrConflict {
 		return fmt.Errorf("marking task finished: %w", err)
 	}
-	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason)
-	if err := s.billing().OnTaskFinished(ctx, nodeID, ev.TaskID, ev.BytesSent+ev.BytesRecv); err != nil {
+	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason, "state", to)
+	if err := s.billing().OnTaskFinished(ctx, nodeID, ev); err != nil {
 		s.Log.Error("metering task finished", "task_id", ev.TaskID, "node_id", nodeID, "error", err)
 	}
 	return nil
+}
+
+// terminalState maps a TaskFinished report to the task's terminal state -
+// distinguishing an honest fence (task 3.2) and a coordinator-issued
+// cancellation (task 3.3) from an ordinary exit matters for billing (task
+// 4.4, PLAN.md "Payout rules": a fenced task pays no compute but must be
+// recorded distinctly, not silently merged into "failed" the way a
+// customer's own nonzero exit is).
+func terminalState(exitReason string, exitCode int32) store.TaskState {
+	switch exitReason {
+	case "fenced":
+		return store.TaskFenced
+	case "cancelled":
+		return store.TaskCancelled
+	case "exited":
+		if exitCode == 0 {
+			return store.TaskSucceeded
+		}
+		return store.TaskFailed
+	default: // "error", "wall_timeout", "oom", "egress_exceeded"
+		return store.TaskFailed
+	}
 }
 
 func (s *Scheduler) OnCapacityReport(ctx context.Context, nodeID string, rep api.CapacityReportEvent) error {

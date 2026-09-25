@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mkassab215/lazycake/internal/clock"
+	"github.com/mkassab215/lazycake/internal/coordinator/api"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 )
 
@@ -78,7 +79,7 @@ func TestDurationNormalisation(t *testing.T) {
 		t.Fatalf("OnTaskStarted: %v", err)
 	}
 	fc.Advance(20 * time.Second)
-	if err := m.OnTaskFinished(context.Background(), "nod_1", "tsk_1", 0); err != nil {
+	if err := m.OnTaskFinished(context.Background(), "nod_1", api.TaskFinishedEvent{TaskID: "tsk_1", ExitReason: "exited"}); err != nil {
 		t.Fatalf("OnTaskFinished: %v", err)
 	}
 
@@ -110,7 +111,7 @@ func TestNodeWithoutBenchScoreDefaultsToOne(t *testing.T) {
 		t.Fatalf("OnTaskStarted: %v", err)
 	}
 	fc.Advance(7 * time.Second)
-	if err := m.OnTaskFinished(context.Background(), "nod_1", "tsk_1", 0); err != nil {
+	if err := m.OnTaskFinished(context.Background(), "nod_1", api.TaskFinishedEvent{TaskID: "tsk_1", ExitReason: "exited"}); err != nil {
 		t.Fatalf("OnTaskFinished: %v", err)
 	}
 

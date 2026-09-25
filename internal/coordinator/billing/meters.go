@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mkassab215/lazycake/internal/clock"
+	"github.com/mkassab215/lazycake/internal/coordinator/api"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 )
 
@@ -32,6 +33,11 @@ type Meters struct {
 	// (task 4.3) alongside duration metering. Nil disables it entirely -
 	// useful for tests that only care about duration/normalisation.
 	Reconciler *Reconciler
+	// Ledger, if set, prices and settles each billable task finish
+	// (task 4.4) right after duration/normalisation is recorded. Nil
+	// disables it entirely - useful for tests that only care about
+	// duration/normalisation or reconciliation in isolation.
+	Ledger *Ledger
 }
 
 func (m *Meters) now() time.Time {
@@ -57,7 +63,9 @@ func (m *Meters) OnTaskStarted(ctx context.Context, nodeID, taskID string) error
 // * the node's current bench_score (1.0 if the node has never
 // benchmarked - see internal/agent/bench and task 4.1 - rather than
 // silently zeroing out its normalised duration).
-func (m *Meters) OnTaskFinished(ctx context.Context, nodeID, taskID string, bytesAgent int64) error {
+func (m *Meters) OnTaskFinished(ctx context.Context, nodeID string, ev api.TaskFinishedEvent) error {
+	taskID := ev.TaskID
+	bytesAgent := ev.BytesSent + ev.BytesRecv
 	if m.Reconciler != nil {
 		m.Reconciler.RecordAgentBytes(taskID, bytesAgent)
 		m.Reconciler.Finalize(taskID)
@@ -89,5 +97,15 @@ func (m *Meters) OnTaskFinished(ctx context.Context, nodeID, taskID string, byte
 	}
 	m.Log.Info("task metered", "task_id", taskID, "node_id", nodeID,
 		"duration_s", durationS, "bench_score", benchScore, "normalised_s", normalisedS)
+
+	if m.Ledger != nil {
+		// net_rate is billed against bytes_agent (available immediately)
+		// rather than waiting on task 4.3's Reconciler, whose 3-point
+		// comparison is a fraud signal, not a billing gate - pricing
+		// shouldn't stall on the gateway's/relay's reports landing.
+		if err := m.Ledger.Settle(ctx, taskID, ev.ExitReason, ev.ExitCode, ev.ColdPullBytes, bytesAgent, normalisedS); err != nil {
+			m.Log.Error("settling task", "task_id", taskID, "node_id", nodeID, "error", err)
+		}
+	}
 	return nil
 }

@@ -209,6 +209,18 @@ type TaskMeter struct {
 	NormalisedS *float64
 }
 
+// LedgerEntry is one ledger_entries row (task 4.4): a charge (negative
+// AmountMicros) or a credit (positive AmountMicros) against one account,
+// for one task.
+type LedgerEntry struct {
+	ID           string
+	TaskID       string
+	AccountID    string
+	Kind         string // "charge" | "credit"
+	AmountMicros int64
+	CreatedAt    time.Time
+}
+
 // Gateway is a customer-installed relay endpoint, registered via
 // `lcctl gateway create` before the gateway process itself ever runs -
 // NoisePubkey starts empty and is filled in the first time it connects
