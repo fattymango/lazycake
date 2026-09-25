@@ -3,12 +3,13 @@
 The chaos demo (`deploy/chaos-demo.sh`, task 6.4) submits 50 tasks, waits for
 the fleet to pick them up, then `kill -9`s one agent mid-flight and shows the
 dashboard reclaim and reschedule its work onto a survivor with no
-double-execution. There's no GIF of it here: this was built and tested inside
-a nested WSL2 dev VM with no working cgroup v2 delegation, so no agent here
-can actually start a container (see [Limitations](#limitations)) — the script
-itself, the fan-out CLI it depends on, and the exact entrypoint behavior it
-relies on are each independently verified in `PROGRESS.md`'s 6.3/6.4 entries.
-Run it against a real host and open `http://localhost:8080` to watch it live.
+double-execution. This has now been run for real, end to end, on a host with
+working rootless cgroup v2 delegation: all 50 tasks reach `succeeded`,
+including the one caught mid-flight on the killed agent, which fences via its
+lapsed lease, requeues with `attempt` incremented, and gets picked up by a
+survivor — see `docs/00-core-platform/PROGRESS.md`'s 6.3/6.4 entries for how
+each piece was verified. Run it yourself and open `http://localhost:8080` to
+watch it live.
 
 ## What it does
 
@@ -254,8 +255,9 @@ afterthought bolted onto a scheduler.
   either — a real feature, deliberately left honestly unbuilt rather than
   faked (see `internal/coordinator/scheduler/canary.go`'s doc comment).
 - **`PlacementScore` isn't wired into real dispatch.** The formula from
-  `PLAN.md` (`internal/coordinator/scheduler/placementscore.go`) is
-  implemented and tested, but the real claim loop is node-driven SQL
+  `docs/00-core-platform/PLAN.md`
+  (`internal/coordinator/scheduler/placementscore.go`) is implemented and
+  tested, but the real claim loop is node-driven SQL
   (`SELECT ... FOR UPDATE SKIP LOCKED`) rather than the task-driven
   score-every-candidate shape the formula implies — genuinely reconciling
   the two is a real architectural change, not a bolt-on.
@@ -263,20 +265,21 @@ afterthought bolted onto a scheduler.
   running today is Tier B: no confidentiality guarantee against the host,
   as the threat model above says outright.
 - **No offer/bid matching, job fan-out, or scheduled availability windows** —
-  all explicitly deferred in `PLAN.md`'s decision log, not rejected.
+  all explicitly deferred in `docs/00-core-platform/PLAN.md`'s decision log,
+  not rejected.
 - **No macOS/Windows agent** — Linux with rootless Podman only.
-- **This dev environment can't run the thing it built.** Every task in this
-  repo was implemented and tested inside a nested WSL2 VM with no working
-  cgroup v2 delegation and no user D-Bus session — `agent probe` correctly
-  refuses to let an agent start here at all (see `OPEN_QUESTIONS.md`), which
-  is why the chaos demo above has no GIF and why a handful of "done when"
-  checks (a live `kill -9` under a real systemd slice, the actual multi-node
-  chaos run) are verified by their component parts individually rather than
-  end to end on this particular machine. None of this reflects a gap in the
-  code; `internal/e2e` and the per-task integration tests prove the full
-  pipeline end to end everywhere that isn't this one constraint.
+- **No `systemd_slice`/`disk_limit` on every host.** `agent probe` degrades
+  gracefully rather than refusing to start when a host lacks full cgroups v2
+  delegation (`Delegate=yes` on `user.slice`) or the group access a rootless
+  loop-mount needs — both drop one advertised capability each rather than
+  blocking the agent, and neither affects `memory_limit`/`cpu_quota`, the two
+  `agent probe` actually requires (see
+  `docs/00-core-platform/OPEN_QUESTIONS.md`).
 
-See `PLAN.md` for the full design rationale, `IMPLEMENTATION.md` for the
-task-by-task build order, `PROGRESS.md` for what's actually done and how it
-was verified, and `OPEN_QUESTIONS.md` for every environment limitation and
-open judgment call encountered along the way.
+See `docs/00-core-platform/PLAN.md` for the full design rationale,
+`docs/00-core-platform/IMPLEMENTATION.md` for the task-by-task build order,
+`docs/00-core-platform/PROGRESS.md` for what's actually done and how it was
+verified, and `docs/00-core-platform/OPEN_QUESTIONS.md` for every environment
+limitation and open judgment call encountered along the way. Work on the
+professional two-portal dashboard (lender portal + customer portal) is
+planned in `docs/01-dashboard-portals/PLAN.md`.
