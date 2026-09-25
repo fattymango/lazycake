@@ -79,9 +79,12 @@ export function SubmitTask() {
             <TextInput
               value={image}
               onChange={(e) => setImage(e.target.value)}
-              placeholder="docker.io/library/alpine:3.20"
+              placeholder="docker.io/library/alpine@sha256:..."
               required
             />
+            <div className="text-xs text-muted mt-1">
+              Must be digest-pinned (contain @sha256:...) — a plain tag like :latest is rejected.
+            </div>
           </Field>
           <Field label="Args (space-separated)">
             <TextInput value={args} onChange={(e) => setArgs(e.target.value)} placeholder="echo hello" />
