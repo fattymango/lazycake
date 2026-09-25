@@ -4,42 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 
+	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 )
 
-// Rates are the coordinator's pricing knobs (IMPLEMENTATION.md task 4.4):
-//
-//	price_micros = base_fee
-//	             + (cpu_rate * cores + ram_rate * memory_gb + disk_rate * disk_gb) * normalised_s
-//	             + net_rate * bytes / 1e9
-//	             + cold_start_fee_if_pulled
-type Rates struct {
-	BaseFeeMicros      int64
-	CPURateMicros      int64 // per core-second
-	RAMRateMicros      int64 // per GB-second
-	DiskRateMicros     int64 // per GB-second
-	NetRateMicros      int64 // per GB transferred
-	ColdStartFeeMicros int64
-}
+// Rates and DefaultRates are re-exported from internal/coordinator/pricing
+// so existing callers/tests in this package don't need to import it
+// separately.
+type Rates = pricing.Rates
 
-// DefaultRates are placeholder numbers - real pricing is a business
-// decision outside this codebase's scope, not something to invent here.
-// Chosen so a typical small task (1 core, 512MB, 1GB disk, ~10s
-// normalised, no network, no cold pull) costs a few thousand micros
-// (fractions of a cent), which is the right order of magnitude for a
-// leftover-CPU marketplace without claiming to be an actual price list.
-func DefaultRates() Rates {
-	return Rates{
-		BaseFeeMicros:      100,   // $0.0001 per task
-		CPURateMicros:      50,    // $0.00005 per core-second
-		RAMRateMicros:      10,    // $0.00001 per GB-second
-		DiskRateMicros:     2,     // $0.000002 per GB-second
-		NetRateMicros:      1_000, // $0.001 per GB
-		ColdStartFeeMicros: 5_000, // $0.005 per cold pull
-	}
-}
+var DefaultRates = pricing.DefaultRates
 
 // Ledger prices and settles each billable task finish, per PLAN.md's
 // "Payout rules": a task that runs and exits (any code) is paid; a fenced
@@ -47,6 +22,8 @@ func DefaultRates() Rates {
 // finish the work or the coordinator already moved on. An abandoned task
 // (the agent vanished - task 3.4) never reaches Settle at all, since it
 // never produces a TaskFinished for the scheduler to call this from.
+// Either way, whatever hold task 4.5 placed at dispatch is released here -
+// a task only ever finishes once.
 type Ledger struct {
 	Store store.Store
 	Rates Rates
@@ -70,27 +47,21 @@ func billable(exitReason string) bool {
 
 // Price computes price_micros for one task run.
 func (l *Ledger) Price(limits store.Limits, normalisedS float64, bytesNet int64, coldPull bool) int64 {
-	ramGB := float64(limits.MemoryMB) / 1024
-	diskGB := float64(limits.DiskMB) / 1024
-	perSecond := float64(l.Rates.CPURateMicros)*limits.CPUCores +
-		float64(l.Rates.RAMRateMicros)*ramGB +
-		float64(l.Rates.DiskRateMicros)*diskGB
-
-	price := float64(l.Rates.BaseFeeMicros) + perSecond*normalisedS + float64(l.Rates.NetRateMicros)*(float64(bytesNet)/1e9)
-	if coldPull {
-		price += float64(l.Rates.ColdStartFeeMicros)
-	}
-	if price < 0 {
-		price = 0
-	}
-	return int64(math.Round(price))
+	return pricing.Price(l.Rates, limits, normalisedS, bytesNet, coldPull)
 }
 
 // Settle prices and, if the task's exit reason is billable, writes the
-// charge/credit pair and updates both balances - all via one
-// Store.SettleTask transaction. A non-billable exit reason (fenced,
-// cancelled) is a deliberate no-op, not an error.
+// charge/credit pair and updates both balances via one Store.SettleTask
+// transaction; a non-billable exit reason (fenced, cancelled) is a
+// deliberate no-op there. Either way, the task's dispatch-time hold (task
+// 4.5) is released, since the task is now finished one way or another.
 func (l *Ledger) Settle(ctx context.Context, taskID, exitReason string, exitCode int32, coldPullBytes int64, bytesNet int64, normalisedS float64) error {
+	defer func() {
+		if err := l.Store.ReleaseHold(ctx, taskID); err != nil {
+			l.Log.Warn("releasing hold after settlement", "task_id", taskID, "error", err)
+		}
+	}()
+
 	if !billable(exitReason) {
 		return nil
 	}

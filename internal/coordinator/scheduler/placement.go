@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 )
@@ -58,6 +59,18 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	}
 
 	if s.inCooldown(n.ID, task.ID) {
+		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
+	}
+
+	// Deduct a hold at dispatch (task 4.5), before the task is actually
+	// sent anywhere; a retried task keeps the hold from its first dispatch
+	// (ErrDuplicate here just means "already held," not a problem - the
+	// worst case doesn't change between attempts of the same task),
+	// released whichever way the task eventually finishes
+	// (billing.Ledger.Settle).
+	worstCase := pricing.WorstCase(s.rates(), task.Limits)
+	if err := s.Store.PlaceHold(ctx, task.ID, task.AccountID, worstCase); err != nil && err != store.ErrDuplicate {
+		s.Log.Warn("placing balance hold, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
 		return s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskQueued, store.TaskUpdate{})
 	}
 

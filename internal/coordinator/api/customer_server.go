@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
+	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/id"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
@@ -27,9 +28,23 @@ type CustomerServer struct {
 	lazycakev1.UnimplementedCustomerServiceServer
 
 	Store store.Store
+	// Rates prices task 4.5's submission-time affordability check. Zero
+	// value (the Go zero Rates{}) means every rate is 0, which would let
+	// everything through - callers should set this to pricing.
+	// DefaultRates() (or their own), matching whatever cmd/coordinator
+	// wires into billing.Ledger, so the up-front check and the actual
+	// eventual charge agree.
+	Rates pricing.Rates
 }
 
 var _ lazycakev1.CustomerServiceServer = (*CustomerServer)(nil)
+
+func (s *CustomerServer) rates() pricing.Rates {
+	if s.Rates == (pricing.Rates{}) {
+		return pricing.DefaultRates()
+	}
+	return s.Rates
+}
 
 func (s *CustomerServer) authenticate(ctx context.Context) (store.APIToken, error) {
 	token, ok := bearerToken(ctx)
@@ -121,6 +136,21 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 	}
 	if task.Limits.PIDs == 0 {
 		task.Limits.PIDs = 256
+	}
+
+	// Balance enforcement (task 4.5): reject if the account can't cover
+	// the worst case (wall_timeout_s at the full provisioned rate) -
+	// checked against available balance (balance minus active holds), not
+	// raw balance, so this remains a real limit across many concurrently
+	// in-flight tasks, not just a one-time gate at submission.
+	worstCase := pricing.WorstCase(s.rates(), task.Limits)
+	available, err := s.Store.AvailableBalance(ctx, tok.AccountID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "checking account balance: %v", err)
+	}
+	if available < worstCase {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"insufficient balance: available %d micros, worst case for this task is %d micros", available, worstCase)
 	}
 
 	if err := s.Store.CreateTask(ctx, task); err != nil {

@@ -27,6 +27,7 @@ type fakeStore struct {
 	meters   map[string]store.TaskMeter
 	ledger   []store.LedgerEntry
 	ledgerN  int
+	holds    map[string]store.LedgerEntry // task_id -> {account_id, amount_micros}
 }
 
 func newFakeStore() *fakeStore {
@@ -40,6 +41,7 @@ func newFakeStore() *fakeStore {
 		tasks:    map[string]store.Task{},
 		idemKeys: map[[2]string]string{},
 		meters:   map[string]store.TaskMeter{},
+		holds:    map[string]store.LedgerEntry{},
 	}
 }
 
@@ -474,6 +476,39 @@ func (f *fakeStore) LedgerEntriesForAccount(ctx context.Context, accountID strin
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeStore) PlaceHold(ctx context.Context, taskID, accountID string, amountMicros int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.holds[taskID]; ok {
+		return store.ErrDuplicate
+	}
+	f.holds[taskID] = store.LedgerEntry{TaskID: taskID, AccountID: accountID, AmountMicros: amountMicros}
+	return nil
+}
+
+func (f *fakeStore) ReleaseHold(ctx context.Context, taskID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.holds, taskID)
+	return nil
+}
+
+func (f *fakeStore) AvailableBalance(ctx context.Context, accountID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, ok := f.accounts[accountID]
+	if !ok {
+		return 0, store.ErrNotFound
+	}
+	held := int64(0)
+	for _, h := range f.holds {
+		if h.AccountID == accountID {
+			held += h.AmountMicros
+		}
+	}
+	return a.BalanceMicros - held, nil
 }
 
 var _ store.Store = (*fakeStore)(nil)

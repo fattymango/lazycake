@@ -80,8 +80,13 @@ func run() error {
 		},
 		Log: log,
 	}
-	ledger := &billing.Ledger{Store: st, Rates: billing.DefaultRates(), Log: log}
+	// One Rates value shared by the dispatch-time hold, the submission-time
+	// affordability check, and the eventual settlement (task 4.5), so all
+	// three always agree on what a task could cost.
+	rates := billing.DefaultRates()
+	ledger := &billing.Ledger{Store: st, Rates: rates, Log: log}
 	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log, Reconciler: reconciler, Ledger: ledger}
+	sched.Rates = rates
 
 	grpcServer := grpc.NewServer()
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{
@@ -94,7 +99,7 @@ func run() error {
 		HeartbeatS: heartbeatS,
 		LeaseS:     leaseS,
 	})
-	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st})
+	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st, Rates: rates})
 	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: reconciler})
 
 	go sched.Run(ctx, time.Second)

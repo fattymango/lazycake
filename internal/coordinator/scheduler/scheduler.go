@@ -14,6 +14,7 @@ import (
 
 	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
+	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 )
@@ -57,6 +58,12 @@ type Scheduler struct {
 	Log      *slog.Logger
 	// Billing may be nil (defaults to a no-op) until wired in - phase 4.
 	Billing BillingEvents
+	// Rates prices task 4.5's dispatch-time hold; zero value means "use
+	// pricing.DefaultRates()" - see rates(). Should match whatever
+	// cmd/coordinator wires into billing.Ledger and api.CustomerServer, so
+	// the hold, the up-front affordability check, and the eventual charge
+	// all agree.
+	Rates pricing.Rates
 
 	// LeaseS is how long a dispatched task's lease is before the agent
 	// self-fences if it hears nothing (phase 3 uses this fully; phase 1
@@ -93,6 +100,13 @@ func (s *Scheduler) billing() BillingEvents {
 		return noopBilling{}
 	}
 	return s.Billing
+}
+
+func (s *Scheduler) rates() pricing.Rates {
+	if s.Rates == (pricing.Rates{}) {
+		return pricing.DefaultRates()
+	}
+	return s.Rates
 }
 
 var _ api.TaskEvents = (*Scheduler)(nil)
