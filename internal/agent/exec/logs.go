@@ -24,13 +24,17 @@ const (
 // batched LogBatch messages, rate-limited and capped per task. Uses ctx
 // (the connection's outer lifetime), not runCtx, so a wall-timeout-
 // triggered Stop still lets the last lines drain through before the
-// container disappears.
-func (e *Executor) streamLogs(ctx context.Context, taskID, containerID string) {
-	rc, err := e.Runtime.Logs(ctx, containerID)
-	if err != nil {
-		e.Log.Warn("streaming logs", "task_id", taskID, "container_id", containerID, "error", err)
-		return
-	}
+// container disappears. rc must already be an open log-follow stream
+// (see run()'s call site: Runtime.Logs is called before Start, not here,
+// so the subscription exists before the container can possibly produce
+// or finish producing output - opening it only once this goroutine
+// happens to get scheduled raced Start for a fast-exiting container and
+// could lose the whole thing).
+// linesRelayed returns how many lines were actually sent, so the caller
+// can tell a genuinely silent container apart from one whose follow-mode
+// attach raced the container's own exit and missed everything (see
+// run()'s fallbackLogs call).
+func (e *Executor) streamLogs(ctx context.Context, taskID string, rc io.ReadCloser) (linesRelayed int64) {
 	defer rc.Close()
 
 	lines := make(chan string, 256)
@@ -60,16 +64,39 @@ func (e *Executor) streamLogs(ctx context.Context, taskID, containerID string) {
 		case line, ok := <-lines:
 			if !ok {
 				r.flush()
-				return
+				return r.seq
 			}
 			r.add(line)
 		case <-ticker.C:
 			r.flush()
 		case <-ctx.Done():
 			r.flush()
-			return
+			return r.seq
 		}
 	}
+}
+
+// fallbackLogs does a one-shot, non-follow read of a container's complete
+// persisted log (Runtime.Logs(..., follow=false), reliable against an
+// already-exited container in a way a follow-mode attach isn't - see
+// runtime.Runtime.Logs's doc comment) and relays it as if it had streamed
+// live. Only called when streamLogs relayed nothing at all, so this task
+// genuinely has no output already sent to lose or duplicate.
+func (e *Executor) fallbackLogs(ctx context.Context, taskID, containerID string) {
+	rc, err := e.Runtime.Logs(ctx, containerID, false)
+	if err != nil {
+		e.Log.Warn("fallback log read", "task_id", taskID, "container_id", containerID, "error", err)
+		return
+	}
+	defer rc.Close()
+
+	r := &logRelay{taskID: taskID, send: e.Send.Send, windowStart: time.Now()}
+	sc := bufio.NewScanner(rc)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	for sc.Scan() {
+		r.add(sc.Text())
+	}
+	r.flush()
 }
 
 // logRelay batches, rate-limits and caps one task's log lines before
