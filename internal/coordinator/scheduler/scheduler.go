@@ -15,6 +15,7 @@ import (
 
 	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
+	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
@@ -81,6 +82,9 @@ type Scheduler struct {
 	// ColdPull is task 5.4's fleet-wide cold-pull cap. Always non-nil -
 	// New() sets it.
 	ColdPull *ColdPullLimiter
+	// Bus, if set, publishes task state changes for task 6.1's SSE
+	// stream. A nil Bus is a valid no-op.
+	Bus *events.Bus
 	// Canary injection config (task 5.2): empty PlatformGatewayID disables
 	// injection entirely (no platform account/gateway configured), which
 	// is the default until cmd/coordinator sets these up.

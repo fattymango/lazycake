@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
 	"github.com/mkassab215/lazycake/internal/coordinator/billing"
 	"github.com/mkassab215/lazycake/internal/coordinator/config"
+	"github.com/mkassab215/lazycake/internal/coordinator/dashboard"
+	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	coordrelay "github.com/mkassab215/lazycake/internal/coordinator/relay"
 	"github.com/mkassab215/lazycake/internal/coordinator/scheduler"
 	"github.com/mkassab215/lazycake/internal/coordinator/seed"
@@ -73,10 +76,16 @@ func run() error {
 		return fmt.Errorf("listening on %s: %w", cfg.GRPCAddr, err)
 	}
 
+	// Bus fans coordinator activity out to task 6.1's SSE stream. It's a
+	// pure observer - nothing downstream of it affects dispatch,
+	// billing, or trust - so it's wired everywhere last and freely.
+	bus := events.NewBus()
+
 	registry := api.NewRegistry()
 	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
 	sched.Trust.Store = st
 	sched.Trust.Log = log
+	sched.Bus = bus
 
 	// Canary injection (task 5.2). The account/gateway row always exist -
 	// seeding is idempotent and cheap - but injection only does anything
@@ -146,8 +155,9 @@ func run() error {
 		Log:        log,
 		HeartbeatS: heartbeatS,
 		LeaseS:     leaseS,
+		Bus:        bus,
 	})
-	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st, Rates: rates})
+	lazycakev1.RegisterCustomerServiceServer(grpcServer, &api.CustomerServer{Store: st, Rates: rates, Bus: bus})
 	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: gatewayFanout{reconciler, sched.Canary}})
 
 	go sched.Run(ctx, time.Second)
@@ -168,15 +178,30 @@ func run() error {
 	go func() { relayErr <- tunnelRelay.Serve(ctx, cfg.RelayAddr) }()
 	log.Info("tunnel relay listening", "addr", cfg.RelayAddr)
 
+	dash := &dashboard.Server{Store: st, Bus: bus, Trust: sched.Trust, Log: log}
+	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: dash.Handler()}
+	httpErr := make(chan error, 1)
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			httpErr <- err
+		}
+	}()
+	log.Info("dashboard/SSE listening", "addr", cfg.HTTPAddr)
+
 	select {
 	case <-ctx.Done():
 		log.Info("coordinator shutting down")
 		grpcServer.GracefulStop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownCtx)
 		return nil
 	case err := <-serveErr:
 		return fmt.Errorf("grpc server: %w", err)
 	case err := <-relayErr:
 		return fmt.Errorf("tunnel relay: %w", err)
+	case err := <-httpErr:
+		return fmt.Errorf("dashboard/SSE server: %w", err)
 	}
 }
 

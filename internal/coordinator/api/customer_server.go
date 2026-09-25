@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
+	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/id"
@@ -35,6 +36,9 @@ type CustomerServer struct {
 	// wires into billing.Ledger, so the up-front check and the actual
 	// eventual charge agree.
 	Rates pricing.Rates
+	// Bus, if set, publishes a "queued" task_state event on submission for
+	// task 6.1's SSE stream. A nil Bus is a valid no-op.
+	Bus *events.Bus
 }
 
 var _ lazycakev1.CustomerServiceServer = (*CustomerServer)(nil)
@@ -159,6 +163,7 @@ func (s *CustomerServer) SubmitTask(ctx context.Context, req *lazycakev1.SubmitT
 		}
 		return nil, status.Errorf(codes.Internal, "creating task: %v", err)
 	}
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: time.Now().UnixMilli(), TaskID: taskID, State: string(store.TaskQueued)})
 	return &lazycakev1.SubmitTaskResponse{TaskId: taskID}, nil
 }
 

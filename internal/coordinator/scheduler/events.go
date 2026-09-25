@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
+	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 )
 
@@ -32,6 +33,7 @@ func (s *Scheduler) OnTaskRejected(ctx context.Context, nodeID, taskID, reason s
 	if task, err := s.Store.GetTask(ctx, taskID); err == nil {
 		s.ColdPull.Finish(imageDigest(task.Image), nodeID)
 	}
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: taskID, NodeID: nodeID, State: string(store.TaskQueued)})
 	return nil
 }
 
@@ -42,6 +44,7 @@ func (s *Scheduler) OnTaskStarted(ctx context.Context, nodeID, taskID string, at
 		return fmt.Errorf("marking task running: %w", err)
 	}
 	s.Log.Info("task started", "task_id", taskID, "node_id", nodeID)
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: taskID, NodeID: nodeID, State: string(store.TaskRunning)})
 	if err := s.billing().OnTaskStarted(ctx, nodeID, taskID); err != nil {
 		s.Log.Error("metering task started", "task_id", taskID, "node_id", nodeID, "error", err)
 	}
@@ -66,6 +69,7 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		return fmt.Errorf("marking task finished: %w", err)
 	}
 	s.Log.Info("task finished", "task_id", ev.TaskID, "node_id", nodeID, "exit_code", ev.ExitCode, "exit_reason", ev.ExitReason, "state", to)
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: ev.TaskID, NodeID: nodeID, State: string(to)})
 
 	// Safety net for a cold-pull slot never released at OnTaskStarted -
 	// e.g. the pull itself failed, so Started was never sent at all

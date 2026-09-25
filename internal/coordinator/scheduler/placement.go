@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/id"
@@ -120,6 +121,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		return fmt.Errorf("marking task dispatched: %w", err)
 	}
 	s.Log.Info("task dispatched", "task_id", task.ID, "node_id", n.ID, "image", task.Image)
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), TaskID: task.ID, NodeID: n.ID, State: string(store.TaskDispatched)})
 	return nil
 }
 

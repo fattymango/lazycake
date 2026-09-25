@@ -19,6 +19,7 @@ import (
 
 	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
+	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/id"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
@@ -70,6 +71,9 @@ type Server struct {
 	Log        *slog.Logger
 	HeartbeatS int32
 	LeaseS     int32
+	// Bus, if set, publishes node connect/disconnect and capacity events
+	// for task 6.1's SSE stream. A nil Bus is a valid no-op.
+	Bus *events.Bus
 	// LeaseMargin is added on top of LeaseS when computing a task's
 	// requeue_after, so the coordinator's reclaim always fires after the
 	// agent's own fence deadline (PLAN.md "Lease and fencing", task 3.1's
@@ -144,12 +148,14 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 	if err := s.Store.SetNodeConnected(ctx, nodeID, true); err != nil {
 		log.Error("marking node connected", "error", err)
 	}
+	s.Bus.Publish(events.Event{Type: "node_connected", AtMS: s.now().UnixMilli(), NodeID: nodeID})
 	defer func() {
 		s.Registry.Remove(nodeID, send)
 		// Use a background context: stream.Context() is already cancelled here.
 		if err := s.Store.SetNodeConnected(context.Background(), nodeID, false); err != nil {
 			log.Error("marking node disconnected", "error", err)
 		}
+		s.Bus.Publish(events.Event{Type: "node_disconnected", AtMS: s.now().UnixMilli(), NodeID: nodeID})
 		log.Info("agent disconnected")
 	}()
 
@@ -343,6 +349,10 @@ func (s *Server) handleCapacity(ctx context.Context, nodeID string, cap *lazycak
 			return fmt.Errorf("setting node offer: %w", err)
 		}
 	}
+	s.Bus.Publish(events.Event{
+		Type: "capacity", AtMS: s.now().UnixMilli(), NodeID: nodeID,
+		FreeCores: cap.GetFreeCores(), FreeMemoryMB: cap.GetFreeMemoryMb(), FreeDiskMB: cap.GetFreeDiskMb(),
+	})
 	return s.capacity().OnCapacityReport(ctx, nodeID, CapacityReportEvent{
 		FreeCores:    cap.GetFreeCores(),
 		FreeMemoryMB: cap.GetFreeMemoryMb(),
