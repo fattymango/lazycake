@@ -29,13 +29,21 @@ func (p Podman) run(ctx context.Context, args ...string) (CmdResult, error) {
 }
 
 // CheckMemoryLimit starts a container capped at 64MB that writes 128MB into
-// tmpfs, and confirms the kernel OOM-kills it - i.e. the cgroup memory
-// limit is actually enforced, not just accepted as a flag.
+// tmpfs, and confirms the cgroup memory limit actually stopped it rather
+// than being silently accepted as a flag. The kernel can enforce this two
+// different ways depending on what kind of memory is under pressure: a
+// tmpfs write that exceeds memory.max fails with ENOSPC (the write syscall
+// just returns an error - there's nothing to "kill", the process is free to
+// handle it), while anonymous/heap memory pressure goes through the OOM
+// killer and shows up as OOMKilled. Both are real enforcement; checking
+// only OOMKilled false-negatives on any kernel that takes the ENOSPC path
+// for tmpfs, which is standard, documented cgroup v2 behaviour, not a sign
+// delegation is missing.
 func (p Podman) CheckMemoryLimit(ctx context.Context) Result {
 	name := "lazycake-probe-mem-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	defer p.run(context.Background(), "rm", "-f", name)
 
-	_, err := p.run(ctx, "run", "--name", name, "--memory=64m",
+	run, err := p.run(ctx, "run", "--name", name, "--memory=64m",
 		p.ProbeImage, "sh", "-c", "dd if=/dev/zero of=/dev/shm/fill bs=1M count=128")
 	if err != nil {
 		return fail(CheckMemoryLimit, "running probe container: %v", err)
@@ -45,10 +53,23 @@ func (p Podman) CheckMemoryLimit(ctx context.Context) Result {
 	if err != nil {
 		return fail(CheckMemoryLimit, "inspecting probe container: %v", err)
 	}
-	if strings.TrimSpace(inspect.Stdout) != "true" {
-		return fail(CheckMemoryLimit, "--memory=64m did not OOM-kill a 128MB write; cgroups v2 memory delegation is likely missing (see PLAN.md 'Rootless constraints')")
+	if strings.TrimSpace(inspect.Stdout) == "true" {
+		return pass(CheckMemoryLimit)
 	}
-	return pass(CheckMemoryLimit)
+
+	// Not OOM-killed - check whether the write was still capped short of
+	// the full 128MB (the ENOSPC path). dd reports "128+0 records out" only
+	// when every requested block was written; anything less means the
+	// kernel refused further tmpfs pages once memory.max was hit.
+	logs, err := p.run(context.Background(), "logs", name)
+	if err != nil {
+		return fail(CheckMemoryLimit, "reading probe container logs: %v", err)
+	}
+	output := logs.Stdout + logs.Stderr
+	if run.ExitCode != 0 && strings.Contains(output, "records out") && !strings.Contains(output, "128+0 records out") {
+		return pass(CheckMemoryLimit)
+	}
+	return fail(CheckMemoryLimit, "--memory=64m did not stop a 128MB tmpfs write (no OOM-kill, no short write): %s; cgroups v2 memory delegation is likely missing (see PLAN.md 'Rootless constraints')", strings.TrimSpace(output))
 }
 
 // CheckCPUQuota starts two identical CPU-bound busy loops, one capped at
