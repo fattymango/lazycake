@@ -9,6 +9,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -74,6 +75,24 @@ type Scheduler struct {
 	// 5.2) and this scheduler's own clean-completion/abandonment events.
 	// Always non-nil - New() sets it.
 	Trust *TrustTracker
+	// Canary is task 5.2's detection half, fed by GatewayService.ReportBytes
+	// (see cmd/coordinator). Always non-nil - New() sets it.
+	Canary *CanaryTracker
+	// Canary injection config (task 5.2): empty PlatformGatewayID disables
+	// injection entirely (no platform account/gateway configured), which
+	// is the default until cmd/coordinator sets these up.
+	PlatformAccountID      string
+	PlatformGatewayID      string
+	CanaryImage            string
+	CanaryEntrypoint       []string
+	CanaryArgs             []string
+	CanaryTargetHostname   string
+	CanaryTargetPort       int32
+	CanaryExpectedRuntimeS int
+	// Rand returns a float in [0,1) for the canary injection roll;
+	// defaults to math/rand's package-level source. Overridable so tests
+	// can force (or forbid) injection deterministically.
+	Rand func() float64
 
 	// LeaseS is how long a dispatched task's lease is before the agent
 	// self-fences if it hears nothing (phase 3 uses this fully; phase 1
@@ -91,13 +110,22 @@ type rejectKey struct {
 
 // New returns a ready Scheduler.
 func New(st store.Store, dispatch Dispatcher, ck clock.Clock, log *slog.Logger, leaseS int32) *Scheduler {
+	trust := NewTrustTracker()
 	return &Scheduler{
 		Store: st, Dispatch: dispatch, Clock: ck, Log: log, LeaseS: leaseS,
 		freeCap:   make(map[string]store.CapacityFilter),
 		rejected:  make(map[rejectKey]time.Time),
 		SpecDrift: NewSpecDriftTracker(),
-		Trust:     NewTrustTracker(),
+		Trust:     trust,
+		Canary:    NewCanaryTracker(trust, log),
 	}
+}
+
+func (s *Scheduler) rand() float64 {
+	if s.Rand != nil {
+		return s.Rand()
+	}
+	return rand.Float64()
 }
 
 func (s *Scheduler) now() time.Time {

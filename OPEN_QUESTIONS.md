@@ -380,3 +380,36 @@ test that pulls an image can run:
 Neither is a code defect; both are one-time-per-VM-restart setup steps for
 this specific dev environment.
 
+## Task 5.2: canary output-hash verification is not implemented
+
+PLAN.md/IMPLEMENTATION.md describe canary tasks as running "a known
+workload against that gateway with a known expected runtime and a known
+expected output hash reported by the platform's own gateway." What's
+built (`scheduler.CanaryTracker`) proves *presence* - did the platform
+gateway ever see a connection for this canary's task ID within its
+expected runtime - which is exactly task 5.2's own literal "Done when": "a
+node returning early without running the workload is caught by the
+gateway seeing no connection." It does not verify *correctness* - that
+what the gateway received actually hashes to the expected value for that
+specific canary variant.
+
+Building real hash verification needs: (1) an actual canary workload image
+- a small program that does deterministic work and sends its result to the
+platform gateway, which the codebase has no reason to have opinions about
+building or hosting; (2) extending `GatewayService.ReportBytes` (or a
+sibling RPC) to carry a content hash, not just byte counts; (3) the
+gateway comparing that hash against whichever expected value the
+coordinator told it for that specific canary. None of this is wired.
+`Scheduler.CanaryImage` is left unset by default specifically so injection
+fails closed (a real deployment must configure a real, digest-pinned
+workload image before any canary is ever dispatched - see the comment
+where it's set in `cmd/coordinator/run.go`) rather than silently shipping
+a fake/placeholder digest that would just fail to pull.
+
+The "platform's own gateway" itself also isn't started by any of this
+session's `deploy/` compose configuration - `seed.EnsurePlatformCanaryAccount`
+creates the account/gateway *row* an operator's real gateway process would
+need to register against, but running that process (and whatever local
+service the canary workload talks to) is a deployment step, not something
+this codebase does for you.
+
