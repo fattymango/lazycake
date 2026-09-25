@@ -78,6 +78,9 @@ type Scheduler struct {
 	// Canary is task 5.2's detection half, fed by GatewayService.ReportBytes
 	// (see cmd/coordinator). Always non-nil - New() sets it.
 	Canary *CanaryTracker
+	// ColdPull is task 5.4's fleet-wide cold-pull cap. Always non-nil -
+	// New() sets it.
+	ColdPull *ColdPullLimiter
 	// Canary injection config (task 5.2): empty PlatformGatewayID disables
 	// injection entirely (no platform account/gateway configured), which
 	// is the default until cmd/coordinator sets these up.
@@ -118,6 +121,7 @@ func New(st store.Store, dispatch Dispatcher, ck clock.Clock, log *slog.Logger, 
 		SpecDrift: NewSpecDriftTracker(),
 		Trust:     trust,
 		Canary:    NewCanaryTracker(trust, log),
+		ColdPull:  NewColdPullLimiter(),
 	}
 }
 

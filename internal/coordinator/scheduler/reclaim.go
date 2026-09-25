@@ -54,6 +54,10 @@ func (s *Scheduler) reclaimOverdue(ctx context.Context) {
 		}
 		if t.NodeID != nil {
 			s.Trust.Abandoned(*t.NodeID)
+			// Same safety net as OnTaskStarted/OnTaskFinished (task 5.4):
+			// an abandoned task might have vanished mid-pull, never
+			// reaching either.
+			s.ColdPull.Finish(imageDigest(t.Image), *t.NodeID)
 		}
 	}
 }
