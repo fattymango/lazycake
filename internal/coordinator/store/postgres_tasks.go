@@ -271,6 +271,25 @@ func (s *PostgresStore) RequeueTaskForRetry(ctx context.Context, id string, from
 	return nil
 }
 
+func (s *PostgresStore) ReleaseReservedTask(ctx context.Context, id string, fromStates []TaskState) error {
+	fromStrs := make([]string, len(fromStates))
+	for i, st := range fromStates {
+		fromStrs[i] = string(st)
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET
+			state = 'queued', node_id = NULL, lease_expires_at = NULL, requeue_after = NULL
+		WHERE id = $1 AND state = ANY($2)`,
+		id, fromStrs)
+	if err != nil {
+		return fmt.Errorf("releasing reserved task: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *PostgresStore) AbandonTask(ctx context.Context, id string, fromStates []TaskState, at time.Time) error {
 	fromStrs := make([]string, len(fromStates))
 	for i, st := range fromStates {

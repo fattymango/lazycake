@@ -81,7 +81,24 @@ type Tasks interface {
 	// TransitionTask moves a task to a new state, applying the given field
 	// updates in the same statement. It fails if the task is not currently
 	// in one of fromStates, so callers cannot race a state machine step.
+	//
+	// TaskUpdate's fields are COALESCE'd, not set: a nil field leaves the
+	// column unchanged rather than clearing it (see TaskUpdate's own doc
+	// comment). This is never safe to use for reverting Reserved back to
+	// Queued - NodeID would silently stay pointed at whatever node the
+	// reservation was for, even though the task is nominally free for any
+	// node to claim again. Use ReleaseReservedTask for that instead.
 	TransitionTask(ctx context.Context, id string, fromStates []TaskState, to TaskState, upd TaskUpdate) error
+
+	// ReleaseReservedTask puts a Reserved task back to Queued with
+	// node_id/lease_expires_at/requeue_after all genuinely cleared (SQL
+	// NULL, not COALESCE'd) - for placement giving up on a task it
+	// claimed but never actually got to dispatch (a cooldown, a capacity
+	// hold failure, a dead send target, etc.), not a real execution
+	// attempt, so unlike RequeueTaskForRetry this does not increment
+	// Attempt. Fails with ErrConflict if id is not currently in one of
+	// fromStates.
+	ReleaseReservedTask(ctx context.Context, id string, fromStates []TaskState) error
 
 	// RequeueOverdue returns the IDs of tasks whose requeue_after has
 	// passed while still in an active state, for the reclaimer loop.
