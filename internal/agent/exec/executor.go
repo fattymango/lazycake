@@ -231,14 +231,12 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 	// log stream opened below, having recorded how many lines (if any) it
 	// actually relayed. Remove waits on it before firing, and - if
 	// streamLogs relayed nothing at all - a fallback non-follow read
-	// happens first: even attaching the follow stream before Start (below)
-	// isn't a complete guarantee, since a follow-mode attach's own "watch
-	// for new writes" setup can itself race a container fast enough to
-	// exit before that watch is actually armed, silently missing output
-	// that genuinely exists on disk. A non-follow read of an already-
-	// exited container has no such race - it just reads what's there -
-	// so it's the reliable fallback precisely (and only) when the live
-	// path came up empty.
+	// happens first: a live follow-mode attach can still race a container
+	// fast enough to exit before its "watch for new writes" is actually
+	// armed, silently missing output that genuinely exists on disk. A
+	// non-follow read of an already-exited container has no such race -
+	// it just reads what's there - so it's the reliable fallback
+	// precisely (and only) when the live path came up empty.
 	var linesRelayed int64
 	logsDone := make(chan struct{})
 	defer func() {
@@ -251,15 +249,26 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 		}
 	}()
 
-	// Opened and subscribed *before* Start, in this same goroutine, not
-	// inside streamLogs's own goroutine after Start - opening it only
-	// once that goroutine happens to get scheduled raced Start for a
-	// fast-exiting container (echo-and-exit routinely beats Go scheduling
-	// a new goroutine) and could lose the whole thing: the container was
-	// already gone by the time the log-follow request even went out.
-	// Attaching first guarantees the subscription exists before the
-	// container can possibly produce, let alone finish producing, output -
-	// closing most of the race, with fallbackLogs above catching the rest.
+	if err := e.Runtime.Start(runCtx, id); err != nil {
+		close(logsDone)
+		log.Error("starting container", "error", err)
+		sendFinished(-1, "error")
+		return
+	}
+	e.Send.Send(started(d.GetTaskId(), time.Now()))
+	e.registerActive(d.GetTaskId(), id)
+
+	// Attached right after Start, not before it: a follow-mode log stream
+	// opened against a container that hasn't started yet doesn't reliably
+	// pick up writes from the process once it does start (verified live -
+	// a 15-minute real workload relayed zero lines the whole run when this
+	// was attached pre-Start, only catching up at the very end via
+	// fallbackLogs; attaching post-Start, the normal order, streams live
+	// exactly as expected). The residual race this reintroduces - a
+	// container fast enough to exit before this line even runs - is
+	// exactly what fallbackLogs above exists to catch, so nothing is lost
+	// either way; it's a narrower window than the old post-goroutine-
+	// scheduling version, not a wider one.
 	logsRC, logsErr := e.Runtime.Logs(ctx, id, true)
 	if logsErr != nil {
 		log.Warn("attaching log stream", "container_id", id, "error", logsErr)
@@ -270,14 +279,6 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 			linesRelayed = e.streamLogs(ctx, d.GetTaskId(), logsRC)
 		}()
 	}
-
-	if err := e.Runtime.Start(runCtx, id); err != nil {
-		log.Error("starting container", "error", err)
-		sendFinished(-1, "error")
-		return
-	}
-	e.Send.Send(started(d.GetTaskId(), time.Now()))
-	e.registerActive(d.GetTaskId(), id)
 
 	if len(d.GetTargets()) > 0 {
 		proxy, err := e.startTunnel(ctx, id, d, sendFinished)
