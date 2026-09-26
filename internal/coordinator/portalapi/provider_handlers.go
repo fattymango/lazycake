@@ -264,6 +264,18 @@ func (s *Server) installCommand(token string) string {
 		coordinatorAddr = "COORDINATOR_HOST:7443"
 	}
 	return "podman run -d --replace --name lazycake-agent" +
+		// --pid=host + --cap-add=SYS_ADMIN: this agent runs as a sibling
+		// container talking to the host's own podman engine (the -v
+		// socket mount below), the same as every task container it will
+		// later spawn - so nsenter'ing into one of those siblings for a
+		// task's tunnel_targets (internal/agent/netns/proxy.go) needs to
+		// see its host PID (--pid=host) and hold the capability to join
+		// its network namespace (--cap-add=SYS_ADMIN), since the agent
+		// and its task containers already share one rootless user
+		// namespace and can't gain more by joining it again. Without
+		// these, any task with tunnel_targets fails outright - caught
+		// live installing an agent by hand from this exact command.
+		" --pid=host --cap-add=SYS_ADMIN" +
 		" -e LAZYCAKE_COORDINATOR_ADDR=" + coordinatorAddr +
 		" -e LAZYCAKE_TOKEN=" + token +
 		" -e LAZYCAKE_OFFER_CORES=" + defaultOfferCores +
