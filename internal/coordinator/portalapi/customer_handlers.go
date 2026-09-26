@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
+	"github.com/mkassab215/lazycake/internal/coordinator/auth"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/id"
 )
@@ -285,11 +286,28 @@ type createGatewayRequest struct {
 	Services []gatewayServiceView `json:"services"`
 }
 
+// createGatewayResponse is gatewayView plus the one-time install token -
+// a separate type from gatewayView itself (rather than an optional field
+// on it) so there's no risk of ever accidentally including a live token
+// in a *list* response; toGatewayView/gatewayView are used there and
+// nowhere near a token.
+type createGatewayResponse struct {
+	gatewayView
+	InstallToken string `json:"install_token"`
+}
+
 // handleCreateGateway mirrors api.CustomerServer.CreateGateway (task 7.4:
 // "this already exists as CustomerService RPCs; the portal is a UI on top,
 // not new logic"), reimplemented directly against the store rather than
 // through SubmitTaskForAccount's pattern since CreateGateway has no
 // balance/ownership checks worth centralizing the same way.
+//
+// Minting the install token here (not just the Gateway row) was missing
+// entirely until caught live: a gateway created through the portal had no
+// way to ever actually run, since nothing authenticates a real gateway
+// process without one - the gRPC CreateGateway this was meant to mirror
+// always did this (internal/coordinator/api/customer_server.go), the
+// portal version just never got the token-minting half copied over.
 func (s *Server) handleCreateGateway(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromContext(r.Context())
 	var req createGatewayRequest
@@ -316,12 +334,25 @@ func (s *Server) handleCreateGateway(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "creating gateway")
 		return
 	}
+
+	installToken, err := newSessionID() // 32 random bytes, hex-encoded - same shape as api.randomToken, no need for a second generator
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "generating install token")
+		return
+	}
+	if err := s.Store.CreateToken(r.Context(), store.APIToken{
+		TokenHash: auth.Hash(installToken), AccountID: sess.AccountID, Kind: store.TokenGateway,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "generating install token")
+		return
+	}
+
 	gw, err := s.Store.GetGateway(r.Context(), gatewayID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "creating gateway")
 		return
 	}
-	writeJSON(w, http.StatusCreated, toGatewayView(gw))
+	writeJSON(w, http.StatusCreated, createGatewayResponse{gatewayView: toGatewayView(gw), InstallToken: installToken})
 }
 
 // ledgerView mirrors web/src/shared/types.ts's LedgerEntry.

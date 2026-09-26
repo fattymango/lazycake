@@ -359,7 +359,7 @@ func TestGatewayCreateAndList(t *testing.T) {
 		Label: "home-lab", Services: []gatewayServiceView{{Name: "db", Port: 5432}},
 	})
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
-	created := decodeBody[gatewayView](t, resp)
+	created := decodeBody[createGatewayResponse](t, resp)
 	require.Equal(t, "home-lab", created.Label)
 	require.False(t, created.Connected)
 
@@ -368,6 +368,28 @@ func TestGatewayCreateAndList(t *testing.T) {
 	list := decodeBody[[]gatewayView](t, resp)
 	require.Len(t, list, 1)
 	require.Equal(t, created.ID, list[0].ID)
+}
+
+// TestGatewayCreateMintsWorkingInstallToken is the regression test for a
+// real gap caught live: handleCreateGateway created the Gateway row but
+// never minted the install token a real gateway process needs to
+// authenticate at all (unlike the gRPC CreateGateway it was meant to
+// mirror) - a gateway made through the portal could never actually run.
+func TestGatewayCreateMintsWorkingInstallToken(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	signed := signUpCustomer(t, c, "morgan")
+
+	resp := c.do(http.MethodPost, "/api/portal/customer/gateways", createGatewayRequest{
+		Label: "home-lab", Services: []gatewayServiceView{{Name: "db", Port: 5432}},
+	})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeBody[createGatewayResponse](t, resp)
+	require.NotEmpty(t, created.InstallToken, "install token must be minted, not just the gateway row")
+
+	tok, err := st.Authenticate(context.Background(), auth.Hash(created.InstallToken))
+	require.NoError(t, err)
+	require.Equal(t, signed.AccountID, tok.AccountID)
+	require.Equal(t, store.TokenGateway, tok.Kind)
 }
 
 func TestGatewayCreateRejectsMissingLabel(t *testing.T) {
