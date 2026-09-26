@@ -427,6 +427,12 @@ func (e *Executor) wrapWithLcinit(ctx context.Context, d *lazycakev1.Dispatch) (
 	if wallTimeoutS := d.GetLimits().GetWallTimeoutS(); wallTimeoutS > 0 {
 		lcinitArgs = append(lcinitArgs, fmt.Sprintf("--max-duration=%ds", wallTimeoutS))
 	}
+	if len(d.GetTargets()) > 0 {
+		// Closes the race where the task's own command could run before
+		// startTunnel (run()) had actually finished wiring up its one
+		// network exception - see netns.ReadyFilePath's doc comment.
+		lcinitArgs = append(lcinitArgs, "--wait-file="+netns.ReadyFilePath)
+	}
 	lcinitArgs = append(lcinitArgs, "--")
 	lcinitArgs = append(lcinitArgs, taskEntrypoint...)
 	lcinitArgs = append(lcinitArgs, taskArgs...)
