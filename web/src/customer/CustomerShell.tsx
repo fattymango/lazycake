@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavShell } from "@shared/components/NavShell";
-import { useCustomerAuth } from "@shared/auth";
+import { IconBilling, IconDashboard, IconGateway, IconHistory, IconPlus } from "@shared/components/Icon";
+import { useAuth } from "@shared/auth";
 import { useSSE } from "@shared/hooks/useSSE";
+import { useRoleMe } from "@shared/hooks/useRoleMe";
+import { money } from "@shared/format";
+import type { Me } from "@shared/types";
 
 export function CustomerShell({ children }: { children: ReactNode }) {
-  const { me, logout } = useCustomerAuth();
+  const { me, logout } = useAuth();
   const navigate = useNavigate();
-  // A live dot in the nav is enough signal here; individual pages (task
-  // detail, dashboard) subscribe to the same stream themselves for the
-  // data they actually need to react to.
+  const { data: customerMe } = useRoleMe<Me>("/api/portal/customer/me");
   const live = useSSE(me ? "/api/portal/customer/events" : null, () => {});
 
   async function handleLogout() {
@@ -19,16 +21,17 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
   return (
     <NavShell
-      title="LazyCake"
+      roleLabel="Customer"
       username={me?.username}
       onLogout={handleLogout}
       live={live}
+      headerStat={{ label: "Available balance", value: money(customerMe?.available_balance_micros) }}
       items={[
-        { to: "/", label: "Dashboard" },
-        { to: "/tasks/new", label: "Submit task" },
-        { to: "/tasks", label: "Tasks" },
-        { to: "/gateways", label: "Gateways" },
-        { to: "/billing", label: "Billing" },
+        { to: "/", label: "Dashboard", icon: IconDashboard, end: true },
+        { to: "/tasks/new", label: "Submit task", icon: IconPlus },
+        { to: "/tasks", label: "Tasks", icon: IconHistory },
+        { to: "/gateways", label: "Gateways", icon: IconGateway },
+        { to: "/billing", label: "Billing", icon: IconBilling },
       ]}
     >
       {children}

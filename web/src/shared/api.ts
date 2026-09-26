@@ -50,6 +50,10 @@ export function apiPost<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
+export function apiDelete<T>(path: string): Promise<T> {
+  return request<T>(path, { method: "DELETE" });
+}
+
 export function portalPath(role: Role, suffix: string): string {
   return `/api/portal/${role}${suffix}`;
 }

@@ -1,12 +1,17 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavShell } from "@shared/components/NavShell";
-import { useProviderAuth } from "@shared/auth";
+import { IconDashboard, IconEarnings, IconPlus } from "@shared/components/Icon";
+import { useAuth } from "@shared/auth";
 import { useSSE } from "@shared/hooks/useSSE";
+import { useRoleMe } from "@shared/hooks/useRoleMe";
+import { money } from "@shared/format";
+import type { ProviderMe } from "@shared/types";
 
 export function ProviderShell({ children }: { children: ReactNode }) {
-  const { me, logout } = useProviderAuth();
+  const { me, logout } = useAuth();
   const navigate = useNavigate();
+  const { data: providerMe } = useRoleMe<ProviderMe>("/api/portal/provider/me");
   const live = useSSE(me ? "/api/portal/provider/events" : null, () => {});
 
   async function handleLogout() {
@@ -16,14 +21,15 @@ export function ProviderShell({ children }: { children: ReactNode }) {
 
   return (
     <NavShell
-      title="LazyCake"
+      roleLabel="Provider"
       username={me?.username}
       onLogout={handleLogout}
       live={live}
+      headerStat={{ label: "Lifetime earnings", value: money(providerMe?.lifetime_earnings_micros) }}
       items={[
-        { to: "/", label: "Dashboard" },
-        { to: "/machines/add", label: "Add a machine" },
-        { to: "/earnings", label: "Earnings" },
+        { to: "/", label: "Dashboard", icon: IconDashboard, end: true },
+        { to: "/machines/add", label: "Add a machine", icon: IconPlus },
+        { to: "/earnings", label: "Earnings", icon: IconEarnings },
       ]}
     >
       {children}

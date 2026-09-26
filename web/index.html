@@ -7,22 +7,7 @@
   <link rel="stylesheet" href="/src/shared/styles.css" />
 </head>
 <body class="bg-bg text-text font-sans min-h-screen">
-  <div class="min-h-screen flex items-center justify-center p-6">
-    <div class="max-w-md w-full text-center">
-      <h1 class="text-2xl font-semibold mb-2">LazyCake</h1>
-      <p class="text-muted mb-8">Rent out spare compute, or run tasks on someone else's.</p>
-      <div class="grid grid-cols-2 gap-4">
-        <a href="/customer.html" class="block rounded-lg border border-border bg-panel p-6 hover:border-accent transition-colors">
-          <div class="text-lg font-medium mb-1">Customer</div>
-          <div class="text-sm text-muted">Submit and run tasks</div>
-        </a>
-        <a href="/provider.html" class="block rounded-lg border border-border bg-panel p-6 hover:border-accent transition-colors">
-          <div class="text-lg font-medium mb-1">Provider</div>
-          <div class="text-sm text-muted">Lend out a machine</div>
-        </a>
-      </div>
-      <a href="/ops" class="inline-block mt-8 text-xs text-muted hover:text-accent">operator dashboard →</a>
-    </div>
-  </div>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
