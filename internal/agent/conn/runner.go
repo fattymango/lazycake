@@ -36,6 +36,11 @@ type Handlers struct {
 	OnRegistered   func(ack *lazycakev1.RegisterAck)
 	OnDispatch     func(ctx context.Context, d *lazycakev1.Dispatch)
 	OnCancel       func(ctx context.Context, c *lazycakev1.Cancel)
+	// OnShutdown, if set, is called on receipt of a Shutdown message - the
+	// caller's job is to trigger the same graceful-shutdown path an OS
+	// SIGTERM would (see cmd/agent/run.go), not to do anything special
+	// here; Runner just delivers the message.
+	OnShutdown     func(ctx context.Context, s *lazycakev1.Shutdown)
 	RunningTaskIDs func() []string // polled for every heartbeat
 }
 
@@ -302,6 +307,10 @@ func (r *Runner) recvLoop(streamCtx, taskCtx context.Context, stream lazycakev1.
 		case *lazycakev1.CoordinatorMessage_Cancel:
 			if r.Handlers.OnCancel != nil {
 				r.Handlers.OnCancel(taskCtx, body.Cancel)
+			}
+		case *lazycakev1.CoordinatorMessage_Shutdown:
+			if r.Handlers.OnShutdown != nil {
+				r.Handlers.OnShutdown(taskCtx, body.Shutdown)
 			}
 		case *lazycakev1.CoordinatorMessage_HeartbeatAck:
 			r.extendFenceDeadline(body.HeartbeatAck.GetSeq())

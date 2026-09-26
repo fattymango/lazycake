@@ -138,8 +138,12 @@ func run() error {
 	}
 	benchTrigger := make(chan struct{}, 1)
 	runner.Handlers = conn.Handlers{
-		OnDispatch:     executor.HandleDispatch,
-		OnCancel:       func(ctx context.Context, c *lazycakev1.Cancel) { executor.CancelTask(ctx, c.GetTaskId()) },
+		OnDispatch: executor.HandleDispatch,
+		OnCancel:   func(ctx context.Context, c *lazycakev1.Cancel) { executor.CancelTask(ctx, c.GetTaskId()) },
+		OnShutdown: func(_ context.Context, s *lazycakev1.Shutdown) {
+			log.Info("shutdown requested by coordinator", "reason", s.GetReason())
+			stop()
+		},
 		RunningTaskIDs: ledger.TaskIDs,
 		OnRegistered: func(ack *lazycakev1.RegisterAck) {
 			executor.ReplayPending()

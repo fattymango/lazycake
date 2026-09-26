@@ -194,6 +194,60 @@ func TestLoginLockoutAfterRepeatedFailures(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "must be locked out after repeated failures")
 }
 
+// TestUnifiedLoginDiscoversRole covers the account-already-knows-its-role
+// login path (POST /api/portal/login, no role in the URL): a provider
+// account logging in through it must land a provider session usable
+// against provider-only routes, and a customer account the same for
+// customer-only routes - proving the discovered role, not a guess or a
+// default, drives the session.
+func TestUnifiedLoginDiscoversRole(t *testing.T) {
+	c, _, _ := newTestServer(t)
+	resp := c.do(http.MethodPost, "/api/portal/provider/signup", credentialsRequest{Username: "uma", Password: "hunter22"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, http.StatusNoContent, c.do(http.MethodPost, "/api/portal/logout", nil).StatusCode)
+
+	resp = c.do(http.MethodPost, "/api/portal/login", credentialsRequest{Username: "uma", Password: "hunter22"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	signed := decodeBody[authResponse](t, resp)
+	require.Equal(t, store.RoleProvider, signed.Role)
+
+	// The session this created must actually work against the provider
+	// portal, not just report the right role in the login response.
+	resp = c.do(http.MethodGet, "/api/portal/provider/me", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// ...and must not pass as a customer session.
+	resp = c.do(http.MethodGet, "/api/portal/customer/me", nil)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestUnifiedLoginGenericErrorOnFailure(t *testing.T) {
+	c, _, _ := newTestServer(t)
+	resp := c.do(http.MethodPost, "/api/portal/login", credentialsRequest{Username: "nobody", Password: "whatever1"})
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+// TestWhoami covers GET /api/portal/me: it must work for either role's
+// session (that's the entire point - the frontend calls it before it
+// knows which portal to render) and report the signed-in account's real
+// username and role.
+func TestWhoami(t *testing.T) {
+	c, _, _ := newTestServer(t)
+	signed := signUpCustomer(t, c, "vic")
+
+	resp := c.do(http.MethodGet, "/api/portal/me", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	who := decodeBody[authResponse](t, resp)
+	require.Equal(t, signed.AccountID, who.AccountID)
+	require.Equal(t, "vic", who.Username)
+	require.Equal(t, store.RoleCustomer, who.Role)
+}
+
+func TestWhoamiRejectsNoSession(t *testing.T) {
+	c, _, _ := newTestServer(t)
+	resp := c.do(http.MethodGet, "/api/portal/me", nil)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
 func TestCrossRoleSessionRejected(t *testing.T) {
 	c, _, _ := newTestServer(t)
 	resp := c.do(http.MethodPost, "/api/portal/customer/signup", credentialsRequest{Username: "frank", Password: "password1"})
@@ -362,6 +416,66 @@ func TestProviderNodesScoping(t *testing.T) {
 
 	resp = c1.do(http.MethodGet, "/api/portal/provider/nodes/nod_1", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestDeleteNodeRemovesIt covers the machine-management gap this
+// session's live testing surfaced: there was no way to remove a machine
+// at all. Also proves account scoping applies here too - one account
+// can't delete another's node.
+func TestDeleteNodeRemovesIt(t *testing.T) {
+	c1, st, _ := newTestServer(t)
+	signed1 := signUpProvider(t, c1, "walt")
+	mustNode(t, st, "nod_mine", signed1.AccountID)
+
+	c2 := &testClient{t: t, base: c1.base, hc: mustJarClient(t)}
+	signed2 := signUpProvider(t, c2, "xena")
+	mustNode(t, st, "nod_theirs", signed2.AccountID)
+
+	// Can't delete another account's node - 404, not 403 (never reveal it
+	// exists), and it must still be there afterward.
+	resp := c1.do(http.MethodDelete, "/api/portal/provider/nodes/nod_theirs", nil)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	_, err := st.GetNode(context.Background(), "nod_theirs")
+	require.NoError(t, err)
+
+	resp = c1.do(http.MethodDelete, "/api/portal/provider/nodes/nod_mine", nil)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	_, err = st.GetNode(context.Background(), "nod_mine")
+	require.ErrorIs(t, err, store.ErrNotFound)
+
+	// Gone from the list too, not just individually 404ing.
+	resp = c1.do(http.MethodGet, "/api/portal/provider/nodes", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Empty(t, decodeBody[[]nodeView](t, resp))
+}
+
+// TestDeleteNodeDoesNotBreakOnTaskHistory proves
+// migrations/014_tasks_node_id_delete_set_null.sql's whole point: a node
+// that has actually run tasks can still be deleted (the FK used to be
+// RESTRICT, which would fail this with a constraint violation), and the
+// task's own row survives with node_id cleared rather than being deleted
+// itself - task history outlives the node that produced it.
+func TestDeleteNodeDoesNotBreakOnTaskHistory(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	signed := signUpProvider(t, c, "yara")
+	mustNode(t, st, "nod_worked", signed.AccountID)
+	require.NoError(t, st.CreateAccount(context.Background(), store.Account{ID: "act_cust_y", Name: "cust-y"}))
+	require.NoError(t, st.CreateTask(context.Background(), store.Task{
+		ID: "tsk_ran_here", AccountID: "act_cust_y", State: store.TaskQueued,
+		Image: "alpine@sha256:a", Limits: store.Limits{CPUCores: 1, MemoryMB: 256, DiskMB: 512, WallTimeoutS: 60},
+		Requirements: store.Requirements{Arch: "amd64", Isolation: "podman"},
+		Delivery:     store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+	}))
+	nodeID := "nod_worked"
+	require.NoError(t, st.TransitionTask(context.Background(), "tsk_ran_here",
+		[]store.TaskState{store.TaskQueued}, store.TaskSucceeded, store.TaskUpdate{NodeID: &nodeID}))
+
+	resp := c.do(http.MethodDelete, "/api/portal/provider/nodes/nod_worked", nil)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	task, err := st.GetTask(context.Background(), "tsk_ran_here")
+	require.NoError(t, err)
+	require.Nil(t, task.NodeID, "task's node_id should be cleared, not the task deleted or the delete blocked")
 }
 
 func TestProviderInstallTokenAuthenticatesAsAgent(t *testing.T) {

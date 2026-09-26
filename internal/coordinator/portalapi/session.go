@@ -121,3 +121,23 @@ func (s *Server) requireSession(role store.PortalRole, next http.HandlerFunc) ht
 		next(w, r.WithContext(withSession(r.Context(), sessionInfo{AccountID: sess.AccountID, Role: sess.Role})))
 	}
 }
+
+// requireAnySession is requireSession without the role check, for the one
+// endpoint (GET /api/portal/me) meant to work for either portal - the
+// point of it is telling the caller which role it is, so it can't require
+// already knowing that.
+func (s *Server) requireAnySession(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie(cookieName)
+		if err != nil || cookie.Value == "" {
+			writeError(w, http.StatusUnauthorized, "not signed in")
+			return
+		}
+		sess, err := s.Store.GetSession(r.Context(), hashSessionID(cookie.Value))
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "session expired or invalid")
+			return
+		}
+		next(w, r.WithContext(withSession(r.Context(), sessionInfo{AccountID: sess.AccountID, Role: sess.Role})))
+	}
+}

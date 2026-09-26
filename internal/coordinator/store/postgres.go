@@ -253,6 +253,17 @@ func (s *PostgresStore) SetNodeConnected(ctx context.Context, id string, connect
 	return nil
 }
 
+func (s *PostgresStore) DeleteNode(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM nodes WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("deleting node: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *PostgresStore) RecordHeartbeat(ctx context.Context, id string, at time.Time) error {
 	_, err := s.pool.Exec(ctx, `UPDATE nodes SET last_heartbeat_at = $2 WHERE id = $1`, id, at)
 	if err != nil {

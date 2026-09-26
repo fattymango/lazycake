@@ -289,6 +289,7 @@ type CoordinatorMessage struct {
 	//	*CoordinatorMessage_HeartbeatAck
 	//	*CoordinatorMessage_Dispatch
 	//	*CoordinatorMessage_Cancel
+	//	*CoordinatorMessage_Shutdown
 	Body          isCoordinatorMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -367,6 +368,15 @@ func (x *CoordinatorMessage) GetCancel() *Cancel {
 	return nil
 }
 
+func (x *CoordinatorMessage) GetShutdown() *Shutdown {
+	if x != nil {
+		if x, ok := x.Body.(*CoordinatorMessage_Shutdown); ok {
+			return x.Shutdown
+		}
+	}
+	return nil
+}
+
 type isCoordinatorMessage_Body interface {
 	isCoordinatorMessage_Body()
 }
@@ -387,6 +397,10 @@ type CoordinatorMessage_Cancel struct {
 	Cancel *Cancel `protobuf:"bytes,4,opt,name=cancel,proto3,oneof"`
 }
 
+type CoordinatorMessage_Shutdown struct {
+	Shutdown *Shutdown `protobuf:"bytes,5,opt,name=shutdown,proto3,oneof"`
+}
+
 func (*CoordinatorMessage_RegisterAck) isCoordinatorMessage_Body() {}
 
 func (*CoordinatorMessage_HeartbeatAck) isCoordinatorMessage_Body() {}
@@ -394,6 +408,61 @@ func (*CoordinatorMessage_HeartbeatAck) isCoordinatorMessage_Body() {}
 func (*CoordinatorMessage_Dispatch) isCoordinatorMessage_Body() {}
 
 func (*CoordinatorMessage_Cancel) isCoordinatorMessage_Body() {}
+
+func (*CoordinatorMessage_Shutdown) isCoordinatorMessage_Body() {}
+
+// Shutdown asks the agent to exit cleanly, right now - the provider
+// portal's "stop this machine" action (IMPLEMENTATION.md phase 7's
+// node-management addition). The agent handles it exactly like a local
+// SIGTERM: cancel its own top-level context and run the same graceful
+// shutdown path (self-fencing included), not a special case. This is a
+// request, not a guarantee - nothing can force a process to exit on
+// hardware the coordinator doesn't own; an agent that never reads this
+// message (or the machine it's on is gone) just stays running until its
+// own operator stops it, same as always.
+type Shutdown struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Shutdown) Reset() {
+	*x = Shutdown{}
+	mi := &file_lazycake_v1_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Shutdown) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Shutdown) ProtoMessage() {}
+
+func (x *Shutdown) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Shutdown.ProtoReflect.Descriptor instead.
+func (*Shutdown) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Shutdown) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
 
 type Register struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -413,7 +482,7 @@ type Register struct {
 
 func (x *Register) Reset() {
 	*x = Register{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[3]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -425,7 +494,7 @@ func (x *Register) String() string {
 func (*Register) ProtoMessage() {}
 
 func (x *Register) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[3]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -438,7 +507,7 @@ func (x *Register) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Register.ProtoReflect.Descriptor instead.
 func (*Register) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{3}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Register) GetToken() string {
@@ -527,7 +596,7 @@ type Capabilities struct {
 
 func (x *Capabilities) Reset() {
 	*x = Capabilities{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[4]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +608,7 @@ func (x *Capabilities) String() string {
 func (*Capabilities) ProtoMessage() {}
 
 func (x *Capabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[4]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +621,7 @@ func (x *Capabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Capabilities.ProtoReflect.Descriptor instead.
 func (*Capabilities) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{4}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Capabilities) GetMemoryLimit() bool {
@@ -624,7 +693,7 @@ type Offer struct {
 
 func (x *Offer) Reset() {
 	*x = Offer{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[5]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -636,7 +705,7 @@ func (x *Offer) String() string {
 func (*Offer) ProtoMessage() {}
 
 func (x *Offer) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[5]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -649,7 +718,7 @@ func (x *Offer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Offer.ProtoReflect.Descriptor instead.
 func (*Offer) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Offer) GetCores() float64 {
@@ -699,7 +768,7 @@ type RegisterAck struct {
 
 func (x *RegisterAck) Reset() {
 	*x = RegisterAck{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[6]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -711,7 +780,7 @@ func (x *RegisterAck) String() string {
 func (*RegisterAck) ProtoMessage() {}
 
 func (x *RegisterAck) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[6]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -724,7 +793,7 @@ func (x *RegisterAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAck.ProtoReflect.Descriptor instead.
 func (*RegisterAck) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RegisterAck) GetNodeId() string {
@@ -765,7 +834,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[7]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -777,7 +846,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[7]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -790,7 +859,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Heartbeat) GetSeq() int64 {
@@ -816,7 +885,7 @@ type HeartbeatAck struct {
 
 func (x *HeartbeatAck) Reset() {
 	*x = HeartbeatAck{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[8]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -828,7 +897,7 @@ func (x *HeartbeatAck) String() string {
 func (*HeartbeatAck) ProtoMessage() {}
 
 func (x *HeartbeatAck) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[8]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -841,7 +910,7 @@ func (x *HeartbeatAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatAck.ProtoReflect.Descriptor instead.
 func (*HeartbeatAck) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *HeartbeatAck) GetSeq() int64 {
@@ -865,7 +934,7 @@ type CapacityReport struct {
 
 func (x *CapacityReport) Reset() {
 	*x = CapacityReport{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -877,7 +946,7 @@ func (x *CapacityReport) String() string {
 func (*CapacityReport) ProtoMessage() {}
 
 func (x *CapacityReport) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -890,7 +959,7 @@ func (x *CapacityReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapacityReport.ProtoReflect.Descriptor instead.
 func (*CapacityReport) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CapacityReport) GetOffer() *Offer {
@@ -945,7 +1014,7 @@ type CachedImage struct {
 
 func (x *CachedImage) Reset() {
 	*x = CachedImage{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -957,7 +1026,7 @@ func (x *CachedImage) String() string {
 func (*CachedImage) ProtoMessage() {}
 
 func (x *CachedImage) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,7 +1039,7 @@ func (x *CachedImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CachedImage.ProtoReflect.Descriptor instead.
 func (*CachedImage) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CachedImage) GetDigest() string {
@@ -997,7 +1066,7 @@ type CacheDelta struct {
 
 func (x *CacheDelta) Reset() {
 	*x = CacheDelta{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1009,7 +1078,7 @@ func (x *CacheDelta) String() string {
 func (*CacheDelta) ProtoMessage() {}
 
 func (x *CacheDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1022,7 +1091,7 @@ func (x *CacheDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheDelta.ProtoReflect.Descriptor instead.
 func (*CacheDelta) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CacheDelta) GetPulled() []*CachedImage {
@@ -1064,7 +1133,7 @@ type Dispatch struct {
 
 func (x *Dispatch) Reset() {
 	*x = Dispatch{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1076,7 +1145,7 @@ func (x *Dispatch) String() string {
 func (*Dispatch) ProtoMessage() {}
 
 func (x *Dispatch) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1089,7 +1158,7 @@ func (x *Dispatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Dispatch.ProtoReflect.Descriptor instead.
 func (*Dispatch) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Dispatch) GetTaskId() string {
@@ -1185,7 +1254,7 @@ type Limits struct {
 
 func (x *Limits) Reset() {
 	*x = Limits{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1197,7 +1266,7 @@ func (x *Limits) String() string {
 func (*Limits) ProtoMessage() {}
 
 func (x *Limits) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1210,7 +1279,7 @@ func (x *Limits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Limits.ProtoReflect.Descriptor instead.
 func (*Limits) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Limits) GetCpuCores() float64 {
@@ -1281,7 +1350,7 @@ type TunnelTarget struct {
 
 func (x *TunnelTarget) Reset() {
 	*x = TunnelTarget{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1293,7 +1362,7 @@ func (x *TunnelTarget) String() string {
 func (*TunnelTarget) ProtoMessage() {}
 
 func (x *TunnelTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1306,7 +1375,7 @@ func (x *TunnelTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelTarget.ProtoReflect.Descriptor instead.
 func (*TunnelTarget) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TunnelTarget) GetGatewayId() string {
@@ -1346,7 +1415,7 @@ type TaskAccepted struct {
 
 func (x *TaskAccepted) Reset() {
 	*x = TaskAccepted{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1358,7 +1427,7 @@ func (x *TaskAccepted) String() string {
 func (*TaskAccepted) ProtoMessage() {}
 
 func (x *TaskAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1371,7 +1440,7 @@ func (x *TaskAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskAccepted.ProtoReflect.Descriptor instead.
 func (*TaskAccepted) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TaskAccepted) GetTaskId() string {
@@ -1391,7 +1460,7 @@ type TaskRejected struct {
 
 func (x *TaskRejected) Reset() {
 	*x = TaskRejected{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1403,7 +1472,7 @@ func (x *TaskRejected) String() string {
 func (*TaskRejected) ProtoMessage() {}
 
 func (x *TaskRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1416,7 +1485,7 @@ func (x *TaskRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskRejected.ProtoReflect.Descriptor instead.
 func (*TaskRejected) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TaskRejected) GetTaskId() string {
@@ -1443,7 +1512,7 @@ type TaskStarted struct {
 
 func (x *TaskStarted) Reset() {
 	*x = TaskStarted{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1455,7 +1524,7 @@ func (x *TaskStarted) String() string {
 func (*TaskStarted) ProtoMessage() {}
 
 func (x *TaskStarted) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1468,7 +1537,7 @@ func (x *TaskStarted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskStarted.ProtoReflect.Descriptor instead.
 func (*TaskStarted) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TaskStarted) GetTaskId() string {
@@ -1500,7 +1569,7 @@ type TaskFinished struct {
 
 func (x *TaskFinished) Reset() {
 	*x = TaskFinished{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1512,7 +1581,7 @@ func (x *TaskFinished) String() string {
 func (*TaskFinished) ProtoMessage() {}
 
 func (x *TaskFinished) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1525,7 +1594,7 @@ func (x *TaskFinished) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskFinished.ProtoReflect.Descriptor instead.
 func (*TaskFinished) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TaskFinished) GetTaskId() string {
@@ -1587,7 +1656,7 @@ type Cancel struct {
 
 func (x *Cancel) Reset() {
 	*x = Cancel{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1599,7 +1668,7 @@ func (x *Cancel) String() string {
 func (*Cancel) ProtoMessage() {}
 
 func (x *Cancel) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1612,7 +1681,7 @@ func (x *Cancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cancel.ProtoReflect.Descriptor instead.
 func (*Cancel) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Cancel) GetTaskId() string {
@@ -1639,7 +1708,7 @@ type LogBatch struct {
 
 func (x *LogBatch) Reset() {
 	*x = LogBatch{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1651,7 +1720,7 @@ func (x *LogBatch) String() string {
 func (*LogBatch) ProtoMessage() {}
 
 func (x *LogBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1664,7 +1733,7 @@ func (x *LogBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogBatch.ProtoReflect.Descriptor instead.
 func (*LogBatch) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *LogBatch) GetTaskId() string {
@@ -1693,7 +1762,7 @@ type LogLine struct {
 
 func (x *LogLine) Reset() {
 	*x = LogLine{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1705,7 +1774,7 @@ func (x *LogLine) String() string {
 func (*LogLine) ProtoMessage() {}
 
 func (x *LogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1718,7 +1787,7 @@ func (x *LogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLine.ProtoReflect.Descriptor instead.
 func (*LogLine) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *LogLine) GetSeq() int64 {
@@ -1769,13 +1838,16 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	" \x01(\v2\x18.lazycake.v1.BenchReportH\x00R\vbenchReportB\x06\n" +
 	"\x04body\"#\n" +
 	"\vBenchReport\x12\x14\n" +
-	"\x05score\x18\x01 \x01(\x01R\x05score\"\x81\x02\n" +
+	"\x05score\x18\x01 \x01(\x01R\x05score\"\xb6\x02\n" +
 	"\x12CoordinatorMessage\x12=\n" +
 	"\fregister_ack\x18\x01 \x01(\v2\x18.lazycake.v1.RegisterAckH\x00R\vregisterAck\x12@\n" +
 	"\rheartbeat_ack\x18\x02 \x01(\v2\x19.lazycake.v1.HeartbeatAckH\x00R\fheartbeatAck\x123\n" +
 	"\bdispatch\x18\x03 \x01(\v2\x15.lazycake.v1.DispatchH\x00R\bdispatch\x12-\n" +
-	"\x06cancel\x18\x04 \x01(\v2\x13.lazycake.v1.CancelH\x00R\x06cancelB\x06\n" +
-	"\x04body\"\xdc\x02\n" +
+	"\x06cancel\x18\x04 \x01(\v2\x13.lazycake.v1.CancelH\x00R\x06cancel\x123\n" +
+	"\bshutdown\x18\x05 \x01(\v2\x15.lazycake.v1.ShutdownH\x00R\bshutdownB\x06\n" +
+	"\x04body\"\"\n" +
+	"\bShutdown\x12\x16\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xdc\x02\n" +
 	"\bRegister\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x12\n" +
@@ -1915,63 +1987,65 @@ func file_lazycake_v1_agent_proto_rawDescGZIP() []byte {
 	return file_lazycake_v1_agent_proto_rawDescData
 }
 
-var file_lazycake_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_lazycake_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_lazycake_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),       // 0: lazycake.v1.AgentMessage
 	(*BenchReport)(nil),        // 1: lazycake.v1.BenchReport
 	(*CoordinatorMessage)(nil), // 2: lazycake.v1.CoordinatorMessage
-	(*Register)(nil),           // 3: lazycake.v1.Register
-	(*Capabilities)(nil),       // 4: lazycake.v1.Capabilities
-	(*Offer)(nil),              // 5: lazycake.v1.Offer
-	(*RegisterAck)(nil),        // 6: lazycake.v1.RegisterAck
-	(*Heartbeat)(nil),          // 7: lazycake.v1.Heartbeat
-	(*HeartbeatAck)(nil),       // 8: lazycake.v1.HeartbeatAck
-	(*CapacityReport)(nil),     // 9: lazycake.v1.CapacityReport
-	(*CachedImage)(nil),        // 10: lazycake.v1.CachedImage
-	(*CacheDelta)(nil),         // 11: lazycake.v1.CacheDelta
-	(*Dispatch)(nil),           // 12: lazycake.v1.Dispatch
-	(*Limits)(nil),             // 13: lazycake.v1.Limits
-	(*TunnelTarget)(nil),       // 14: lazycake.v1.TunnelTarget
-	(*TaskAccepted)(nil),       // 15: lazycake.v1.TaskAccepted
-	(*TaskRejected)(nil),       // 16: lazycake.v1.TaskRejected
-	(*TaskStarted)(nil),        // 17: lazycake.v1.TaskStarted
-	(*TaskFinished)(nil),       // 18: lazycake.v1.TaskFinished
-	(*Cancel)(nil),             // 19: lazycake.v1.Cancel
-	(*LogBatch)(nil),           // 20: lazycake.v1.LogBatch
-	(*LogLine)(nil),            // 21: lazycake.v1.LogLine
-	nil,                        // 22: lazycake.v1.Dispatch.EnvEntry
+	(*Shutdown)(nil),           // 3: lazycake.v1.Shutdown
+	(*Register)(nil),           // 4: lazycake.v1.Register
+	(*Capabilities)(nil),       // 5: lazycake.v1.Capabilities
+	(*Offer)(nil),              // 6: lazycake.v1.Offer
+	(*RegisterAck)(nil),        // 7: lazycake.v1.RegisterAck
+	(*Heartbeat)(nil),          // 8: lazycake.v1.Heartbeat
+	(*HeartbeatAck)(nil),       // 9: lazycake.v1.HeartbeatAck
+	(*CapacityReport)(nil),     // 10: lazycake.v1.CapacityReport
+	(*CachedImage)(nil),        // 11: lazycake.v1.CachedImage
+	(*CacheDelta)(nil),         // 12: lazycake.v1.CacheDelta
+	(*Dispatch)(nil),           // 13: lazycake.v1.Dispatch
+	(*Limits)(nil),             // 14: lazycake.v1.Limits
+	(*TunnelTarget)(nil),       // 15: lazycake.v1.TunnelTarget
+	(*TaskAccepted)(nil),       // 16: lazycake.v1.TaskAccepted
+	(*TaskRejected)(nil),       // 17: lazycake.v1.TaskRejected
+	(*TaskStarted)(nil),        // 18: lazycake.v1.TaskStarted
+	(*TaskFinished)(nil),       // 19: lazycake.v1.TaskFinished
+	(*Cancel)(nil),             // 20: lazycake.v1.Cancel
+	(*LogBatch)(nil),           // 21: lazycake.v1.LogBatch
+	(*LogLine)(nil),            // 22: lazycake.v1.LogLine
+	nil,                        // 23: lazycake.v1.Dispatch.EnvEntry
 }
 var file_lazycake_v1_agent_proto_depIdxs = []int32{
-	3,  // 0: lazycake.v1.AgentMessage.register:type_name -> lazycake.v1.Register
-	7,  // 1: lazycake.v1.AgentMessage.heartbeat:type_name -> lazycake.v1.Heartbeat
-	9,  // 2: lazycake.v1.AgentMessage.capacity:type_name -> lazycake.v1.CapacityReport
-	11, // 3: lazycake.v1.AgentMessage.cache_delta:type_name -> lazycake.v1.CacheDelta
-	15, // 4: lazycake.v1.AgentMessage.accepted:type_name -> lazycake.v1.TaskAccepted
-	16, // 5: lazycake.v1.AgentMessage.rejected:type_name -> lazycake.v1.TaskRejected
-	17, // 6: lazycake.v1.AgentMessage.started:type_name -> lazycake.v1.TaskStarted
-	18, // 7: lazycake.v1.AgentMessage.finished:type_name -> lazycake.v1.TaskFinished
-	20, // 8: lazycake.v1.AgentMessage.logs:type_name -> lazycake.v1.LogBatch
+	4,  // 0: lazycake.v1.AgentMessage.register:type_name -> lazycake.v1.Register
+	8,  // 1: lazycake.v1.AgentMessage.heartbeat:type_name -> lazycake.v1.Heartbeat
+	10, // 2: lazycake.v1.AgentMessage.capacity:type_name -> lazycake.v1.CapacityReport
+	12, // 3: lazycake.v1.AgentMessage.cache_delta:type_name -> lazycake.v1.CacheDelta
+	16, // 4: lazycake.v1.AgentMessage.accepted:type_name -> lazycake.v1.TaskAccepted
+	17, // 5: lazycake.v1.AgentMessage.rejected:type_name -> lazycake.v1.TaskRejected
+	18, // 6: lazycake.v1.AgentMessage.started:type_name -> lazycake.v1.TaskStarted
+	19, // 7: lazycake.v1.AgentMessage.finished:type_name -> lazycake.v1.TaskFinished
+	21, // 8: lazycake.v1.AgentMessage.logs:type_name -> lazycake.v1.LogBatch
 	1,  // 9: lazycake.v1.AgentMessage.bench_report:type_name -> lazycake.v1.BenchReport
-	6,  // 10: lazycake.v1.CoordinatorMessage.register_ack:type_name -> lazycake.v1.RegisterAck
-	8,  // 11: lazycake.v1.CoordinatorMessage.heartbeat_ack:type_name -> lazycake.v1.HeartbeatAck
-	12, // 12: lazycake.v1.CoordinatorMessage.dispatch:type_name -> lazycake.v1.Dispatch
-	19, // 13: lazycake.v1.CoordinatorMessage.cancel:type_name -> lazycake.v1.Cancel
-	4,  // 14: lazycake.v1.Register.caps:type_name -> lazycake.v1.Capabilities
-	5,  // 15: lazycake.v1.Register.offer:type_name -> lazycake.v1.Offer
-	10, // 16: lazycake.v1.Register.images:type_name -> lazycake.v1.CachedImage
-	5,  // 17: lazycake.v1.CapacityReport.offer:type_name -> lazycake.v1.Offer
-	10, // 18: lazycake.v1.CacheDelta.pulled:type_name -> lazycake.v1.CachedImage
-	22, // 19: lazycake.v1.Dispatch.env:type_name -> lazycake.v1.Dispatch.EnvEntry
-	13, // 20: lazycake.v1.Dispatch.limits:type_name -> lazycake.v1.Limits
-	14, // 21: lazycake.v1.Dispatch.targets:type_name -> lazycake.v1.TunnelTarget
-	21, // 22: lazycake.v1.LogBatch.lines:type_name -> lazycake.v1.LogLine
-	0,  // 23: lazycake.v1.AgentService.Connect:input_type -> lazycake.v1.AgentMessage
-	2,  // 24: lazycake.v1.AgentService.Connect:output_type -> lazycake.v1.CoordinatorMessage
-	24, // [24:25] is the sub-list for method output_type
-	23, // [23:24] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	7,  // 10: lazycake.v1.CoordinatorMessage.register_ack:type_name -> lazycake.v1.RegisterAck
+	9,  // 11: lazycake.v1.CoordinatorMessage.heartbeat_ack:type_name -> lazycake.v1.HeartbeatAck
+	13, // 12: lazycake.v1.CoordinatorMessage.dispatch:type_name -> lazycake.v1.Dispatch
+	20, // 13: lazycake.v1.CoordinatorMessage.cancel:type_name -> lazycake.v1.Cancel
+	3,  // 14: lazycake.v1.CoordinatorMessage.shutdown:type_name -> lazycake.v1.Shutdown
+	5,  // 15: lazycake.v1.Register.caps:type_name -> lazycake.v1.Capabilities
+	6,  // 16: lazycake.v1.Register.offer:type_name -> lazycake.v1.Offer
+	11, // 17: lazycake.v1.Register.images:type_name -> lazycake.v1.CachedImage
+	6,  // 18: lazycake.v1.CapacityReport.offer:type_name -> lazycake.v1.Offer
+	11, // 19: lazycake.v1.CacheDelta.pulled:type_name -> lazycake.v1.CachedImage
+	23, // 20: lazycake.v1.Dispatch.env:type_name -> lazycake.v1.Dispatch.EnvEntry
+	14, // 21: lazycake.v1.Dispatch.limits:type_name -> lazycake.v1.Limits
+	15, // 22: lazycake.v1.Dispatch.targets:type_name -> lazycake.v1.TunnelTarget
+	22, // 23: lazycake.v1.LogBatch.lines:type_name -> lazycake.v1.LogLine
+	0,  // 24: lazycake.v1.AgentService.Connect:input_type -> lazycake.v1.AgentMessage
+	2,  // 25: lazycake.v1.AgentService.Connect:output_type -> lazycake.v1.CoordinatorMessage
+	25, // [25:26] is the sub-list for method output_type
+	24, // [24:25] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_lazycake_v1_agent_proto_init() }
@@ -1996,6 +2070,7 @@ func file_lazycake_v1_agent_proto_init() {
 		(*CoordinatorMessage_HeartbeatAck)(nil),
 		(*CoordinatorMessage_Dispatch)(nil),
 		(*CoordinatorMessage_Cancel)(nil),
+		(*CoordinatorMessage_Shutdown)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2003,7 +2078,7 @@ func file_lazycake_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lazycake_v1_agent_proto_rawDesc), len(file_lazycake_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

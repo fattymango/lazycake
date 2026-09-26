@@ -112,6 +112,63 @@ func (s *Server) handleLogin(role store.PortalRole) http.HandlerFunc {
 	}
 }
 
+// handleUnifiedLogin implements POST /api/portal/login: the same check as
+// handleLogin, minus the "must be this specific portal's role" constraint
+// - an account's role is fixed at signup (store.PortalCredential.Role),
+// so once we know the username, the role isn't a guess the caller has to
+// make. This is what lets the frontend show one login form instead of
+// asking "are you a customer or a provider" on every visit - the account
+// already knows.
+func (s *Server) handleUnifiedLogin() http.HandlerFunc {
+	const genericError = "invalid username or password"
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req credentialsRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+
+		if s.limiter.Locked(req.Username) {
+			writeError(w, http.StatusUnauthorized, genericError)
+			return
+		}
+
+		cred, err := s.Store.GetPortalCredentialByUsername(r.Context(), req.Username)
+		if err != nil {
+			s.limiter.RecordFailure(req.Username)
+			writeError(w, http.StatusUnauthorized, genericError)
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(cred.PasswordHash), []byte(req.Password)); err != nil {
+			s.limiter.RecordFailure(req.Username)
+			writeError(w, http.StatusUnauthorized, genericError)
+			return
+		}
+		s.limiter.RecordSuccess(req.Username)
+
+		if !s.startSession(w, r, cred.AccountID, cred.Role) {
+			return
+		}
+		writeJSON(w, http.StatusOK, authResponse{AccountID: cred.AccountID, Username: cred.Username, Role: cred.Role})
+	}
+}
+
+// handleWhoami implements GET /api/portal/me: resolves whichever role's
+// session cookie is present and reports it, so the frontend can decide
+// which portal UI to render without having loaded it already knowing.
+// Account.Name is the username (set to it verbatim at signup - see
+// handleSignup/handleUnifiedLogin), so no separate lookup is needed for
+// display purposes.
+func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromContext(r.Context())
+	acct, err := s.Store.GetAccount(r.Context(), sess.AccountID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "loading account")
+		return
+	}
+	writeJSON(w, http.StatusOK, authResponse{AccountID: sess.AccountID, Username: acct.Name, Role: sess.Role})
+}
+
 // handleLogout implements POST /api/portal/logout: revoke the session (if
 // any) and clear the cookie either way, so a request with no cookie, a
 // stale cookie, or a valid one all succeed identically.
