@@ -116,6 +116,26 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: agent
+    # Needed for the tunnel/netns proxy (internal/agent/netns/proxy.go):
+    # it nsenters into a task container's namespaces by host PID
+    # (/proc/<pid>/ns/user), which only resolves if this agent container
+    # shares the host's PID namespace - otherwise task containers are
+    # invisible siblings and any task with tunnel_targets fails outright
+    # ("nsenter: can't open '/proc/<pid>/ns/user': No such file or
+    # directory"). Found live testing the gateway security boundary.
+    pid: host
+    # Also needed for the same reason: agent and every task container it
+    # spawns are siblings under one rootless podman session, so they
+    # already share a single user namespace (confirmed live: identical
+    # /proc/*/ns/user inode) rather than the agent owning a distinct,
+    # privileged parent namespace over each task container's - the
+    # topology testdata/netns-spike.sh was proven against, where nsenter
+    # runs directly on the host. Sharing a namespace without CAP_SYS_ADMIN
+    # in it can't setns into a task's net namespace at all ("nsenter:
+    # setns(): can't reassociate to namespace 'net': Operation not
+    # permitted" - rootless containers drop this capability by default).
+    cap_add:
+      - SYS_ADMIN
     environment:
       LAZYCAKE_DEV: "1"
       LAZYCAKE_COORDINATOR_ADDR: coordinator:7443

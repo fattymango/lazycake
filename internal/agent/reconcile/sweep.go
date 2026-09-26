@@ -20,6 +20,7 @@ const (
 	instanceIDLabel = "lazycake.instance_id"
 	bootIDLabel     = "lazycake.boot_id"
 	taskIDLabel     = "lazycake.task_id"
+	agentIDLabel    = "lazycake.agent_id"
 )
 
 // Sweep lists every container labelled instanceIDLabel and stops+removes
@@ -27,13 +28,30 @@ const (
 // stopping or removing one stale container are logged and do not abort the
 // sweep for the rest; a listing failure is returned since it means the
 // sweep couldn't even see what's out there.
-func Sweep(ctx context.Context, rt runtime.Runtime, instanceID, bootID string, log *slog.Logger) error {
+//
+// agentID scopes the whole sweep to containers this same agent identity
+// created: a container labelled with a *different* agentID is left alone
+// no matter what its instance/boot ID says, since it belongs to a sibling
+// agent process, not a previous run of this one. This only matters for a
+// deployment where several agents share one container engine (this repo's
+// own deploy/docker-compose.yml demo, three agents against one rootless
+// podman socket) - a real one-agent-per-host deployment never has a
+// sibling to begin with. Without this check, restarting any one agent
+// would sweep away every *other* agent's in-flight task containers too,
+// since instance_id is fresh per process start and boot_id is the shared
+// host kernel's, so neither one actually distinguishes "my previous run"
+// from "a sibling's current one" - caught live: a task's own container
+// vanished mid-run, killed by a *different* agent's restart sweep.
+func Sweep(ctx context.Context, rt runtime.Runtime, agentID, instanceID, bootID string, log *slog.Logger) error {
 	containers, err := rt.LabelledContainers(ctx, instanceIDLabel)
 	if err != nil {
 		return fmt.Errorf("listing lazycake-labelled containers: %w", err)
 	}
 
 	for _, c := range containers {
+		if c.Labels[agentIDLabel] != agentID {
+			continue // belongs to a different agent sharing this engine
+		}
 		if c.Labels[instanceIDLabel] == instanceID && c.Labels[bootIDLabel] == bootID {
 			continue // belongs to this run
 		}

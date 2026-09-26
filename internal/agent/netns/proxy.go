@@ -107,9 +107,25 @@ func (p *Proxy) Setup(ctx context.Context) error {
 	}
 	defer resultW.Close()
 
-	userNS := fmt.Sprintf("--user=/proc/%d/ns/user", p.ContainerPID)
-	netNS := fmt.Sprintf("--net=/proc/%d/ns/net", p.ContainerPID)
-	cmd := exec.CommandContext(ctx, "nsenter", userNS, netNS, "--preserve-credentials", "--", exePath, SubcommandName)
+	nsenterArgs := []string{fmt.Sprintf("--net=/proc/%d/ns/net", p.ContainerPID)}
+	if sameUserNamespace(p.ContainerPID) {
+		// Sibling-container deployments (this agent itself running in a
+		// container talking to the host engine over a shared socket, per
+		// executor.go's own doc comment) put every container spawned by
+		// the same rootless podman user session in one shared user
+		// namespace, agent included - confirmed live by comparing
+		// /proc/<pid>/ns/user across the agent's own container and a
+		// freshly started sibling. Joining a user namespace you are
+		// already a member of fails with EINVAL ("nsenter: setns():
+		// can't reassociate to namespace 'user': Invalid argument"), so
+		// --user is only added when it actually differs - which is the
+		// case for a bare-host-run agent (testdata/netns-spike.sh's
+		// setup), where it remains required (--net alone fails EPERM).
+	} else {
+		nsenterArgs = append(nsenterArgs, fmt.Sprintf("--user=/proc/%d/ns/user", p.ContainerPID))
+	}
+	nsenterArgs = append(nsenterArgs, "--preserve-credentials", "--", exePath, SubcommandName)
+	cmd := exec.CommandContext(ctx, "nsenter", nsenterArgs...)
 	cmd.Stdin = bytes.NewReader(cfgJSON)
 	childCtlFile, err := childCtl.File()
 	if err != nil {
@@ -192,6 +208,25 @@ func (p *Proxy) Close() error {
 		p.cmd.Process.Kill()
 	}
 	return nil
+}
+
+// sameUserNamespace reports whether this process and containerPID are
+// already in the same user namespace, by comparing /proc/*/ns/user's
+// target inode (the kernel's own identity for a namespace - see
+// user_namespaces(7)). A failed read of either side (e.g. this OS lacks
+// /proc, or the container's namespace already vanished) is treated as
+// "different" - the safe default, matching nsenter's own pre-existing
+// behavior of always joining --user.
+func sameUserNamespace(containerPID int) bool {
+	self, err := os.Readlink("/proc/self/ns/user")
+	if err != nil {
+		return false
+	}
+	other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/user", containerPID))
+	if err != nil {
+		return false
+	}
+	return self == other
 }
 
 func socketpair() (*net.UnixConn, *net.UnixConn, error) {

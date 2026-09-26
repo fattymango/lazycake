@@ -92,7 +92,7 @@ func run() error {
 	// work (IMPLEMENTATION.md task 3.7, PLAN.md "Killing orphans") - this
 	// must happen before runner.Run below, since that's what starts
 	// dispatching.
-	if err := reconcile.Sweep(ctx, rt, instanceID, bootID, log); err != nil {
+	if err := reconcile.Sweep(ctx, rt, hostname, instanceID, bootID, log); err != nil {
 		return fmt.Errorf("startup reconciliation sweep: %w", err)
 	}
 
@@ -131,6 +131,7 @@ func run() error {
 		Log:          log,
 		InstanceID:   instanceID,
 		BootID:       bootID,
+		AgentID:      hostname,
 		RelayAddr:    cfg.RelayAddr,
 		Token:        cfg.Token,
 		AgentKeypair: tunnelKeypair,
