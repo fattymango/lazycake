@@ -10,7 +10,8 @@ import { Button, FormError } from "@shared/components/Form";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
 import { IconHistory, IconStop, IconTrash } from "@shared/components/Icon";
 import { dateTime, relativeTime } from "@shared/format";
-import type { Node, Task } from "@shared/types";
+import { useSSE } from "@shared/hooks/useSSE";
+import type { Node, PortalEvent, Task } from "@shared/types";
 
 export function MachineDetail() {
   const { id } = useParams<{ id: string }>();
@@ -40,6 +41,18 @@ export function MachineDetail() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // This machine connecting/disconnecting, or a task running on it
+  // changing state, must update live - reload rather than patch fields in
+  // place, since a task_state event doesn't say whether it's even for a
+  // task on *this* node (the account-scoped stream carries every task the
+  // account owns, not just this node's).
+  useSSE("/api/portal/provider/events", (data) => {
+    const ev = data as PortalEvent;
+    if (ev.type === "node_connected" || ev.type === "node_disconnected" || ev.type === "task_state") {
+      load();
+    }
+  });
 
   async function handleDelete() {
     if (!id) return;
