@@ -10,7 +10,8 @@ import { Button } from "@shared/components/Form";
 import { IconBilling, IconHistory, IconInbox, IconPlus } from "@shared/components/Icon";
 import { money, relativeTime } from "@shared/format";
 import { useRoleMe } from "@shared/hooks/useRoleMe";
-import type { Me, Task } from "@shared/types";
+import { useSSE } from "@shared/hooks/useSSE";
+import type { Me, PortalEvent, Task } from "@shared/types";
 
 export function Dashboard() {
   const { data: me, refresh } = useRoleMe<Me>("/api/portal/customer/me");
@@ -33,6 +34,13 @@ export function Dashboard() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A submitted task moving through queued -> running -> succeeded, or a
+  // brand new one, must show up here live - reload rather than patch a
+  // single row, since a new task isn't in `tasks` yet for that to find.
+  useSSE("/api/portal/customer/events", (data) => {
+    if ((data as PortalEvent).type === "task_state") load();
+  });
 
   return (
     <div className="flex flex-col gap-6">

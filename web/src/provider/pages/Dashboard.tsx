@@ -11,7 +11,8 @@ import { ConfirmDialog } from "@shared/components/ConfirmDialog";
 import { IconEarnings, IconMachine, IconPlus, IconStop, IconTrash } from "@shared/components/Icon";
 import { money, relativeTime } from "@shared/format";
 import { useRoleMe } from "@shared/hooks/useRoleMe";
-import type { Node, ProviderMe } from "@shared/types";
+import { useSSE } from "@shared/hooks/useSSE";
+import type { Node, PortalEvent, ProviderMe } from "@shared/types";
 
 export function Dashboard() {
   const { data: me, refresh } = useRoleMe<ProviderMe>("/api/portal/provider/me");
@@ -35,6 +36,19 @@ export function Dashboard() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A new machine registering, or an existing one connecting/disconnecting,
+  // must show up here without a manual refresh - ProviderShell already
+  // holds an SSE connection open for the live dot, but never used it to
+  // actually update anything. Reload the list on the two node-shaped
+  // events rather than trying to patch one row in place: a brand new
+  // machine isn't in `nodes` at all yet, so an in-place patch can't add it.
+  useSSE("/api/portal/provider/events", (data) => {
+    const ev = data as PortalEvent;
+    if (ev.type === "node_connected" || ev.type === "node_disconnected") {
+      load();
+    }
+  });
 
   async function handleDelete() {
     if (!pendingDelete) return;
