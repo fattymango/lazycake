@@ -21,6 +21,16 @@ export type TaskState =
   | "abandoned"
   | "cancelled";
 
+// Whoami is GET /api/portal/me's shape: resolves whichever role's session
+// cookie is present, so the app can render the right portal without
+// already knowing which one before it asks (that's the whole point - see
+// auth.tsx).
+export interface Whoami {
+  account_id: string;
+  username: string;
+  role: Role;
+}
+
 export interface Me {
   account_id: string;
   username: string;

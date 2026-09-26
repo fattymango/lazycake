@@ -7,12 +7,13 @@ import { DataTable } from "@shared/components/DataTable";
 import { ErrorState, LoadingState } from "@shared/components/States";
 import { StateBadge } from "@shared/components/StateBadge";
 import { Button } from "@shared/components/Form";
+import { IconBilling, IconHistory, IconInbox, IconPlus } from "@shared/components/Icon";
 import { money, relativeTime } from "@shared/format";
-import { useCustomerAuth } from "@shared/auth";
-import type { Task } from "@shared/types";
+import { useRoleMe } from "@shared/hooks/useRoleMe";
+import type { Me, Task } from "@shared/types";
 
 export function Dashboard() {
-  const { me, refresh } = useCustomerAuth();
+  const { data: me, refresh } = useRoleMe<Me>("/api/portal/customer/me");
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -36,16 +37,19 @@ export function Dashboard() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <Button onClick={() => navigate("/tasks/new")}>Submit a task</Button>
+        <div>
+          <h1 className="text-xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-muted mt-0.5">A quick look at your account and recent activity.</p>
+        </div>
+        <Button onClick={() => navigate("/tasks/new")}>
+          <IconPlus className="w-4 h-4" /> Submit a task
+        </Button>
       </div>
 
-      <Panel title="Balance">
-        <StatRow>
-          <StatTile label="available balance" value={money(me?.available_balance_micros)} />
-          <StatTile label="account balance" value={money(me?.balance_micros)} />
-        </StatRow>
-      </Panel>
+      <StatRow>
+        <StatTile icon={IconBilling} label="Available balance" value={money(me?.available_balance_micros)} />
+        <StatTile icon={IconBilling} label="Account balance" value={money(me?.balance_micros)} />
+      </StatRow>
 
       <Panel title="Recent tasks">
         {tasks === null && !error ? (
@@ -57,16 +61,31 @@ export function Dashboard() {
             rows={tasks!}
             rowKey={(t) => t.id}
             onRowClick={(t) => navigate(`/tasks/${t.id}`)}
-            emptyLabel="no tasks yet — submit one to get started"
+            emptyLabel="No tasks yet. Submit one to see it run here."
+            emptyIcon={IconInbox}
+            emptyAction={
+              <Button onClick={() => navigate("/tasks/new")} size="sm">
+                <IconPlus className="w-3.5 h-3.5" /> Submit a task
+              </Button>
+            }
             columns={[
-              { header: "task", render: (t) => <span className="font-mono text-xs">{t.id}</span> },
-              { header: "state", render: (t) => <StateBadge state={t.state} /> },
-              { header: "image", render: (t) => <span className="font-mono text-xs text-muted">{t.image}</span> },
-              { header: "submitted", render: (t) => relativeTime(t.created_at_ms) },
+              { header: "Task", render: (t) => <span className="font-mono text-xs">{t.id}</span> },
+              { header: "State", render: (t) => <StateBadge state={t.state} /> },
+              { header: "Image", render: (t) => <span className="font-mono text-xs text-muted">{t.image}</span> },
+              { header: "Submitted", render: (t) => <span className="text-muted">{relativeTime(t.created_at_ms)}</span> },
             ]}
           />
         )}
       </Panel>
+
+      {tasks && tasks.length > 0 && (
+        <button
+          onClick={() => navigate("/tasks")}
+          className="self-start text-sm text-accent hover:underline flex items-center gap-1.5"
+        >
+          <IconHistory className="w-4 h-4" /> View all tasks
+        </button>
+      )}
     </div>
   );
 }

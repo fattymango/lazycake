@@ -5,12 +5,13 @@ import { DataTable } from "@shared/components/DataTable";
 import { ErrorState, LoadingState } from "@shared/components/States";
 import { Button, Field, TextInput } from "@shared/components/Form";
 import { StatRow, StatTile } from "@shared/components/StatTile";
+import { IconBilling, IconHistory } from "@shared/components/Icon";
 import { dateTime, money } from "@shared/format";
-import { useCustomerAuth } from "@shared/auth";
-import type { LedgerEntry } from "@shared/types";
+import { useRoleMe } from "@shared/hooks/useRoleMe";
+import type { LedgerEntry, Me } from "@shared/types";
 
 export function Billing() {
-  const { me, refresh } = useCustomerAuth();
+  const { data: me, refresh } = useRoleMe<Me>("/api/portal/customer/me");
   const [entries, setEntries] = useState<LedgerEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addAmount, setAddAmount] = useState("10");
@@ -44,24 +45,25 @@ export function Billing() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold">Billing</h1>
+      <div>
+        <h1 className="text-xl font-semibold">Billing</h1>
+        <p className="text-sm text-muted mt-0.5">Your balance and every charge or credit against it.</p>
+      </div>
 
-      <Panel title="Balance">
-        <StatRow>
-          <StatTile label="available balance" value={money(me?.available_balance_micros)} />
-          <StatTile label="account balance" value={money(me?.balance_micros)} />
-        </StatRow>
-      </Panel>
+      <StatRow>
+        <StatTile icon={IconBilling} label="Available balance" value={money(me?.available_balance_micros)} />
+        <StatTile icon={IconBilling} label="Account balance" value={money(me?.balance_micros)} />
+      </StatRow>
 
-      <Panel title="Add funds (dev only)" className="max-w-sm">
+      <Panel title="Add funds" className="max-w-sm">
         <p className="text-xs text-warn mb-4">
-          No real payment rail exists yet — this credits your account directly for testing.
+          No real payment rail exists yet — this credits your account directly, for testing.
         </p>
         <Field label="Amount (USD)">
           <TextInput type="number" min="0" step="0.01" value={addAmount} onChange={(e) => setAddAmount(e.target.value)} />
         </Field>
         <Button onClick={handleAddFunds} disabled={adding}>
-          {adding ? "adding…" : "Add funds"}
+          {adding ? "Adding…" : "Add funds"}
         </Button>
       </Panel>
 
@@ -74,12 +76,13 @@ export function Billing() {
           <DataTable
             rows={entries!}
             rowKey={(e) => e.id}
-            emptyLabel="no ledger entries yet"
+            emptyLabel="No ledger entries yet - they'll show up once a task settles."
+            emptyIcon={IconHistory}
             columns={[
-              { header: "kind", render: (e) => e.kind },
-              { header: "task", render: (e) => <span className="font-mono text-xs text-muted">{e.task_id}</span> },
+              { header: "Kind", render: (e) => <span className="capitalize">{e.kind}</span> },
+              { header: "Task", render: (e) => <span className="font-mono text-xs text-muted">{e.task_id}</span> },
               {
-                header: "amount",
+                header: "Amount",
                 render: (e) => (
                   <span className={e.kind === "charge" ? "text-bad" : "text-good"}>
                     {e.kind === "charge" ? "-" : "+"}
@@ -87,7 +90,7 @@ export function Billing() {
                   </span>
                 ),
               },
-              { header: "date", render: (e) => dateTime(e.created_at_ms) },
+              { header: "Date", render: (e) => <span className="text-muted">{dateTime(e.created_at_ms)}</span> },
             ]}
           />
         )}
