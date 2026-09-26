@@ -24,6 +24,7 @@ import (
 	"github.com/fattymango/lazycake/internal/coordinator/scheduler"
 	"github.com/fattymango/lazycake/internal/coordinator/seed"
 	"github.com/fattymango/lazycake/internal/coordinator/store"
+	"github.com/fattymango/lazycake/internal/coordinator/webassets"
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
@@ -196,7 +197,27 @@ func run() error {
 	}
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/api/portal/", portal.Handler())
-	httpMux.Handle("/", dash.Handler())
+	// The customer/provider portal (this repo's own web/ SPA, task 7.6-7.9)
+	// takes "/" - the operator dashboard (dash.Handler(), pre-dating it)
+	// moves to "/ops": task 7.10, "not yet wired into cmd/coordinator/
+	// run.go" per webassets.go's own doc comment, which was still true
+	// until now - hitting the coordinator's root ever only showed the
+	// operator dashboard, with no way to reach the portal SPA at all.
+	// dash.Handler()'s /api/state and /events keep their own paths
+	// unprefixed (its index.html fetches them as absolute paths, not
+	// relative to wherever it's mounted), registered directly here rather
+	// than moved under /ops so that page's existing JS keeps working
+	// unmodified.
+	dashHandler := dash.Handler()
+	httpMux.Handle("/api/state", dashHandler)
+	httpMux.Handle("/events", dashHandler)
+	httpMux.HandleFunc("/ops", func(w http.ResponseWriter, r *http.Request) {
+		r2 := new(http.Request)
+		*r2 = *r
+		r2.URL.Path = "/"
+		dashHandler.ServeHTTP(w, r2)
+	})
+	httpMux.Handle("/", webassets.Handler("index.html"))
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
 	httpErr := make(chan error, 1)
 	go func() {
