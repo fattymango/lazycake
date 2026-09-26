@@ -34,6 +34,9 @@ type Executor struct {
 	Log        *slog.Logger
 	InstanceID string
 	BootID     string
+	// AgentID scopes reconcile.Sweep's cleanup to this agent's own
+	// containers when several agents share one engine - see sweep.go.
+	AgentID string
 
 	// RelayAddr, Token and AgentKeypair are only needed when a dispatched
 	// task actually declares tunnel targets; a task with none never
@@ -258,6 +261,36 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 	e.Send.Send(started(d.GetTaskId(), time.Now()))
 	e.registerActive(d.GetTaskId(), id)
 
+	// Tunnel setup runs before attaching logs, not after: Runtime.Logs
+	// below can block for a long time against a container that hasn't
+	// produced any output yet (podman's REST API doesn't flush a follow-
+	// mode logs response's headers until the container writes its first
+	// byte), and startTunnel needs to run while the container is still
+	// alive. Caught live: every task with tunnel_targets and no early
+	// stdout failed with "container state improper", because by the time
+	// the (synchronous, blocked-on-Logs) code finally reached startTunnel,
+	// the container had already exited. This ordering costs tunnel-less
+	// tasks nothing (startTunnel is a no-op below when there are no
+	// targets) and only delays log-attach by however long Setup itself
+	// takes (milliseconds), which is still well within "right after
+	// Start, not before it" - see the comment on the log-attach below for
+	// why that ordering (vs. pre-Start) matters.
+	if len(d.GetTargets()) > 0 {
+		proxy, err := e.startTunnel(ctx, id, d, sendFinished)
+		if err != nil {
+			// The container is already running with --network=none and no
+			// route anywhere; failing to set up its one exception is the
+			// same as the task simply being unable to reach its target, so
+			// fail the task rather than let it run uselessly to timeout.
+			log.Error("starting netns proxy", "error", err)
+			close(logsDone)
+			_ = e.Runtime.Stop(context.Background(), id, 5*time.Second)
+			sendFinished(-1, "error")
+			return
+		}
+		defer proxy.Close()
+	}
+
 	// Attached right after Start, not before it: a follow-mode log stream
 	// opened against a container that hasn't started yet doesn't reliably
 	// pick up writes from the process once it does start (verified live -
@@ -278,21 +311,6 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 			defer close(logsDone)
 			linesRelayed = e.streamLogs(ctx, d.GetTaskId(), logsRC)
 		}()
-	}
-
-	if len(d.GetTargets()) > 0 {
-		proxy, err := e.startTunnel(ctx, id, d, sendFinished)
-		if err != nil {
-			// The container is already running with --network=none and no
-			// route anywhere; failing to set up its one exception is the
-			// same as the task simply being unable to reach its target, so
-			// fail the task rather than let it run uselessly to timeout.
-			log.Error("starting netns proxy", "error", err)
-			_ = e.Runtime.Stop(context.Background(), id, 5*time.Second)
-			sendFinished(-1, "error")
-			return
-		}
-		defer proxy.Close()
 	}
 
 	result, err := e.Runtime.Wait(runCtx, id)
@@ -378,6 +396,7 @@ func (e *Executor) spec(ctx context.Context, d *lazycakev1.Dispatch) (runtime.Sp
 			"lazycake.task_id":     d.GetTaskId(),
 			"lazycake.instance_id": e.InstanceID,
 			"lazycake.boot_id":     e.BootID,
+			"lazycake.agent_id":    e.AgentID,
 		},
 	}, nil
 }

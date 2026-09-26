@@ -30,7 +30,7 @@ func testRuntime(t *testing.T) *runtime.PodmanRuntime {
 
 func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-func spawn(t *testing.T, rt *runtime.PodmanRuntime, name, taskID, instanceID, bootID string) string {
+func spawn(t *testing.T, rt *runtime.PodmanRuntime, name, taskID, agentID, instanceID, bootID string) string {
 	t.Helper()
 	ctx := context.Background()
 	id, err := rt.Create(ctx, runtime.Spec{
@@ -41,6 +41,7 @@ func spawn(t *testing.T, rt *runtime.PodmanRuntime, name, taskID, instanceID, bo
 		CPUCores:   1, MemoryMB: 64,
 		Labels: map[string]string{
 			taskIDLabel:     taskID,
+			agentIDLabel:    agentID,
 			instanceIDLabel: instanceID,
 			bootIDLabel:     bootID,
 		},
@@ -63,15 +64,17 @@ func TestStartupSweep(t *testing.T) {
 	_, err := rt.Pull(ctx, "docker.io/library/alpine:latest")
 	require.NoError(t, err)
 
-	spawn(t, rt, "lazycake-sweep-stale-instance", "tsk_stale1", "ins_old", "boot_new")
-	spawn(t, rt, "lazycake-sweep-stale-boot", "tsk_stale2", "ins_new", "boot_old")
-	spawn(t, rt, "lazycake-sweep-current", "tsk_current", "ins_new", "boot_new")
+	spawn(t, rt, "lazycake-sweep-stale-instance", "tsk_stale1", "agent_a", "ins_old", "boot_new")
+	spawn(t, rt, "lazycake-sweep-stale-boot", "tsk_stale2", "agent_a", "ins_new", "boot_old")
+	spawn(t, rt, "lazycake-sweep-current", "tsk_current", "agent_a", "ins_new", "boot_new")
+	spawn(t, rt, "lazycake-sweep-sibling", "tsk_sibling", "agent_b", "ins_old", "boot_old")
 
-	require.NoError(t, Sweep(ctx, rt, "ins_new", "boot_new", discardLog()))
+	require.NoError(t, Sweep(ctx, rt, "agent_a", "ins_new", "boot_new", discardLog()))
 
 	require.False(t, existsByTaskID(t, rt, "tsk_stale1"), "container from a different instance_id must be killed")
 	require.False(t, existsByTaskID(t, rt, "tsk_stale2"), "container from a different boot_id must be killed")
 	require.True(t, existsByTaskID(t, rt, "tsk_current"), "a container matching this run's instance_id and boot_id must be left alone")
+	require.True(t, existsByTaskID(t, rt, "tsk_sibling"), "a container labelled with a different agent_id must be left alone even if its instance/boot id looks stale - it belongs to a sibling agent sharing this engine, not a previous run of this one")
 }
 
 func existsByTaskID(t *testing.T, rt *runtime.PodmanRuntime, taskID string) bool {
