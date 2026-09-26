@@ -53,6 +53,13 @@ type Nodes interface {
 	// uses).
 	ListNodesByAccount(ctx context.Context, accountID string) ([]Node, error)
 	SetNodeConnected(ctx context.Context, id string, connected bool) error
+	// DeleteNode removes a node entirely (the provider portal's "remove
+	// this machine" action) - cached-image rows cascade
+	// (migrations/005_image_cache.sql), and any task that ever ran on it
+	// keeps its own row with node_id set to NULL rather than being deleted
+	// itself (migrations/014_tasks_node_id_delete_set_null.sql) - a task's
+	// own history is meaningful long after the node that ran it is gone.
+	DeleteNode(ctx context.Context, id string) error
 	RecordHeartbeat(ctx context.Context, id string, at time.Time) error
 	SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB int) error
 	SetNodeBenchScore(ctx context.Context, id string, score float64) error

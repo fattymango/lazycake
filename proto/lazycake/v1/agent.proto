@@ -36,8 +36,20 @@ message CoordinatorMessage {
     HeartbeatAck heartbeat_ack = 2;
     Dispatch     dispatch      = 3;
     Cancel       cancel        = 4;
+    Shutdown     shutdown      = 5;
   }
 }
+
+// Shutdown asks the agent to exit cleanly, right now - the provider
+// portal's "stop this machine" action (IMPLEMENTATION.md phase 7's
+// node-management addition). The agent handles it exactly like a local
+// SIGTERM: cancel its own top-level context and run the same graceful
+// shutdown path (self-fencing included), not a special case. This is a
+// request, not a guarantee - nothing can force a process to exit on
+// hardware the coordinator doesn't own; an agent that never reads this
+// message (or the machine it's on is gone) just stays running until its
+// own operator stops it, same as always.
+message Shutdown { string reason = 1; }
 
 message Register {
   string token        = 1;

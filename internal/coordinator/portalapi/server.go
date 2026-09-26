@@ -21,6 +21,13 @@ type Server struct {
 	// transport. Required for the customer routes; the provider-only
 	// routes never touch it.
 	Customer *api.CustomerServer
+	// Registry lets the "stop this machine" action ask a still-connected
+	// node's agent process to exit (a best-effort Shutdown message - see
+	// proto/lazycake/v1/agent.proto's Shutdown doc comment for why this
+	// can only ever be a request, not a guarantee). Required for the
+	// provider node-delete route; nil is only valid in tests that never
+	// exercise it.
+	Registry *api.Registry
 	Bus      *events.Bus
 	Log      *slog.Logger
 	// Dev mirrors config.Config.Dev: the session cookie is Secure unless
@@ -54,6 +61,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/portal/provider/signup", s.handleSignup(store.RoleProvider))
 	mux.HandleFunc("POST /api/portal/customer/login", s.handleLogin(store.RoleCustomer))
 	mux.HandleFunc("POST /api/portal/provider/login", s.handleLogin(store.RoleProvider))
+	// Unified: an account's role is fixed at signup, so a login doesn't
+	// need to already know which portal it's for - one login form for
+	// both. The role-specific /customer/login and /provider/login above
+	// stay too (harmless, and simpler for a caller that already knows).
+	mux.HandleFunc("POST /api/portal/login", s.handleUnifiedLogin())
+	mux.HandleFunc("GET /api/portal/me", s.requireAnySession(s.handleWhoami))
 	mux.HandleFunc("POST /api/portal/logout", s.handleLogout)
 
 	mux.HandleFunc("GET /api/portal/customer/me", s.requireSession(store.RoleCustomer, s.handleCustomerMe))
@@ -70,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/portal/provider/me", s.requireSession(store.RoleProvider, s.handleProviderMe))
 	mux.HandleFunc("GET /api/portal/provider/nodes", s.requireSession(store.RoleProvider, s.handleListNodes))
 	mux.HandleFunc("GET /api/portal/provider/nodes/{id}", s.requireSession(store.RoleProvider, s.handleGetNode))
+	mux.HandleFunc("DELETE /api/portal/provider/nodes/{id}", s.requireSession(store.RoleProvider, s.handleDeleteNode))
 	mux.HandleFunc("GET /api/portal/provider/nodes/{id}/tasks", s.requireSession(store.RoleProvider, s.handleNodeTasks))
 	mux.HandleFunc("POST /api/portal/provider/nodes/install-token", s.requireSession(store.RoleProvider, s.handleInstallToken))
 	mux.HandleFunc("GET /api/portal/provider/ledger", s.requireSession(store.RoleProvider, s.handleProviderLedger))

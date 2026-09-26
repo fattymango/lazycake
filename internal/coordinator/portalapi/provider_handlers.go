@@ -6,6 +6,7 @@ import (
 
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
+	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 )
 
 const providerNodeTasksLimit = 100
@@ -115,6 +116,40 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toNodeView(node))
+}
+
+// handleDeleteNode implements DELETE /api/portal/provider/nodes/{id}: the
+// machine-management gap this session's live testing surfaced - there was
+// no way to remove a machine from the fleet at all, active or not. If the
+// node is still connected, this first asks its agent to exit cleanly (a
+// Shutdown message - best-effort, see the proto doc comment: nothing can
+// force a process to exit on hardware the coordinator doesn't own), then
+// deletes the node row either way. A node that's still genuinely running
+// and ignores Shutdown will just reappear on its own next heartbeat/
+// register cycle - deleting the DB row doesn't revoke its ability to
+// reconnect, only removes today's stale entry.
+func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromContext(r.Context())
+	nodeID := r.PathValue("id")
+	if _, err := s.getOwnNode(r.Context(), sess.AccountID, nodeID); err != nil {
+		writeStoreOrRPCError(w, err)
+		return
+	}
+
+	if s.Registry != nil {
+		msg := &lazycakev1.CoordinatorMessage{Body: &lazycakev1.CoordinatorMessage_Shutdown{
+			Shutdown: &lazycakev1.Shutdown{Reason: "removed from provider portal"},
+		}}
+		if err := s.Registry.Send(nodeID, msg); err != nil {
+			s.Log.Info("machine not connected, deleting without a shutdown request", "node_id", nodeID, "error", err)
+		}
+	}
+
+	if err := s.Store.DeleteNode(r.Context(), nodeID); err != nil {
+		writeStoreOrRPCError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleNodeTasks implements GET /api/portal/provider/nodes/{id}/tasks -

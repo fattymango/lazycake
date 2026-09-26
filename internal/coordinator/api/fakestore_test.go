@@ -103,6 +103,16 @@ func (f *fakeStore) SetNodeConnected(ctx context.Context, id string, connected b
 	return nil
 }
 
+func (f *fakeStore) DeleteNode(ctx context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.nodes[id]; !ok {
+		return store.ErrNotFound
+	}
+	delete(f.nodes, id)
+	return nil
+}
+
 func (f *fakeStore) RecordHeartbeat(ctx context.Context, id string, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
