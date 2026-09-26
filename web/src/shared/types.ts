@@ -110,6 +110,10 @@ export interface CreateGatewayRequest {
   services: GatewayService[];
 }
 
+export interface CreateGatewayResponse extends Gateway {
+  install_token: string;
+}
+
 export interface LedgerEntry {
   id: string;
   task_id: string;

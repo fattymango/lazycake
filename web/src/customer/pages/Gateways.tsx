@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { apiGet, apiPost, ApiError } from "@shared/api";
+import { copyToClipboard } from "@shared/clipboard";
 import { Panel } from "@shared/components/Panel";
 import { DataTable } from "@shared/components/DataTable";
 import { ErrorState, LoadingState } from "@shared/components/States";
 import { ConnectedBadge } from "@shared/components/StateBadge";
 import { Button, Field, FormError, TextInput } from "@shared/components/Form";
 import { dateTime } from "@shared/format";
-import type { CreateGatewayRequest, Gateway } from "@shared/types";
+import type { CreateGatewayRequest, CreateGatewayResponse, Gateway } from "@shared/types";
 
 export function Gateways() {
   const [gateways, setGateways] = useState<Gateway[] | null>(null);
@@ -17,6 +18,8 @@ export function Gateways() {
   const [servicePort, setServicePort] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [justCreated, setJustCreated] = useState<CreateGatewayResponse | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function load() {
     setError(null);
@@ -42,7 +45,9 @@ export function Gateways() {
           ? [{ name: serviceName.trim(), port: parseInt(servicePort, 10) || 0 }]
           : [],
       };
-      await apiPost<Gateway>("/api/portal/customer/gateways", body);
+      const created = await apiPost<CreateGatewayResponse>("/api/portal/customer/gateways", body);
+      setJustCreated(created);
+      setCopied(false);
       setLabel("");
       setServiceName("");
       setServicePort("");
@@ -51,6 +56,17 @@ export function Gateways() {
       setFormError(err instanceof ApiError ? err.message : "failed to create gateway");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleCopyToken() {
+    if (!justCreated) return;
+    const ok = await copyToClipboard(justCreated.install_token);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      setFormError("couldn't copy automatically — select the token above and copy it manually");
     }
   }
 
@@ -110,6 +126,25 @@ export function Gateways() {
           </Button>
         </form>
       </Panel>
+
+      {justCreated && (
+        <Panel title={`Install token for "${justCreated.label}"`} className="max-w-md">
+          <div className="flex flex-col gap-3">
+            <div className="text-xs text-warn">
+              This token will not be shown again. Copy it now and pass it as LAZYCAKE_TOKEN
+              when starting the gateway process.
+            </div>
+            <pre className="bg-black/40 border border-border rounded p-3 font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all">
+              {justCreated.install_token}
+            </pre>
+            <div>
+              <Button variant="secondary" onClick={handleCopyToken}>
+                {copied ? "copied!" : "copy to clipboard"}
+              </Button>
+            </div>
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }
