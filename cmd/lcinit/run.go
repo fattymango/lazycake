@@ -21,6 +21,21 @@ const deadlineExitCode = 124
 // forwarded) before lcinit escalates to SIGKILL.
 const killGrace = 5 * time.Second
 
+// waitFileTimeout/waitFilePoll bound --wait-file: internal/agent/netns's
+// tunnel proxy touches this file once it's actually serving (see
+// proxy.go's Setup), so a task with tunnel_targets doesn't start running
+// before its one network exception exists yet - caught live: a task's
+// very first command could race Setup and see no route/no DNS at all for
+// a registered target, even though the tunnel came up correctly a moment
+// later. Bounded rather than unconditional: if Setup never signals
+// (proxy failed, or this flag is stale for some other reason), the child
+// still starts - failing to wait is a reachability problem for the task,
+// not a security one, since --network=none holds regardless.
+var (
+	waitFileTimeout = 10 * time.Second
+	waitFilePoll    = 50 * time.Millisecond
+)
+
 // run execs args[1:] (after any lcinit flags and a "--" separator) as a
 // child, forwards signals to it, and enforces --max-duration as a hard
 // deadline regardless of whether anything else (the agent, systemd) is
@@ -31,6 +46,7 @@ const killGrace = 5 * time.Second
 func run(args []string) (int, error) {
 	fs := flag.NewFlagSet("lcinit", flag.ContinueOnError)
 	maxDuration := fs.Duration("max-duration", 0, "hard wall-clock deadline for the child; 0 disables it")
+	waitFile := fs.String("wait-file", "", "if set, poll for this file's existence (up to waitFileTimeout) before starting the child")
 	if err := fs.Parse(args); err != nil {
 		return 1, err
 	}
@@ -47,6 +63,10 @@ func run(args []string) (int, error) {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, *maxDuration)
 		defer cancel()
+	}
+
+	if *waitFile != "" {
+		waitForFile(*waitFile, waitFileTimeout, waitFilePoll)
 	}
 
 	cmd := exec.Command(rest[0], rest[1:]...)
@@ -81,6 +101,23 @@ func run(args []string) (int, error) {
 			}
 			return 1, fmt.Errorf("waiting for %s: %w", rest[0], err)
 		}
+	}
+}
+
+// waitForFile polls for path's existence, returning as soon as it appears
+// or once timeout elapses, whichever comes first - never returns an error,
+// since a timed-out wait just means the child starts without its
+// readiness signal, not that lcinit itself failed.
+func waitForFile(path string, timeout, poll time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(poll)
 	}
 }
 

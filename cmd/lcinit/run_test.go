@@ -6,7 +6,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -44,6 +46,74 @@ func TestChildExitCodePassesThrough(t *testing.T) {
 	}
 	if code != 7 {
 		t.Fatalf("exit code = %d, want 7", code)
+	}
+}
+
+// TestWaitFileBlocksUntilPresent is the regression test for a real race
+// caught live: a task with tunnel_targets could run its very first
+// command before internal/agent/netns's proxy had finished wiring up the
+// container's one network exception, seeing no route/no DNS for a target
+// that came up correctly a moment later. --wait-file exists to close that
+// window; this proves the child genuinely doesn't start until the file
+// appears, not just that it eventually starts regardless.
+func TestWaitFileBlocksUntilPresent(t *testing.T) {
+	dir := t.TempDir()
+	readyFile := filepath.Join(dir, "ready")
+	outFile := filepath.Join(dir, "out")
+
+	doneCh := make(chan struct {
+		code int
+		err  error
+	}, 1)
+	go func() {
+		code, err := run([]string{"--wait-file=" + readyFile, "--", "sh", "-c", fmt.Sprintf("echo started > %s", outFile)})
+		doneCh <- struct {
+			code int
+			err  error
+		}{code, err}
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+	if _, err := os.Stat(outFile); err == nil {
+		t.Fatal("child started before the wait-file was ever created")
+	}
+
+	if err := os.WriteFile(readyFile, nil, 0o644); err != nil {
+		t.Fatalf("creating ready file: %v", err)
+	}
+
+	select {
+	case res := <-doneCh:
+		if res.err != nil {
+			t.Fatalf("run: %v", res.err)
+		}
+		if res.code != 0 {
+			t.Fatalf("exit code = %d, want 0", res.code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() never returned after the wait-file appeared")
+	}
+	if _, err := os.Stat(outFile); err != nil {
+		t.Fatalf("child never ran: %v", err)
+	}
+}
+
+// TestWaitFileTimesOutAndStartsAnyway proves the wait is bounded and
+// fails open: if the readiness signal never arrives (the proxy failed, or
+// nothing is watching this flag at all), the child still starts rather
+// than hanging forever - failing to wait is a reachability problem for
+// the task, not a reason to never run it.
+func TestWaitFileTimesOutAndStartsAnyway(t *testing.T) {
+	oldTimeout, oldPoll := waitFileTimeout, waitFilePoll
+	waitFileTimeout, waitFilePoll = 200*time.Millisecond, 20*time.Millisecond
+	defer func() { waitFileTimeout, waitFilePoll = oldTimeout, oldPoll }()
+
+	code, err := run([]string{"--wait-file=" + filepath.Join(t.TempDir(), "never-created"), "--", "sh", "-c", "exit 0"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (child must still run after the wait times out)", code)
 	}
 }
 

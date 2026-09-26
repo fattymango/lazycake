@@ -16,6 +16,15 @@ import (
 	"github.com/mkassab215/lazycake/internal/tunnel/quic"
 )
 
+// ReadyFilePath is where Setup signals a task's tunnel is actually up
+// (see Setup's final step): /dev/shm is a tmpfs the OCI runtime mounts
+// into every container by default regardless of the image's own
+// filesystem, so it's writable via Runtime.Exec from here and pollable by
+// lcinit's own --wait-file (cmd/lcinit/run.go) without needing a new bind
+// mount of its own. executor.go's wrapWithLcinit passes this same path to
+// lcinit whenever a dispatch has tunnel_targets.
+const ReadyFilePath = "/dev/shm/.lazycake-tunnel-ready"
+
 // SubcommandName is the hidden `agent` subcommand ServeSubcommand handles.
 // cmd/agent checks for this as its first argument before normal flag
 // parsing, since this process is always started by nsenter, never by a
@@ -184,6 +193,16 @@ func (p *Proxy) Setup(ctx context.Context) error {
 	serveCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
 	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, p.Log)
+
+	// Best-effort: lcinit polls for this file (--wait-file, wired up by
+	// executor.go's wrapWithLcinit) before starting the task's actual
+	// command, closing the race where a task ran before its tunnel
+	// existed. A failed touch here isn't fatal to Setup - the tunnel
+	// really is up regardless - it just means lcinit times out waiting
+	// instead of seeing the signal, same as before this existed.
+	if err := p.Runtime.Exec(ctx, p.ContainerID, []string{"touch", ReadyFilePath}); err != nil {
+		p.Log.Warn("signalling tunnel ready", "task_id", p.TaskID, "error", err)
+	}
 
 	go func() {
 		if err := cmd.Wait(); err != nil && ctx.Err() == nil {
