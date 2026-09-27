@@ -40,7 +40,7 @@ func (f *fakeMeterStore) RecordMeterStarted(ctx context.Context, taskID, nodeID 
 	if _, ok := f.meters[taskID]; ok {
 		return nil
 	}
-	f.meters[taskID] = store.TaskMeter{TaskID: taskID, NodeID: nodeID, StartedAt: at}
+	f.meters[taskID] = store.TaskMeter{TaskID: taskID, NodeID: &nodeID, StartedAt: at}
 	return nil
 }
 

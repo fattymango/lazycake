@@ -199,10 +199,12 @@ type GatewayService struct {
 }
 
 // TaskMeter is one task_meters row (task 4.2): duration_s/normalised_s are
-// nil until RecordMeterFinished runs.
+// nil until RecordMeterFinished runs. NodeID is nil once the node that ran
+// this task has since been deleted (migration 015 - the FK sets it NULL
+// rather than blocking the delete or losing the meter row).
 type TaskMeter struct {
 	TaskID      string
-	NodeID      string
+	NodeID      *string
 	StartedAt   time.Time
 	FinishedAt  *time.Time
 	DurationS   *float64
