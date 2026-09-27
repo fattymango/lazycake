@@ -74,21 +74,27 @@ func handleTaskConn(ctx context.Context, conn net.Conn, target Target, cfg Confi
 		log.Warn("sending service name", "task_id", cfg.TaskID, "hostname", target.Hostname, "error", err)
 		return
 	}
+	log.Info("sending task connection through gateway", "task_id", cfg.TaskID,
+		"gateway_id", target.GatewayID, "hostname", target.Hostname, "port", target.Port)
 
 	// Only container->gateway (egress) bytes count against the cap: this
 	// is the customer's own data leaving the host, which is what
 	// limits.egress_mb bounds (PLAN.md's task descriptor).
+	var bytesToGateway, bytesToTask int64
 	done := make(chan struct{}, 2)
 	go func() {
-		io.Copy(countingWriter{session, limiter}, conn)
+		bytesToGateway, _ = io.Copy(countingWriter{session, limiter}, conn)
 		stream.Close()
 		done <- struct{}{}
 	}()
 	go func() {
-		io.Copy(conn, session)
+		bytesToTask, _ = io.Copy(conn, session)
 		conn.Close()
 		done <- struct{}{}
 	}()
 	<-done
 	<-done
+	log.Info("task connection through gateway closed", "task_id", cfg.TaskID,
+		"gateway_id", target.GatewayID, "hostname", target.Hostname,
+		"bytes_to_gateway", bytesToGateway, "bytes_to_task", bytesToTask)
 }
