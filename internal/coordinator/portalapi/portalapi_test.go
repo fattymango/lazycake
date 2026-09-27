@@ -476,7 +476,12 @@ func TestDeleteNodeRemovesIt(t *testing.T) {
 // that has actually run tasks can still be deleted (the FK used to be
 // RESTRICT, which would fail this with a constraint violation), and the
 // task's own row survives with node_id cleared rather than being deleted
-// itself - task history outlives the node that produced it.
+// itself - task history outlives the node that produced it. Also covers
+// migrations/015_task_meters_node_id_delete_set_null.sql: task_meters had
+// the exact same RESTRICT problem, just missed the first time around
+// (this test only created a tasks row, never a task_meters one) - caught
+// live deleting a real node with real task history, which does always
+// have a meter row.
 func TestDeleteNodeDoesNotBreakOnTaskHistory(t *testing.T) {
 	c, st, _ := newTestServer(t)
 	signed := signUpProvider(t, c, "yara")
@@ -491,6 +496,8 @@ func TestDeleteNodeDoesNotBreakOnTaskHistory(t *testing.T) {
 	nodeID := "nod_worked"
 	require.NoError(t, st.TransitionTask(context.Background(), "tsk_ran_here",
 		[]store.TaskState{store.TaskQueued}, store.TaskSucceeded, store.TaskUpdate{NodeID: &nodeID}))
+	require.NoError(t, st.RecordMeterStarted(context.Background(), "tsk_ran_here", nodeID, time.Now()))
+	require.NoError(t, st.RecordMeterFinished(context.Background(), "tsk_ran_here", time.Now(), 12.5, 12.5))
 
 	resp := c.do(http.MethodDelete, "/api/portal/provider/nodes/nod_worked", nil)
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -498,6 +505,11 @@ func TestDeleteNodeDoesNotBreakOnTaskHistory(t *testing.T) {
 	task, err := st.GetTask(context.Background(), "tsk_ran_here")
 	require.NoError(t, err)
 	require.Nil(t, task.NodeID, "task's node_id should be cleared, not the task deleted or the delete blocked")
+
+	meter, err := st.GetMeter(context.Background(), "tsk_ran_here")
+	require.NoError(t, err)
+	require.Nil(t, meter.NodeID, "meter's node_id should be cleared, not the meter row deleted or the delete blocked")
+	require.NotNil(t, meter.NormalisedS, "the actual billing data must survive the node's deletion")
 }
 
 func TestProviderInstallTokenAuthenticatesAsAgent(t *testing.T) {
