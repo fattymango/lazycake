@@ -3,6 +3,7 @@ package portalapi
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -182,6 +183,13 @@ func (s *Server) getOwnTask(ctx context.Context, accountID, taskID string) (stor
 // "same polling shape StreamLogs already uses server-side"
 // (api.CustomerServer.StreamLogs): poll ListLogs on an interval, stop once
 // the task is terminal and there's nothing left to send.
+//
+// Every frame carries id:<seq> and a reconnect's Last-Event-ID header is
+// honoured, so a client that drops and resumes never sees a line twice.
+// When the task is finished and drained the stream ends with an explicit
+// "end" event: without it the browser's EventSource reads the close as a
+// dropped connection, reconnects, and the whole log replays from the start
+// - forever, for a failed task.
 func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromContext(r.Context())
 	taskID := r.PathValue("id")
@@ -203,13 +211,18 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var sinceSeq int64
+	if last := r.Header.Get("Last-Event-ID"); last != "" {
+		if n, err := strconv.ParseInt(last, 10, 64); err == nil && n > 0 {
+			sinceSeq = n
+		}
+	}
 	for {
 		lines, err := s.Store.ListLogs(ctx, taskID, sinceSeq)
 		if err != nil {
 			return
 		}
 		for _, l := range lines {
-			writeSSEJSON(w, logLineView{Seq: l.Seq, Stream: l.Stream, AtMS: l.At.UnixMilli(), Line: l.Line})
+			writeSSEJSONWithID(w, l.Seq, logLineView{Seq: l.Seq, Stream: l.Stream, AtMS: l.At.UnixMilli(), Line: l.Line})
 			sinceSeq = l.Seq
 		}
 		flusher.Flush()
@@ -219,6 +232,8 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if isTerminal(task.State) && len(lines) == 0 {
+			writeSSEEnd(w)
+			flusher.Flush()
 			return
 		}
 
