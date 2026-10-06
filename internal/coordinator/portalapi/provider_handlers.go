@@ -258,12 +258,21 @@ const (
 // case for "lend spare capacity from a machine you personally use,"
 // this product's actual target - a rootful engine is the one that now
 // gets the fallback comment.
+// agentImage is the public image the install command pulls. A bare
+// "lazycake-agent" resolves against docker.io/library and is denied, so the
+// full name is spelled out.
+const agentImage = "docker.io/fattymango/lazycake-agent:latest"
+
+// lcinitHostDir is expanded by the shell that runs the install command, so
+// it resolves to the provider's own home directory.
+const lcinitHostDir = "$HOME/.local/share/lazycake/bin"
+
 func (s *Server) installCommand(token string) string {
 	coordinatorAddr := s.CoordinatorAddr
 	if coordinatorAddr == "" {
 		coordinatorAddr = "COORDINATOR_HOST:7443"
 	}
-	return "podman run -d --replace --name lazycake-agent" +
+	return "mkdir -p " + lcinitHostDir + " && podman run -d --replace --name lazycake-agent" +
 		// --pid=host + --cap-add=SYS_ADMIN: this agent runs as a sibling
 		// container talking to the host's own podman engine (the -v
 		// socket mount below), the same as every task container it will
@@ -281,9 +290,16 @@ func (s *Server) installCommand(token string) string {
 		" -e LAZYCAKE_OFFER_CORES=" + defaultOfferCores +
 		" -e LAZYCAKE_OFFER_MEMORY_MB=" + defaultOfferMemoryMB +
 		" -e LAZYCAKE_OFFER_DISK_MB=" + defaultOfferDiskMB +
+		// The agent copies its bundled lcinit into this directory and
+		// mounts that copy into tasks. The same path is mounted on both
+		// sides because the engine resolves bind sources on the host,
+		// where a path inside the agent's own image doesn't exist - that
+		// mismatch made every task fail with "mkdir /usr/local/bin/lcinit:
+		// permission denied".
+		" -v " + lcinitHostDir + ":" + lcinitHostDir + " -e LAZYCAKE_LCINIT_HOST_DIR=" + lcinitHostDir +
 		` -v /run/user/$(id -u)/podman/podman.sock:/run/lazycake-engine/podman/podman.sock` +
 		" -e XDG_RUNTIME_DIR=/run/lazycake-engine -e CONTAINER_HOST=unix:///run/lazycake-engine/podman/podman.sock" +
-		" lazycake-agent" +
+		" " + agentImage +
 		" # rootful podman instead? use /run/podman/podman.sock in the -v flag above"
 }
 

@@ -120,6 +120,12 @@ func run() error {
 	}
 
 	lcinitPath := cfg.LcinitPath
+	if lcinitPath == "" && cfg.LcinitHostDir != "" {
+		var err error
+		if lcinitPath, err = stageLcinit(cfg.LcinitHostDir); err != nil {
+			return fmt.Errorf("staging lcinit into LAZYCAKE_LCINIT_HOST_DIR: %w", err)
+		}
+	}
 	if lcinitPath == "" {
 		lcinitPath = discoverLcinit(log)
 	}
@@ -238,6 +244,31 @@ func discoverLcinit(log *slog.Logger) string {
 		return ""
 	}
 	return candidate
+}
+
+// stageLcinit copies the lcinit bundled next to the agent's own executable
+// into dir (a directory visible at the same path to both this process and
+// the host's container engine) and returns the copy's path. It always
+// overwrites, via a rename, so an upgraded agent image never leaves a stale
+// lcinit behind and a task starting mid-copy never sees a partial file.
+func stageLcinit(dir string) (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("determining own executable path: %w", err)
+	}
+	src, err := os.ReadFile(filepath.Join(filepath.Dir(self), "lcinit"))
+	if err != nil {
+		return "", fmt.Errorf("reading bundled lcinit: %w", err)
+	}
+	dst := filepath.Join(dir, "lcinit")
+	tmp := dst + ".tmp"
+	if err := os.WriteFile(tmp, src, 0o755); err != nil {
+		return "", fmt.Errorf("writing %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return "", fmt.Errorf("installing %s: %w", dst, err)
+	}
+	return dst, nil
 }
 
 // readBootID returns the kernel's boot ID (used to label containers so the

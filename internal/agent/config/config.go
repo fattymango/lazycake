@@ -33,6 +33,13 @@ type Config struct {
 	// wrapper - if unset, the caller (cmd/agent) looks for a "lcinit"
 	// binary next to the agent's own executable before giving up on it.
 	LcinitPath string
+	// LcinitHostDir is for an agent that itself runs in a container talking
+	// to the host's engine: a directory bind-mounted at the *same path* on
+	// the host and inside the agent's container. The agent copies its
+	// bundled lcinit into it and uses that copy as LcinitPath, because the
+	// engine resolves bind-mount sources on the host, where a path inside
+	// the agent's own image doesn't exist. Ignored if LcinitPath is set.
+	LcinitHostDir string
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 }
@@ -49,6 +56,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Token:           getenv("LAZYCAKE_TOKEN"),
 		DataDir:         orDefault(getenv("LAZYCAKE_DATA_DIR"), "/var/lib/lazycake-agent"),
 		LcinitPath:      getenv("LAZYCAKE_LCINIT_PATH"),
+		LcinitHostDir:   getenv("LAZYCAKE_LCINIT_HOST_DIR"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
 	}
 
@@ -133,6 +141,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Int("offer_disk_mb", c.OfferDiskMB),
 		slog.String("data_dir", c.DataDir),
 		slog.String("lcinit_path", c.LcinitPath),
+		slog.String("lcinit_host_dir", c.LcinitHostDir),
 		slog.Bool("dev", c.Dev),
 	)
 }
