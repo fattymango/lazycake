@@ -209,3 +209,43 @@ counts and already flags large three-way disagreement, so show the gateway's (cu
 **Verify:** per-gateway attribution when one task uses three gateways (no leakage between them); a long-lived connection shows
 steady growth, not one spike; coordinator restart loses nothing already stored; retention pruning; migration up/down; the chart and
 per-task numbers against a task whose traffic is known exactly (e.g. fetch a file of a known size).
+
+### Task 8.15 — Machine usage: CPU, memory, disk and network over time, with per-task breakdown
+
+**Status: backlog, not started.** Suggested 2026-10-07 (the per-task hover added the same day). Order of the queued work: 8.12, 8.13,
+8.14, 8.15. 8.14 and 8.15 share their groundwork (time-bucketed tables, a rollup and pruning job, the chart components): build that once.
+
+**What to measure.**
+- *Tasks' usage*: CPU, memory, disk used by what LazyCake runs, read from the task containers' cgroups. This is the number a provider cares about
+  ("how much of my offered 8 cores is in use?").
+- *Host headroom*: the machine's total CPU/memory, so the provider can see whether their own work squeezes tasks out. **Totals only**, nothing about the
+  provider's processes.
+- *Network*: tasks have no network except the tunnel, so the meaningful number is tunnel bytes in/out per task. Skip host-wide interface counters (they mostly
+  measure the provider's own traffic).
+- *Disk*: space used by the agent's data directory (image cache, task scratch) against what was offered.
+
+**Transport.** Ride the existing 15s heartbeat: additive fields on `Heartbeat` in `agent.proto`: machine totals plus **one entry per running task** (capped,
+e.g. 32). No new connection. Old agents keep working and the machine page says "update the agent to see usage".
+
+**Storage: Postgres, not InfluxDB** (same reasoning as 8.14: ~450 MB droplet, "Postgres only" design, tiny volume: ~6,000 rows/machine/day, ~0.6 MB).
+- Raw samples 48h; 5-minute rollups 30 days; hourly rollups 1 year (a pruning/rollup job).
+- Per-task usage in 5-minute buckets (a one-hour task is ~12 rows), plus **one permanent summary row per task** (total core-seconds, peak memory, total
+  tunnel bytes) so per-task numbers survive after the detailed samples are pruned.
+- Revisit TimescaleDB (still Postgres) at roughly a thousand machines or when long-retention analytics are wanted.
+
+**UI.**
+- Machine page: 24h / 7d charts for CPU, memory, disk and tunnel traffic; gaps where the machine was offline; live gauges ("1.4 of 2 offered cores in use");
+  a small sparkline on each machine card.
+- **Hover on the chart**: a stacked chart, one color per task (the biggest few plus an "others" band), and a tooltip that shows who was using what at that moment:
+  `14:32 · 1.4 of 2 cores — tsk_01M4…8939 0.9, tsk_01M4…D4AB 0.5`.
+- **Hover on a row in the machine's tasks table**: that task's totals (core-seconds, peak memory, disk, tunnel bytes).
+
+**Cautions.**
+- **Display only.** The agent reports these and the host controls the agent, so a dishonest host could fake them. They must never feed billing or the trust
+  score (consistent with the threat model in the README).
+- Providers already see task IDs and images on their machine page, so per-task consumption adds no new exposure (how much a task used, not what it does).
+- Follow-up that reuses this pipeline: a customer-facing per-task chart of actual usage against the limits (pairs well with the benchmark workload).
+
+**Verify:** a known workload (the benchmark task at 0.5 cores / 128 MB) shows ~0.5 cores and a memory curve that levels off; per-task attribution with
+two tasks on one machine (no leakage); an offline gap renders as a gap, not zeros; rollups match the raw averages; pruning keeps the per-task summary;
+an old agent shows the "update" message; heartbeat size with the cap hit; migration up/down.
