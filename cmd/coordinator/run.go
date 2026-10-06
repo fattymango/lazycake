@@ -203,7 +203,7 @@ func run() error {
 
 	dash := &dashboard.Server{Store: st, Bus: bus, Trust: sched.Trust, Log: log}
 	portal := &portalapi.Server{
-		Store: st, Customer: customerServer, Registry: registry, Bus: bus, Log: log,
+		Store: st, Customer: customerServer, Registry: registry, Bus: bus, Prober: tunnelRelay, Log: log,
 		Dev: cfg.Dev, CoordinatorAddr: cfg.PublicGRPCAddr,
 	}
 	httpMux := http.NewServeMux()

@@ -164,8 +164,8 @@ the ledger and balance afterwards. Add the e2e check to `web/e2e/behaviour.mjs`.
 
 ### Task 8.13 — Gateway "Test connection" (with a legend)
 
-**Status: backlog, not started.** Suggested 2026-10-07. Order of the queued work: 8.12 (stop a task), then 8.13, then
-8.14. 8.13 and 8.14 both change the gateway binary, so they should ship in one gateway release.
+**Status: DONE 2026-10-07** (see "As built" below). Suggested 2026-10-07. 8.13 and 8.14 both change the gateway binary, so 8.14 should ship
+in the same gateway release if it follows soon.
 
 **Why.** Misconfigured gateways are the likeliest first-run failure and today the only symptom is a task dying with
 "bad address" or a reset. A gateway has two independent layers that fail separately: the gateway program (connected to our
@@ -195,7 +195,31 @@ that only checked the first would show green exactly when a service is dead, so 
 5. **Legend:** a "?" icon beside the button opening a popover explaining the four states and what to do for each; colors come from
    the existing status registry (`ui/status.ts`).
 
-**Verify:** all-green; a service port with nothing listening (yellow); gateway stopped (red); an old gateway (grey, and
+**As built (differences from the sketch, and why):**
+- **Probe protocol.** The relay opens a stream to the gateway whose "task id" is `probe:<service>` (`quic.ProbePrefix`); the gateway dials the named
+  service locally (2s timeout) and answers a plaintext `{ok, error, ms}` before any Noise session. The relay **refuses the marker on a stream an
+  agent opens** (stream error code 5), so only the coordinator can probe. The test for that guard failed to fail when the guard was removed
+  (it checked the error but `Read` returns bytes and an error together); it now demands zero bytes and the explicit refusal code, and was
+  re-checked by mutation.
+- **Old gateways are told apart without ambiguity**: the coordinator waits 4s per service for a reply, longer than the gateway's own 2s dial
+  timeout, so "no reply" can only mean the gateway doesn't speak the probe, never "the dial was slow". That is the grey state, and the
+  response never reads green unless every service answered (`gatewayTestStatus`, a table-tested pure function).
+- **It checks what is registered, not just what the gateway thinks**: the coordinator asks about each service in the portal's record, so a service
+  listed in the portal but missing from the gateway's own `LAZYCAKE_SERVICES` is reported ("this gateway doesn't publish a service with that name").
+- Endpoint `POST /api/portal/customer/gateways/{id}/test` -> `{status, connected, rtt_ms, verified, services[{name,port,ok,error,ms,answered}], tested_at_ms}`;
+  6s overall timeout; 404 for someone else's gateway; 503 if the server has no prober. No server-side rate limit (decided).
+- UI: a per-card "Test connection" button (disabled while running and for 10s after, frontend-only, with a countdown), the coloured headline, a row per
+  service with a plain-language reason, "tested Xs ago", and a "?" legend popover whose wording shares one source (`gatewayTestStatuses`) with the result.
+- **Requires a gateway update** for the per-service check. Gateways built before this show grey until updated.
+
+**Verified:** Go tests over real QUIC and real TCP (all services up; one service refusing and one unpublished, reported separately; gateway not
+connected; a gateway that disconnects mid-way reads as gone at once; an old gateway that never replies reads unverified; an agent can't probe), HTTP
+tests of all four states plus ownership and the missing-prober case; and the real UI against real gateway processes: a new gateway with a live and a
+dead service (yellow, "connection refused: nothing is listening on that port on the gateway's machine"), a new gateway with a live service (green),
+the old v0.2.0 gateway (grey), three offline gateways (red); cooldown on every button; legend. `e2e/behaviour.mjs` covers the parts that need no
+live gateway.
+
+**Original verification list:** all-green; a service port with nothing listening (yellow); gateway stopped (red); an old gateway (grey, and
 no green ever); two services where one fails; timeout path; an agent sending a probe header is rejected; the throttle (button
 disabled during and after a run). Redeploy both of the owner's gateways (VM and server) and test against the real ones.
 

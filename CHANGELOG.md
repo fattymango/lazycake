@@ -9,6 +9,9 @@ coordinator logs it at startup.
 - **Stop a task** (task 8.12): a "Stop task" button on the task page, `lcctl cancel <id>`, `POST /api/portal/customer/tasks/{id}/cancel` and the
   `CancelTask` RPC. A queued task is cancelled at once and costs nothing; a running one is stopped on its node and you are charged only for the time
   it ran. Shown as "Stopping" until the node confirms, then "Stopped by you". Needs migration 016.
+- **Gateway "Test connection"** (task 8.13): checks that a gateway is connected and that each service it publishes actually answers on the gateway's own machine.
+  Green (all reachable), yellow (connected but a service isn't), red (not connected), grey (connected, but the gateway is too old to verify services, so update it),
+  with a legend and per-service reasons. The per-service check needs the new gateway build. Throttled in the UI only.
 
 ## v0.2.0 — 2026-10-07
 

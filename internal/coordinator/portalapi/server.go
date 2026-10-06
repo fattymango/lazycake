@@ -29,7 +29,11 @@ type Server struct {
 	// exercise it.
 	Registry *api.Registry
 	Bus      *events.Bus
-	Log      *slog.Logger
+	// Prober checks a gateway's connectivity for the gateway "Test connection"
+	// button (the tunnel relay in production). Optional: without it the test
+	// endpoint answers 503.
+	Prober GatewayProber
+	Log    *slog.Logger
 	// Dev mirrors config.Config.Dev: the session cookie is Secure unless
 	// this is true (PLAN.md §2 - local/demo compose serves plain HTTP).
 	Dev bool
@@ -76,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/portal/customer/tasks/{id}/cancel", s.requireSession(store.RoleCustomer, s.handleCancelTask))
 	mux.HandleFunc("GET /api/portal/customer/tasks/{id}/logs", s.requireSession(store.RoleCustomer, s.handleTaskLogs))
 	mux.HandleFunc("GET /api/portal/customer/gateways", s.requireSession(store.RoleCustomer, s.handleListGateways))
+	mux.HandleFunc("POST /api/portal/customer/gateways/{id}/test", s.requireSession(store.RoleCustomer, s.handleTestGateway))
 	mux.HandleFunc("POST /api/portal/customer/gateways", s.requireSession(store.RoleCustomer, s.handleCreateGateway))
 	mux.HandleFunc("GET /api/portal/customer/ledger", s.requireSession(store.RoleCustomer, s.handleCustomerLedger))
 	mux.HandleFunc("POST /api/portal/customer/balance/add", s.requireSession(store.RoleCustomer, s.handleAddBalance))

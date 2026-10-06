@@ -79,3 +79,8 @@ verified.
   28 Go packages green with `-race`, including a real-container end-to-end test; 31/31 browser checks (9 new) and 37 unit tests. Found while
   testing: the e2e harness never wired the agent's cancel handler (production does), so it was added there; restarting a coordinator that
   has an agent connected takes up to 10s to release its port (the bounded graceful stop), which bit a local restart.
+
+- Task 8.13 (gateway "Test connection") done, 2026-10-07: see "As built" in `IMPLEMENTATION.md`. Probe protocol in `internal/tunnel/quic/probe.go` and the gateway listener,
+  `POST .../gateways/{id}/test`, the four-state result with a legend. Verified over real QUIC/TCP, over HTTP, and in a real browser against real gateway processes
+  in all four states (36/36 browser checks). A self-inflicted slip caught on the way: a security test that couldn't fail (see the 8.13 notes). Needs a gateway
+  update to get the per-service check; older gateways show grey.
