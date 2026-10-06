@@ -1,39 +1,69 @@
+import defaultTheme from "tailwindcss/defaultTheme";
+
+// Every color is a CSS variable from src/ui/tokens.css, written as an RGB
+// triplet so opacity modifiers work (bg-accent/10). Nothing in this file or in
+// any component should contain a raw hex value.
+const color = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        // Same semantic palette as internal/coordinator/dashboard/index.html
-        // (PLAN.md §6 names this file as the source of truth to reuse from),
-        // extended with a couple of surface tokens the single ops page
-        // never needed: a raised/hover surface distinct from the base panel,
-        // and a slightly dimmer border for nested dividers.
-        bg: "#0a0e13",
-        panel: "#121826",
-        panel2: "#1a2233",
-        border: "#232c3d",
-        borderSoft: "#1a2230",
-        text: "#e6edf3",
-        muted: "#8b98a9",
-        accent: "#4fd1c5",
-        good: "#3fb950",
-        warn: "#d29922",
-        bad: "#f85149",
-        queued: "#8b98a9",
-        running: "#4fd1c5",
-        dispatched: "#58a6ff",
+        bg: color("bg"),
+        surface: color("surface"),
+        raised: color("raised"),
+        overlay: color("overlay"),
+        border: color("border"),
+        "border-strong": color("border-strong"),
+        fg: color("fg"),
+        muted: color("muted"),
+        subtle: color("subtle"),
+        accent: { DEFAULT: color("accent"), fg: color("accent-fg") },
+        success: color("success"),
+        warning: color("warning"),
+        danger: color("danger"),
+        info: color("info"),
+        term: {
+          bg: color("term-bg"),
+          fg: color("term-fg"),
+          muted: color("term-muted"),
+          err: color("term-err"),
+          border: color("term-border"),
+        },
       },
       fontFamily: {
-        sans: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: ['"Inter Variable"', ...defaultTheme.fontFamily.sans],
+        mono: ['"JetBrains Mono Variable"', ...defaultTheme.fontFamily.mono],
       },
-      boxShadow: {
-        panel: "0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.02)",
-        popover: "0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)",
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.01em" }],
       },
       borderRadius: {
-        xl2: "0.875rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        "2xl": "1rem",
+      },
+      boxShadow: {
+        card: "0 1px 2px rgb(var(--shadow) / calc(var(--shadow-strength) * 0.5)), 0 0 0 1px rgb(var(--border) / 0.0)",
+        pop: "0 12px 32px -8px rgb(var(--shadow) / var(--shadow-strength)), 0 2px 6px rgb(var(--shadow) / calc(var(--shadow-strength) * 0.4))",
+        glow: "0 0 0 4px rgb(var(--accent) / 0.18)",
+      },
+      keyframes: {
+        "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
+        "slide-up": { from: { opacity: "0", transform: "translateY(6px)" }, to: { opacity: "1", transform: "translateY(0)" } },
+        "pop-in": { from: { opacity: "0", transform: "scale(0.97)" }, to: { opacity: "1", transform: "scale(1)" } },
+        shimmer: { "100%": { transform: "translateX(100%)" } },
+        "ping-soft": { "75%, 100%": { transform: "scale(2.2)", opacity: "0" } },
+      },
+      animation: {
+        "fade-in": "fade-in 150ms ease-out",
+        "slide-up": "slide-up 200ms ease-out",
+        "pop-in": "pop-in 150ms ease-out",
+        shimmer: "shimmer 1.6s infinite",
+        "ping-soft": "ping-soft 1.8s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
     },
   },

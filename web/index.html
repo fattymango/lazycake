@@ -1,12 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
   <title>LazyCake</title>
-  <link rel="stylesheet" href="/src/shared/styles.css" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script>
+    // Apply the saved/OS theme before first paint so there is no flash of the
+    // wrong theme. Must stay in step with src/lib/theme.tsx (same storage key).
+    (function () {
+      try {
+        var pref = localStorage.getItem("lc-theme") || "system";
+        var dark = pref === "dark" || (pref === "system" && !window.matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      } catch (e) {}
+    })();
+  </script>
 </head>
-<body class="bg-bg text-text font-sans min-h-screen">
+<body>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

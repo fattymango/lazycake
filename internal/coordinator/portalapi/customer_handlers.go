@@ -60,11 +60,16 @@ type taskView struct {
 	Cores        float64           `json:"cores"`
 	MemoryMB     int               `json:"memory_mb"`
 	DiskMB       int               `json:"disk_mb,omitempty"`
-	ExitCode     *int              `json:"exit_code,omitempty"`
-	ExitReason   string            `json:"exit_reason,omitempty"`
-	CreatedAtMS  int64             `json:"created_at_ms"`
-	StartedAtMS  int64             `json:"started_at_ms,omitempty"`
-	FinishedAtMS int64             `json:"finished_at_ms,omitempty"`
+	WallTimeoutS int               `json:"wall_timeout_s,omitempty"`
+	// TunnelTargets are the gateways this task is allowed to reach.
+	TunnelTargets []store.TunnelTarget `json:"tunnel_targets,omitempty"`
+	// Attempt is how many times the task has been (re)started; 0 on the first run.
+	Attempt      int    `json:"attempt,omitempty"`
+	ExitCode     *int   `json:"exit_code,omitempty"`
+	ExitReason   string `json:"exit_reason,omitempty"`
+	CreatedAtMS  int64  `json:"created_at_ms"`
+	StartedAtMS  int64  `json:"started_at_ms,omitempty"`
+	FinishedAtMS int64  `json:"finished_at_ms,omitempty"`
 }
 
 func toTaskView(t store.Task) taskView {
@@ -72,6 +77,7 @@ func toTaskView(t store.Task) taskView {
 		ID: t.ID, State: string(t.State), Image: t.Image,
 		Entrypoint: t.Entrypoint, Args: t.Args, Env: t.Env,
 		Cores: t.Limits.CPUCores, MemoryMB: t.Limits.MemoryMB, DiskMB: t.Limits.DiskMB,
+		WallTimeoutS: t.Limits.WallTimeoutS, TunnelTargets: t.TunnelTargets, Attempt: t.Attempt,
 		ExitCode: t.ExitCode, CreatedAtMS: t.CreatedAt.UnixMilli(),
 	}
 	if t.NodeID != nil {
