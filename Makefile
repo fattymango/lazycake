@@ -1,17 +1,20 @@
 MODULE := github.com/mkassab215/lazycake
 BIN    := bin
 GO     ?= go
+# The release version stamped into every binary: the nearest tag, plus commits since and a dirty marker.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION)
 
 .PHONY: build test lint migrate migrate-down proto clean web-check web-embed
 
 build:
 	mkdir -p $(BIN)
-	$(GO) build -o $(BIN)/coordinator ./cmd/coordinator
-	$(GO) build -o $(BIN)/agent ./cmd/agent
-	$(GO) build -o $(BIN)/gateway ./cmd/gateway
-	$(GO) build -o $(BIN)/lcctl ./cmd/lcctl
-	$(GO) build -o $(BIN)/lcinit ./cmd/lcinit
-	$(GO) build -o $(BIN)/refworkload ./cmd/refworkload
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/coordinator ./cmd/coordinator
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/agent ./cmd/agent
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/gateway ./cmd/gateway
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/lcctl ./cmd/lcctl
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/lcinit ./cmd/lcinit
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/refworkload ./cmd/refworkload
 
 test:
 	$(GO) test -race ./...
@@ -44,4 +47,4 @@ web-check:
 web-embed:
 	cd web && npx vite build --outDir ../internal/coordinator/webassets/dist --emptyOutDir
 	git checkout -- internal/coordinator/webassets/dist/.gitkeep
-	$(GO) build -o $(BIN)/coordinator ./cmd/coordinator
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN)/coordinator ./cmd/coordinator

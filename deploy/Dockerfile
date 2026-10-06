@@ -14,18 +14,20 @@ COPY web/ ./
 RUN npm run build
 
 FROM golang:1.26-alpine AS build
+# Stamped into every binary (`<binary> --version`, and the coordinator logs it at startup).
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web-build /web/dist/. internal/coordinator/webassets/dist/
-RUN go build -o /out/coordinator ./cmd/coordinator \
- && go build -o /out/agent ./cmd/agent \
- && go build -o /out/gateway ./cmd/gateway \
- && go build -o /out/lcctl ./cmd/lcctl \
- && CGO_ENABLED=0 go build -o /out/lcinit ./cmd/lcinit \
- && CGO_ENABLED=0 go build -o /out/refworkload ./cmd/refworkload \
- && CGO_ENABLED=0 go build -o /out/lcbench ./cmd/lcbench
+RUN go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/coordinator ./cmd/coordinator \
+ && go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/agent ./cmd/agent \
+ && go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/gateway ./cmd/gateway \
+ && go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/lcctl ./cmd/lcctl \
+ && CGO_ENABLED=0 go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/lcinit ./cmd/lcinit \
+ && CGO_ENABLED=0 go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/refworkload ./cmd/refworkload \
+ && CGO_ENABLED=0 go build -ldflags "-X github.com/mkassab215/lazycake/internal/version.Version=${VERSION}" -o /out/lcbench ./cmd/lcbench
 
 FROM alpine:3.20 AS coordinator
 RUN apk add --no-cache ca-certificates
