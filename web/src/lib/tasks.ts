@@ -8,11 +8,15 @@ export function taskDurationMs(t: Task, now = Date.now()): number | undefined {
   return end === undefined ? undefined : Math.max(0, end - t.started_at_ms);
 }
 
-/** What a task has been charged so far, summed per task from the ledger. */
+/**
+ * What a task has been charged, summed per task from the ledger, as a positive
+ * amount. The ledger stores charges as negative amounts (credits positive), so
+ * the sign is dropped here: callers show it as a cost.
+ */
 export function costByTask(entries: LedgerEntry[] | undefined): Map<string, number> {
   const m = new Map<string, number>();
   for (const e of entries ?? []) {
-    if (e.kind === "charge") m.set(e.task_id, (m.get(e.task_id) ?? 0) + e.amount_micros);
+    if (e.kind === "charge") m.set(e.task_id, (m.get(e.task_id) ?? 0) + Math.abs(e.amount_micros));
   }
   return m;
 }

@@ -2,7 +2,10 @@ import type { LedgerEntry } from "./types";
 import type { Bar } from "@/ui/BarChart";
 import { money } from "./format";
 
-/** Ledger totals of one kind per local calendar day for the last `days` days, oldest first. */
+/**
+ * Ledger totals of one kind per local calendar day for the last `days` days, oldest first,
+ * as positive amounts (the ledger stores charges as negative numbers).
+ */
 export function dailyTotals(
   entries: LedgerEntry[] | undefined,
   days: number,
@@ -14,7 +17,7 @@ export function dailyTotals(
   for (const e of entries ?? []) {
     if (e.kind !== kind || e.created_at_ms < start) continue;
     const idx = Math.floor((e.created_at_ms - start) / 86_400_000);
-    if (idx >= 0 && idx < days) buckets[idx] += e.amount_micros;
+    if (idx >= 0 && idx < days) buckets[idx] += Math.abs(e.amount_micros);
   }
   const bars = buckets.map((value, i) => {
     const d = new Date(start + i * 86_400_000);
