@@ -33,9 +33,9 @@ type Identity struct {
 // Handlers are called as messages arrive from the coordinator. Any of them
 // may be nil, in which case the message is ignored.
 type Handlers struct {
-	OnRegistered   func(ack *lazycakev1.RegisterAck)
-	OnDispatch     func(ctx context.Context, d *lazycakev1.Dispatch)
-	OnCancel       func(ctx context.Context, c *lazycakev1.Cancel)
+	OnRegistered func(ack *lazycakev1.RegisterAck)
+	OnDispatch   func(ctx context.Context, d *lazycakev1.Dispatch)
+	OnCancel     func(ctx context.Context, c *lazycakev1.Cancel)
 	// OnShutdown, if set, is called on receipt of a Shutdown message - the
 	// caller's job is to trigger the same graceful-shutdown path an OS
 	// SIGTERM would (see cmd/agent/run.go), not to do anything special
@@ -125,7 +125,9 @@ func (r *Runner) clockNow() time.Time {
 // retry onto - the caller's own state (task status in the store-of-record)
 // is what reconnection re-announces.
 func (r *Runner) Send(msg *lazycakev1.AgentMessage) {
+	r.mu.Lock()
 	ch := r.sendCh
+	r.mu.Unlock()
 	if ch == nil {
 		return
 	}
@@ -217,8 +219,14 @@ func (r *Runner) runOnce(ctx context.Context) error {
 	// backlog to roughly the 4MB task 1.9 asks for when the coordinator is
 	// slow or unreachable; Send drops rather than blocking once this fills.
 	sendCh := make(chan *lazycakev1.AgentMessage, 64)
+	r.mu.Lock()
 	r.sendCh = sendCh
-	defer func() { r.sendCh = nil }()
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.sendCh = nil
+		r.mu.Unlock()
+	}()
 
 	heartbeatEvery := time.Duration(ack.GetHeartbeatS()) * time.Second
 	if heartbeatEvery <= 0 {
