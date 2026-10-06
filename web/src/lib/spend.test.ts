@@ -3,11 +3,12 @@ import { dailySpend } from "./spend";
 import type { LedgerEntry } from "./types";
 
 const day = 86_400_000;
+// The ledger stores charges as negative amounts and credits as positive (store.LedgerEntry).
 const entry = (id: string, at: number, micros: number, kind: LedgerEntry["kind"] = "charge"): LedgerEntry => ({
   id,
   task_id: "tsk_" + id,
   kind,
-  amount_micros: micros,
+  amount_micros: kind === "charge" ? -micros : micros,
   created_at_ms: at,
 });
 
@@ -29,6 +30,12 @@ describe("dailySpend", () => {
   it("ignores credits and anything older than the window", () => {
     const { total } = dailySpend([entry("a", startOfToday, 5000, "credit"), entry("b", startOfToday - 10 * day, 9000)], 7, now);
     expect(total).toBe(0);
+  });
+  it("reports spend as a positive amount even though charges are stored negative", () => {
+    const { bars, total } = dailySpend([entry("a", startOfToday + 1000, 4200)], 7, now);
+    expect(total).toBe(4200);
+    expect(bars[6].value).toBe(4200);
+    expect(bars[6].detail).toContain("$0.0042");
   });
   it("copes with no data", () => {
     expect(dailySpend(undefined, 7, now).total).toBe(0);

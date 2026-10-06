@@ -106,12 +106,12 @@ for i in range(16):
          random.choice([0.25, 0.5, 1, 2]), random.choice([128, 256, 512, 1024]),
          random.randint(30, 2600), dur_s=random.randint(8, 240), node=random.choice(NODE_IDS[:3]), exit_code=0, reason="exited")
 
-# --- money: charges on alice, credits for bob --------------------------------
+# --- money: charges on alice (stored NEGATIVE, as the real ledger does), credits for bob (positive) --------------------------------
 w("INSERT INTO task_meters (task_id, node_id, started_at, finished_at, duration_s, normalised_s) "
   "SELECT id, node_id, started_at, finished_at, EXTRACT(EPOCH FROM finished_at-started_at), EXTRACT(EPOCH FROM finished_at-started_at) FROM tasks "
   "WHERE state IN ('succeeded','failed','fenced') AND node_id IS NOT NULL AND started_at IS NOT NULL AND finished_at IS NOT NULL;")
 w(f"INSERT INTO ledger_entries (id, task_id, account_id, kind, amount_micros, created_at) "
-  f"SELECT 'led_' || substr(md5(id || 'c'),1,22), id, account_id, 'charge', (cpu_cores * 4200 + memory_mb * 6)::bigint, finished_at FROM tasks WHERE state IN ('succeeded','failed') AND finished_at IS NOT NULL;")
+  f"SELECT 'led_' || substr(md5(id || 'c'),1,22), id, account_id, 'charge', -(cpu_cores * 4200 + memory_mb * 6)::bigint, finished_at FROM tasks WHERE state IN ('succeeded','failed') AND finished_at IS NOT NULL;")
 w(f"INSERT INTO ledger_entries (id, task_id, account_id, kind, amount_micros, created_at) "
   f"SELECT 'led_' || substr(md5(t.id || 'p'),1,22), t.id, n.account_id, 'credit', ((t.cpu_cores * 4200 + t.memory_mb * 6) * 0.85)::bigint, t.finished_at "
   f"FROM tasks t JOIN nodes n ON n.id = t.node_id WHERE t.state IN ('succeeded','failed') AND t.finished_at IS NOT NULL;")
