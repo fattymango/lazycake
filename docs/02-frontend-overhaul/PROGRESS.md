@@ -50,3 +50,13 @@ verified.
 - Backlog 2026-10-07: tasks 8.13 (gateway "Test connection" with a green/yellow/red/grey result and a legend) and 8.14 (gateway
   traffic: Postgres event table, progress reports, per-gateway series, per-task per-gateway usage) designed and recorded in
   `IMPLEMENTATION.md`; InfluxDB considered and rejected for now (see 8.14 for why). Queue order: 8.12, 8.13, 8.14. Nothing built.
+
+- Two bugs from owner testing, 2026-10-07, both fixed and deployed:
+  - After signing out and signing in as a *different role*, the app sent the user to the previous account's page
+    (`/tasks/<id>`, which doesn't exist for a provider). The route guard remembered the page for every sign-out. Now an explicit
+    logout remembers nothing, and a remembered page is only honoured if the same role signs back in (and never off-site or back
+    to /login): `lib/returnPath.ts`, 5 unit tests, plus a browser check in `e2e/behaviour.mjs` that reproduces the report (22/22 pass).
+  - The "check the machine is ready" command on the Add machine page failed on the owner's podman (`can't evaluate field
+    CgroupVersion`): the field is `CgroupsVersion`, and it differs across podman versions. The page now greps the stable JSON
+    keys instead (`podman info --format json | grep -E '"(cgroupVersion|rootless)"'`), tested on podman 5.7; the same wrong
+    name in `HANDOVER.md` is corrected.

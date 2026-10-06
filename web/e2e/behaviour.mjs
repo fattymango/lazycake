@@ -120,6 +120,25 @@ check("a live stream does not duplicate lines", (await lineCount()) === runLines
 const seqs = await page.$$eval('[role="log"] > div[class*="flex"] > span:first-child', (els) => els.map((e) => Number(e.textContent)));
 check("line numbers are unique and ascending", seqs.every((s, i) => i === 0 || s > seqs[i - 1]), `${seqs.length} lines`);
 
+// --- signing out clears the remembered page ----------------------------------
+// Reported bug: log out on a customer's task page, sign in as a provider, and
+// land on the customer's /tasks/<id> (which doesn't exist for a provider).
+await go(`${BASE}/tasks/${failed.id}`);
+await page.click('button[aria-label="Account menu"]');
+await page.waitForSelector('[role="menuitem"]');
+await page.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].find((e) => /Sign out/.test(e.textContent))?.click());
+await page.waitForFunction(() => location.pathname === "/login", { timeout: 10000 });
+check("signing out lands on the sign-in page", true);
+await page.type('input[name="username"]', "bob");
+await page.type('input[name="password"]', "password123");
+await page.keyboard.press("Enter");
+await page.waitForFunction(() => location.pathname !== "/login", { timeout: 15000 });
+await page.waitForSelector("main#main");
+const landed = await page.evaluate(() => location.pathname);
+check("a different role signing in after logout starts at the overview, not the old page", landed === "/", `landed on ${landed}`);
+const body = await page.$eval("body", (b) => b.innerText);
+check("and sees the provider portal", /Provider/.test(body) && /Machines/.test(body));
+
 await browser.close();
 const failedChecks = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failedChecks.length}/${results.length} checks passed`);
