@@ -42,3 +42,7 @@ verified.
   - Not done / follow-ups: no command palette, notifications centre or per-task resource charts (needs a metrics endpoint);
     the dev-only gallery at `/_kit` is the place to add new primitives; tablet width (820px) was audited for overflow
     but only dark desktop, light desktop and phone were reviewed by eye.
+
+- Queued 2026-10-07: task 8.12, "Stop a task" (customer-initiated cancel). The owner asked whether the redesign had dropped a
+  stop button; it hadn't: the product never had one (no endpoint, RPC or CLI command). Parked until the redesigned UI is
+  signed off. Design notes and the verification list are in `IMPLEMENTATION.md`.

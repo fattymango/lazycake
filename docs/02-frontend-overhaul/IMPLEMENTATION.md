@@ -107,3 +107,33 @@ for the README.
 Delete the old components and styles, update `docs/README.md` and the
 top-level README, record the design system's extension points (how to add a
 page, a status, a theme) in `web/README.md`.
+
+---
+
+## Queued: do after the UI has been signed off
+
+### Task 8.12 — Stop a task (customer-initiated cancel)
+
+**Status: queued, not started.** Requested 2026-10-07; to be built once the owner has verified the redesigned UI end
+to end. Nothing in the product can stop a task on request today: the old UI never had a stop button, there is no
+portal endpoint, no `CustomerService` RPC and no `lcctl` command. What exists is the plumbing underneath:
+`store.TaskCancelled`, the agent's handling of the coordinator's `Cancel` message
+(`executor.CancelTask`, already used by task adoption on reconnect) and `terminalState("cancelled")`.
+
+**Build:**
+1. `POST /api/portal/customer/tasks/{id}/cancel` (account-scoped like the other task routes; 404 for someone else's
+   task; 409 if already terminal). A `CancelTask` RPC on `CustomerService` and `lcctl cancel <id>` so the CLI and the
+   portal share one code path (`api.CustomerServer`), as submit does.
+2. Behaviour by state: `queued`/`reserved` -> mark `cancelled` directly and release any capacity hold; `dispatched`/
+   `running` -> send `Cancel` to the node and let its `TaskFinished{"cancelled"}` settle it. A node that is gone must
+   not strand the task: fall back to the lease-reclaim path.
+3. Billing: the balance hold is released and the customer is charged only for time actually used; the provider is
+   credited for the same (see the payout rules in `00-core-platform/PLAN.md`). Cancelling must be idempotent.
+4. UI: a "Stop task" button on the task page header (visible only while the task is active) with a confirmation
+   dialog, optimistic state, and the existing live `task_state` event to confirm; disabled with a spinner while the
+   request is in flight; an error toast if it fails.
+
+**Verify (these are the risky parts, so test them, don't just try it once):** cancel a queued task; cancel a running
+task and check the container is really gone on the node; cancel a task that is finishing in the same instant (no double
+settlement, no negative balance); cancel twice; cancel someone else's task (404); cancel while the node is offline;
+the ledger and balance afterwards. Add the e2e check to `web/e2e/behaviour.mjs`.
