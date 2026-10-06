@@ -28,7 +28,11 @@ const streamIdleTimeout = 30 * time.Second
 // waiting for work) - without an explicit KeepAlivePeriod below quic-go's
 // default 30s MaxIdleTimeout, the connection times out from inactivity even
 // though nothing is actually wrong, and the gateway has to redial.
-var connConfig = &quicgo.Config{KeepAlivePeriod: 10 * time.Second}
+// A short idle timeout matters because a coordinator that restarts keeps no
+// state a client could be reset against: without a CONNECTION_CLOSE the
+// client only notices once the idle timeout lapses, and a gateway that
+// takes that long to notice is unreachable for that whole time.
+var connConfig = &quicgo.Config{KeepAlivePeriod: 5 * time.Second, MaxIdleTimeout: 15 * time.Second}
 
 // Authenticator validates a bearer token and returns the account it
 // belongs to. The coordinator's store.Store satisfies a trivial adapter
@@ -73,13 +77,19 @@ type Relay struct {
 
 	mu       sync.Mutex
 	gateways map[string]*quicgo.Conn
+	conns    map[*quicgo.Conn]struct{} // every live connection, so shutdown can close them
 }
 
 // Serve accepts connections on addr until ctx is cancelled.
 func (r *Relay) Serve(ctx context.Context, addr string) error {
+	r.mu.Lock()
 	if r.gateways == nil {
 		r.gateways = make(map[string]*quicgo.Conn)
 	}
+	if r.conns == nil {
+		r.conns = make(map[*quicgo.Conn]struct{})
+	}
+	r.mu.Unlock()
 	tlsConf, err := selfSignedServerTLSConfig()
 	if err != nil {
 		return fmt.Errorf("building TLS config: %w", err)
@@ -93,6 +103,7 @@ func (r *Relay) Serve(ctx context.Context, addr string) error {
 	go func() {
 		<-ctx.Done()
 		ln.Close()
+		r.closeAll()
 	}()
 
 	for {
@@ -107,7 +118,26 @@ func (r *Relay) Serve(ctx context.Context, addr string) error {
 	}
 }
 
+// closeAll tells every connected agent and gateway the relay is going away.
+// Without it they only find out after the idle timeout, which for a gateway
+// means being unreachable for that long after a coordinator restart.
+func (r *Relay) closeAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for c := range r.conns {
+		c.CloseWithError(0, "relay shutting down")
+	}
+}
+
 func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
+	r.mu.Lock()
+	r.conns[conn] = struct{}{}
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		delete(r.conns, conn)
+		r.mu.Unlock()
+	}()
 	controlStream, err := conn.AcceptStream(ctx)
 	if err != nil {
 		r.Log.Warn("accepting control stream", "error", err)
@@ -148,14 +178,20 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 			if err := r.Gateways.SetGatewayConnected(ctx, cf.GatewayID, true, pubkey); err != nil {
 				r.Log.Warn("recording gateway connection", "gateway_id", cf.GatewayID, "error", err)
 			}
-			defer func() {
+		}
+		r.registerGateway(cf.GatewayID, conn)
+		defer func() {
+			// Only the connection that is still the registered one may mark
+			// the gateway disconnected. A gateway that reconnects before its
+			// old connection times out has already replaced it, and the old
+			// one's late cleanup would otherwise flip a live gateway to
+			// "disconnected".
+			if r.unregisterGateway(cf.GatewayID, conn) && r.Gateways != nil {
 				if err := r.Gateways.SetGatewayConnected(context.Background(), cf.GatewayID, false, nil); err != nil {
 					r.Log.Warn("recording gateway disconnection", "gateway_id", cf.GatewayID, "error", err)
 				}
-			}()
-		}
-		r.registerGateway(cf.GatewayID, conn)
-		defer r.unregisterGateway(cf.GatewayID, conn)
+			}
+		}()
 		<-conn.Context().Done()
 	case "agent":
 		r.serveAgent(ctx, conn)
@@ -166,16 +202,24 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 
 func (r *Relay) registerGateway(id string, conn *quicgo.Conn) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	old := r.gateways[id]
 	r.gateways[id] = conn
+	r.mu.Unlock()
+	if old != nil && old != conn {
+		old.CloseWithError(0, "superseded by a newer connection from the same gateway")
+	}
 }
 
-func (r *Relay) unregisterGateway(id string, conn *quicgo.Conn) {
+// unregisterGateway removes conn and reports whether it was still the
+// registered connection for id (false if a newer one replaced it).
+func (r *Relay) unregisterGateway(id string, conn *quicgo.Conn) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.gateways[id] == conn {
 		delete(r.gateways, id)
+		return true
 	}
+	return false
 }
 
 func (r *Relay) serveAgent(ctx context.Context, agentConn *quicgo.Conn) {

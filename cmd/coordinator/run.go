@@ -178,6 +178,16 @@ func run() error {
 	go func() { serveErr <- grpcServer.Serve(lis) }()
 	log.Info("agent gRPC listening", "addr", cfg.GRPCAddr)
 
+	// Relay connections die with this process; the "connected" flags in the
+	// database don't. Clear them before accepting connections so the portal
+	// doesn't claim a gateway is connected while it's actually unreachable
+	// (a gateway that reconnects sets its own flag back). Assumes a single
+	// coordinator: with replicas this would also clear gateways connected to
+	// a peer.
+	if err := st.ResetGatewaysConnected(ctx); err != nil {
+		return fmt.Errorf("resetting gateway connected flags: %w", err)
+	}
+
 	tunnelRelay := &quic.Relay{
 		Auth:     coordrelay.StoreAdapter{Store: st},
 		Gateways: coordrelay.StoreAdapter{Store: st},

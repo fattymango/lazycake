@@ -44,12 +44,22 @@ func run() error {
 		services[s.Name] = s.Addr()
 	}
 
+	reportBytes := newByteReporter(cfg, log)
+	return serveForever(ctx, log, func(ctx context.Context) error {
+		return serveOnce(ctx, cfg, keypair, services, log, reportBytes)
+	})
+}
+
+// serveOnce holds one relay connection: dials, then accepts tunnelled
+// streams until the connection or ctx ends.
+func serveOnce(ctx context.Context, cfg config.Config, keypair noise.Keypair, services map[string]string,
+	log *slog.Logger, reportBytes func(listener.ForwardStats)) error {
 	conn, err := quic.DialGateway(ctx, cfg.CoordinatorAddr, cfg.Token, cfg.GatewayID, keypair.Public)
 	if err != nil {
 		return fmt.Errorf("connecting to relay: %w", err)
 	}
-
-	reportBytes := newByteReporter(cfg, log)
+	defer conn.CloseWithError(0, "gateway disconnecting")
+	log.Info("connected to relay", "addr", cfg.CoordinatorAddr)
 
 	l := &listener.Listener{
 		Conn: conn, Keypair: keypair, Services: services, Log: log,
@@ -59,16 +69,45 @@ func run() error {
 			reportBytes(s)
 		},
 	}
+	return l.Run(ctx)
+}
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- l.Run(ctx) }()
+// Vars rather than consts so tests can shrink them.
+var (
+	reconnectMin = time.Second
+	reconnectMax = 30 * time.Second
+	// healthyAfter is how long a connection must have lasted for the next
+	// failure to start over from reconnectMin rather than keep backing off.
+	healthyAfter = 30 * time.Second
+)
 
-	select {
-	case <-ctx.Done():
-		log.Info("gateway shutting down")
-		return nil
-	case err := <-errCh:
-		return err
+// serveForever keeps a gateway attached to the relay: when the connection
+// drops (the coordinator restarting, a network blip) it reconnects with
+// capped exponential backoff instead of exiting, so a gateway doesn't
+// depend on a process supervisor to come back. It returns only when ctx is
+// cancelled.
+func serveForever(ctx context.Context, log *slog.Logger, serve func(context.Context) error) error {
+	delay := reconnectMin
+	for {
+		start := time.Now()
+		err := serve(ctx)
+		if ctx.Err() != nil {
+			log.Info("gateway shutting down")
+			return nil
+		}
+		if time.Since(start) >= healthyAfter {
+			delay = reconnectMin
+		}
+		log.Warn("relay connection lost, reconnecting", "error", err, "retry_in", delay.String())
+		select {
+		case <-ctx.Done():
+			log.Info("gateway shutting down")
+			return nil
+		case <-time.After(delay):
+		}
+		if delay *= 2; delay > reconnectMax {
+			delay = reconnectMax
+		}
 	}
 }
 

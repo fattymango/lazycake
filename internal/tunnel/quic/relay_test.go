@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -121,5 +122,103 @@ func TestRelayRoundTrip(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for relay stream-closed stats")
+	}
+}
+
+type recordingRegistry struct {
+	mu    sync.Mutex
+	calls []bool // the connected value of every SetGatewayConnected call, in order
+}
+
+func (r *recordingRegistry) OwnsGateway(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+func (r *recordingRegistry) SetGatewayConnected(_ context.Context, _ string, connected bool, _ []byte) error {
+	r.mu.Lock()
+	r.calls = append(r.calls, connected)
+	r.mu.Unlock()
+	return nil
+}
+func (r *recordingRegistry) last() (bool, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.calls) == 0 {
+		return false, 0
+	}
+	return r.calls[len(r.calls)-1], len(r.calls)
+}
+
+// A gateway that reconnects before its old connection has timed out must
+// stay marked connected: the old connection's late cleanup used to flip it
+// to disconnected, leaving a live gateway showing as down.
+func TestGatewayReconnectStaysConnected(t *testing.T) {
+	addr := freeUDPAddr(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	reg := &recordingRegistry{}
+	relay := &Relay{Auth: fakeAuth{}, Gateways: reg, Log: log}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go relay.Serve(ctx, addr)
+	time.Sleep(100 * time.Millisecond)
+
+	old, err := DialGateway(ctx, addr, "tok", "gw_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	fresh, err := DialGateway(ctx, addr, "tok", "gw_1", nil) // same gateway ID, newer connection
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.CloseWithError(0, "")
+	time.Sleep(300 * time.Millisecond) // the relay closes the superseded connection
+
+	select {
+	case <-old.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("the superseded connection was never closed")
+	}
+	time.Sleep(200 * time.Millisecond) // let its cleanup run
+	if last, n := reg.last(); !last {
+		t.Fatalf("after a reconnect the gateway was last recorded disconnected (%d calls)", n)
+	}
+
+	fresh.CloseWithError(0, "bye") // a real disconnect must still be recorded
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if last, _ := reg.last(); !last {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a genuine disconnect was never recorded")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// Shutting the relay down must tell connected peers straight away rather
+// than leaving them to discover it at the idle timeout.
+func TestRelayShutdownClosesConnections(t *testing.T) {
+	addr := freeUDPAddr(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	relay := &Relay{Auth: fakeAuth{}, Log: log}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go relay.Serve(ctx, addr)
+	time.Sleep(100 * time.Millisecond)
+
+	gw, err := DialGateway(context.Background(), addr, "tok", "gw_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.CloseWithError(0, "")
+	time.Sleep(100 * time.Millisecond)
+
+	cancel()
+	select {
+	case <-gw.Context().Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("gateway connection still open 2s after the relay shut down")
 	}
 }
