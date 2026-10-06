@@ -64,12 +64,15 @@ type taskView struct {
 	// TunnelTargets are the gateways this task is allowed to reach.
 	TunnelTargets []store.TunnelTarget `json:"tunnel_targets,omitempty"`
 	// Attempt is how many times the task has been (re)started; 0 on the first run.
-	Attempt      int    `json:"attempt,omitempty"`
-	ExitCode     *int   `json:"exit_code,omitempty"`
-	ExitReason   string `json:"exit_reason,omitempty"`
-	CreatedAtMS  int64  `json:"created_at_ms"`
-	StartedAtMS  int64  `json:"started_at_ms,omitempty"`
-	FinishedAtMS int64  `json:"finished_at_ms,omitempty"`
+	Attempt int `json:"attempt,omitempty"`
+	// CancelRequested is true once the customer has asked for the task to be
+	// stopped but it hasn\'t finished yet (the UI shows "Stopping").
+	CancelRequested bool   `json:"cancel_requested,omitempty"`
+	ExitCode        *int   `json:"exit_code,omitempty"`
+	ExitReason      string `json:"exit_reason,omitempty"`
+	CreatedAtMS     int64  `json:"created_at_ms"`
+	StartedAtMS     int64  `json:"started_at_ms,omitempty"`
+	FinishedAtMS    int64  `json:"finished_at_ms,omitempty"`
 }
 
 func toTaskView(t store.Task) taskView {
@@ -78,7 +81,8 @@ func toTaskView(t store.Task) taskView {
 		Entrypoint: t.Entrypoint, Args: t.Args, Env: t.Env,
 		Cores: t.Limits.CPUCores, MemoryMB: t.Limits.MemoryMB, DiskMB: t.Limits.DiskMB,
 		WallTimeoutS: t.Limits.WallTimeoutS, TunnelTargets: t.TunnelTargets, Attempt: t.Attempt,
-		ExitCode: t.ExitCode, CreatedAtMS: t.CreatedAt.UnixMilli(),
+		CancelRequested: t.CancelRequestedAt != nil && !isTerminal(t.State),
+		ExitCode:        t.ExitCode, CreatedAtMS: t.CreatedAt.UnixMilli(),
 	}
 	if t.NodeID != nil {
 		tv.NodeID = *t.NodeID
@@ -439,4 +443,18 @@ func (s *Server) handleAddBalance(w http.ResponseWriter, r *http.Request) {
 // live in two packages.
 func notFoundErr(msg string) error {
 	return status.Error(codes.NotFound, msg)
+}
+
+// handleCancelTask is POST .../tasks/{id}/cancel: stop a task at the customer's
+// request. A queued task is cancelled immediately; a running one is told to
+// stop and finishes shortly after (the returned task has cancel_requested set
+// until then). See api.CustomerServer.CancelTaskForAccount.
+func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromContext(r.Context())
+	task, err := s.Customer.CancelTaskForAccount(r.Context(), sess.AccountID, r.PathValue("id"))
+	if err != nil {
+		writeStoreOrRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTaskView(task))
 }

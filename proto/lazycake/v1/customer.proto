@@ -8,6 +8,11 @@ option go_package = "github.com/mkassab215/lazycake/internal/proto/lazycakev1";
 service CustomerService {
   rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
   rpc GetTask(GetTaskRequest) returns (TaskStatus);
+  // CancelTask stops a task at the customer's request: a queued task is cancelled at once and
+  // costs nothing; a running one is told to stop and finishes shortly after (the returned
+  // status has cancel_requested set until then), charging only the time it ran. Stopping a
+  // task that was already stopped succeeds; stopping one that finished is FAILED_PRECONDITION.
+  rpc CancelTask(CancelTaskRequest) returns (TaskStatus);
   rpc StreamLogs(StreamLogsRequest) returns (stream TaskLogLine);
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc CreateGateway(CreateGatewayRequest) returns (CreateGatewayResponse);
@@ -67,6 +72,12 @@ message TaskStatus {
   int64  created_at_unix_ms  = 7;
   int64  started_at_unix_ms  = 8;
   int64  finished_at_unix_ms = 9;
+  // True once a stop was requested but the task has not finished yet.
+  bool   cancel_requested    = 10;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
 }
 
 message StreamLogsRequest {

@@ -29,6 +29,7 @@ func (s *Scheduler) Run(ctx context.Context, interval time.Duration) {
 
 func (s *Scheduler) tick(ctx context.Context) {
 	s.reclaimOverdue(ctx)
+	s.resendCancels(ctx)
 
 	nodes, err := s.Store.ListNodes(ctx)
 	if err != nil {

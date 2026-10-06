@@ -59,7 +59,7 @@ const taskColumns = `
 	req_arch, req_cpu_flags, req_isolation, req_confidentiality,
 	gateway_ids, tunnel_targets, delivery, max_attempts, attempt,
 	node_id, lease_expires_at, requeue_after,
-	exit_code, exit_reason, started_at, finished_at, created_at`
+	exit_code, exit_reason, started_at, finished_at, created_at, cancel_requested_at`
 
 func scanTask(row rowScanner) (Task, error) {
 	var t Task
@@ -73,7 +73,7 @@ func scanTask(row rowScanner) (Task, error) {
 		&t.Requirements.Arch, &t.Requirements.CPUFlags, &t.Requirements.Isolation, &t.Requirements.Confidentiality,
 		&t.GatewayIDs, &targetsRaw, &delivery, &t.Retry.MaxAttempts, &t.Attempt,
 		&t.NodeID, &t.LeaseExpiresAt, &t.RequeueAfter,
-		&t.ExitCode, &t.ExitReason, &t.StartedAt, &t.FinishedAt, &t.CreatedAt,
+		&t.ExitCode, &t.ExitReason, &t.StartedAt, &t.FinishedAt, &t.CreatedAt, &t.CancelRequestedAt,
 	)
 	if err != nil {
 		return Task{}, err
@@ -335,4 +335,36 @@ func isUniqueViolation(err error) bool {
 		return pgErr.SQLState() == "23505"
 	}
 	return false
+}
+
+// RequestTaskCancel records that the customer asked for the task to be
+// stopped, but only while it is still active, so a task that finishes in the
+// same instant is never marked. It reports whether the task was still active
+// (and so now carries the request); calling it again keeps the original time.
+func (s *PostgresStore) RequestTaskCancel(ctx context.Context, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET cancel_requested_at = COALESCE(cancel_requested_at, now())
+		WHERE id = $1 AND state IN ('queued','reserved','dispatched','running')`, id)
+	if err != nil {
+		return false, fmt.Errorf("requesting task cancel: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *PostgresStore) ListCancelRequested(ctx context.Context) ([]Task, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+taskColumns+` FROM tasks WHERE cancel_requested_at IS NOT NULL AND state IN ('dispatched','running')`)
+	if err != nil {
+		return nil, fmt.Errorf("listing cancel-requested tasks: %w", err)
+	}
+	defer rows.Close()
+	var out []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning task: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }

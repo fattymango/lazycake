@@ -120,6 +120,36 @@ check("a live stream does not duplicate lines", (await lineCount()) === runLines
 const seqs = await page.$$eval('[role="log"] > div[class*="flex"] > span:first-child', (els) => els.map((e) => Number(e.textContent)));
 check("line numbers are unique and ascending", seqs.every((s, i) => i === 0 || s > seqs[i - 1]), `${seqs.length} lines`);
 
+// --- stopping a task (task 8.12) -------------------------------------------------
+// A queued task is stopped on the spot and costs nothing. Resources no node can
+// satisfy keep it queued, so this needs no agent.
+const balanceBefore = await page.evaluate(async () => (await (await fetch("/api/portal/customer/me", { credentials: "include" })).json()).balance_micros);
+const queued = await page.evaluate(async () => {
+  const r = await fetch("/api/portal/customer/tasks", {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: "docker.io/library/alpine@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e", args: ["sleep", "60"], cores: 32, memory_mb: 65536, wall_timeout_s: 60 }),
+  });
+  return r.json();
+});
+check("a task nothing can run stays queued", queued.state === "queued", `${queued.state} ${queued.error || ""}`);
+await go(`${BASE}/tasks/${queued.id}`);
+await page.waitForFunction(() => [...document.querySelectorAll("button")].some((x) => /Stop task/.test(x.textContent)), { timeout: 10000 });
+await page.evaluate(() => [...document.querySelectorAll("button")].find((x) => /Stop task/.test(x.textContent))?.click());
+await page.waitForSelector('[role="dialog"]');
+check("stopping asks for confirmation first", /Stop this task\?/.test(await page.$eval('[role="dialog"]', (d) => d.innerText)));
+await page.evaluate(() => [...document.querySelectorAll('[role="dialog"] button')].find((x) => /Stop task/.test(x.textContent))?.click());
+await page.waitForFunction(() => /Stopped by you/.test(document.body.innerText), { timeout: 8000 }).then(() => check("a queued task is stopped at once", true), () => check("a queued task is stopped at once", false, "never showed 'Stopped by you'"));
+const stoppedText = await page.$eval("body", (b) => b.innerText);
+check("it says nothing was charged", /nothing was charged/.test(stoppedText));
+check("the label reads Stopped (not Cancelled)", /Stopped/.test(stoppedText) && !/\bCancelled\b/.test(stoppedText.split("Lifecycle")[0]));
+check("the Stop button is gone once it has finished", !(await page.evaluate(() => [...document.querySelectorAll("button")].some((x) => /^Stop task$/.test(x.textContent.trim())))));
+const balanceAfter = await page.evaluate(async () => (await (await fetch("/api/portal/customer/me", { credentials: "include" })).json()).balance_micros);
+check("a stopped queued task costs nothing", balanceAfter === balanceBefore, `${balanceBefore} -> ${balanceAfter}`);
+const again = await page.evaluate(async (id) => (await fetch(`/api/portal/customer/tasks/${id}/cancel`, { method: "POST", credentials: "include" })).status, queued.id);
+check("stopping it again is harmless", again === 200, `status ${again}`);
+const fin = await page.evaluate(async (id) => (await fetch(`/api/portal/customer/tasks/${id}/cancel`, { method: "POST", credentials: "include" })).status, failed.id);
+check("a finished task can't be stopped", fin === 422, `status ${fin}`);
+
 // --- signing out clears the remembered page ----------------------------------
 // Reported bug: log out on a customer's task page, sign in as a provider, and
 // land on the customer's /tasks/<id> (which doesn't exist for a provider).

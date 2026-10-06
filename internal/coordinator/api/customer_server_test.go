@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
@@ -235,5 +237,45 @@ func TestStreamLogsNoFollow(t *testing.T) {
 	}
 	if len(lines) != 2 || lines[0] != "hi" || lines[1] != "bye" {
 		t.Fatalf("unexpected lines: %v", lines)
+	}
+}
+
+// The gRPC form of stopping a task (lcctl cancel): a customer token stops its
+// own queued task; another account's token can't see it; no token is refused.
+func TestCancelTaskRPC(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("cust1")), store.APIToken{AccountID: "act_1", Kind: store.TokenCustomer})
+	fs.addToken(string(auth.Hash("cust2")), store.APIToken{AccountID: "act_2", Kind: store.TokenCustomer})
+	mustFundAccount(t, fs, "act_1")
+	client := startCustomerTestServer(t, fs)
+
+	resp, err := client.SubmitTask(authCtx("cust1"), &lazycakev1.SubmitTaskRequest{
+		Image:  "alpine@sha256:abc",
+		Limits: &lazycakev1.TaskLimits{CpuCores: 1, MemoryMb: 256, DiskMb: 512, WallTimeoutS: 30},
+	})
+	if err != nil {
+		t.Fatalf("SubmitTask: %v", err)
+	}
+
+	if _, err := client.CancelTask(authCtx("cust2"), &lazycakev1.CancelTaskRequest{TaskId: resp.GetTaskId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("another account stopping this task: want NotFound, got %v", err)
+	}
+	if _, err := client.CancelTask(context.Background(), &lazycakev1.CancelTaskRequest{TaskId: resp.GetTaskId()}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("no token: want Unauthenticated, got %v", err)
+	}
+
+	got, err := client.CancelTask(authCtx("cust1"), &lazycakev1.CancelTaskRequest{TaskId: resp.GetTaskId()})
+	if err != nil {
+		t.Fatalf("CancelTask: %v", err)
+	}
+	if got.GetState() != string(store.TaskCancelled) || got.GetExitReason() != "stopped" {
+		t.Fatalf("want cancelled/stopped, got %s/%s", got.GetState(), got.GetExitReason())
+	}
+	if got.GetCancelRequested() {
+		t.Fatal("a finished task is not 'stopping'")
+	}
+	// A repeat is harmless.
+	if _, err := client.CancelTask(authCtx("cust1"), &lazycakev1.CancelTaskRequest{TaskId: resp.GetTaskId()}); err != nil {
+		t.Fatalf("repeat CancelTask: %v", err)
 	}
 }

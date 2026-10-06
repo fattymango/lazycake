@@ -180,3 +180,49 @@ func TestNonBillableExitReasonsNeverSettle(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, entries, "fenced/cancelled tasks must write no ledger entries")
 }
+
+// A customer's stop is different from the coordinator cancelling a task: the
+// host really did the work until then. "stopped" must settle like any other
+// finish (customer charged for the time used, host credited), while
+// "cancelled" above stays free.
+func TestStoppedTaskIsBilledAndTheHostIsPaid(t *testing.T) {
+	st := testLedgerStore(t)
+	ctx := context.Background()
+	ledger := &Ledger{Store: st, Rates: DefaultRates(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	const start = 1_000_000_000
+	require.NoError(t, st.CreateAccount(ctx, store.Account{ID: "act_c", Name: "c", BalanceMicros: start}))
+	require.NoError(t, st.CreateAccount(ctx, store.Account{ID: "act_h", Name: "h", BalanceMicros: 0}))
+	require.NoError(t, st.UpsertNode(ctx, store.Node{ID: "nod_1", AccountID: "act_h", Hostname: "h", Arch: "amd64"}))
+	limits := store.Limits{CPUCores: 1, MemoryMB: 512, DiskMB: 1000}
+	require.NoError(t, st.CreateTask(ctx, store.Task{
+		ID: "tsk_stopped", AccountID: "act_c", State: store.TaskQueued, Image: "x", Limits: limits,
+		Requirements: store.Requirements{Arch: "amd64", Isolation: "podman"},
+		Delivery:     store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+	}))
+	nodeID := "nod_1"
+	require.NoError(t, st.TransitionTask(ctx, "tsk_stopped", []store.TaskState{store.TaskQueued}, store.TaskDispatched, store.TaskUpdate{NodeID: &nodeID}))
+	require.NoError(t, st.PlaceHold(ctx, "tsk_stopped", "act_c", 500_000))
+
+	const ranFor = 12.5 // seconds it actually ran before being stopped
+	require.NoError(t, ledger.Settle(ctx, "tsk_stopped", "stopped", -1, 0, 0, ranFor))
+
+	want := expectedPrice(DefaultRates(), limits, ranFor, 0, false)
+	require.Greater(t, want, int64(0))
+	customer, err := st.GetAccount(ctx, "act_c")
+	require.NoError(t, err)
+	require.Equal(t, int64(start)-want, customer.BalanceMicros, "the customer pays for the time it ran, no more")
+	host, err := st.GetAccount(ctx, "act_h")
+	require.NoError(t, err)
+	require.Greater(t, host.BalanceMicros, int64(0), "the host is paid for the work it did")
+
+	entries, err := st.LedgerEntriesForAccount(ctx, "act_c")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "charge", entries[0].Kind)
+	require.Equal(t, -want, entries[0].AmountMicros)
+
+	avail, err := st.AvailableBalance(ctx, "act_c")
+	require.NoError(t, err)
+	require.Equal(t, customer.BalanceMicros, avail, "the dispatch-time hold was released")
+}

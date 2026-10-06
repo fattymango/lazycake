@@ -58,6 +58,9 @@ type Scheduler struct {
 	Dispatch Dispatcher
 	Clock    clock.Clock
 	Log      *slog.Logger
+	// cancelSent remembers when each cancel-requested task was last nudged
+	// (guarded by mu); see resendCancels.
+	cancelSent map[string]time.Time
 	// Billing may be nil (defaults to a no-op) until wired in - phase 4.
 	Billing BillingEvents
 	// Rates prices task 4.5's dispatch-time hold; zero value means "use

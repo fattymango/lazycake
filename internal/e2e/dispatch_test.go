@@ -32,6 +32,8 @@ import (
 	"github.com/mkassab215/lazycake/internal/clock"
 	"github.com/mkassab215/lazycake/internal/coordinator/api"
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
+	"github.com/mkassab215/lazycake/internal/coordinator/billing"
+	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/scheduler"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
 	"github.com/mkassab215/lazycake/internal/id"
@@ -65,9 +67,25 @@ func discardLog() *slog.Logger {
 type harness struct {
 	st    *store.PostgresStore
 	token string
+	// customer is the coordinator's customer-facing API (same code the portal
+	// calls), wired to the same registry as the agent's stream.
+	customer *api.CustomerServer
 }
 
 func startHarness(t *testing.T) (*harness, context.Context) {
+	t.Helper()
+	return startHarnessOpts(t, false)
+}
+
+// startHarnessWithBilling is startHarness with metering and the ledger wired
+// in and a funded customer account (act_cust), so a test can assert what a
+// finished or stopped task actually cost. The host account is act_e2e.
+func startHarnessWithBilling(t *testing.T) (*harness, context.Context) {
+	t.Helper()
+	return startHarnessOpts(t, true)
+}
+
+func startHarnessOpts(t *testing.T, withBilling bool) (*harness, context.Context) {
 	t.Helper()
 	st := testStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,6 +100,13 @@ func startHarness(t *testing.T) (*harness, context.Context) {
 	lis := bufconn.Listen(1024 * 1024)
 	registry := api.NewRegistry()
 	sched := scheduler.New(st, registry, clock.Real{}, discardLog(), 60)
+	if withBilling {
+		require.NoError(t, st.CreateAccount(ctx, store.Account{ID: "act_cust", Name: "customer", BalanceMicros: 10_000_000}))
+		sched.Billing = &billing.Meters{
+			Store: st, Clock: clock.Real{}, Log: discardLog(),
+			Ledger: &billing.Ledger{Store: st, Rates: pricing.DefaultRates(), Log: discardLog()},
+		}
+	}
 	grpcServer := grpc.NewServer()
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{
 		Store: st, Registry: registry, Events: sched, Capacity: sched,
@@ -124,7 +149,12 @@ func startHarness(t *testing.T) (*harness, context.Context) {
 		Runtime: rt, Ledger: ledger, Send: runner, Log: discardLog(),
 		InstanceID: "ins_e2e", BootID: "boot_e2e",
 	}
-	runner.Handlers = conn.Handlers{OnDispatch: executor.HandleDispatch, RunningTaskIDs: ledger.TaskIDs}
+	runner.Handlers = conn.Handlers{
+		OnDispatch: executor.HandleDispatch,
+		// Same wiring as cmd/agent/run.go: without it the agent would ignore a Cancel.
+		OnCancel:       func(ctx context.Context, c *lazycakev1.Cancel) { executor.CancelTask(ctx, c.GetTaskId()) },
+		RunningTaskIDs: ledger.TaskIDs,
+	}
 	go runner.Run(ctx)
 
 	// Wait for the node to actually register before returning.
@@ -133,7 +163,7 @@ func startHarness(t *testing.T) (*harness, context.Context) {
 		return err == nil && len(nodes) == 1 && nodes[0].Connected
 	}, 10*time.Second, 100*time.Millisecond, "agent never registered")
 
-	return &harness{st: st, token: agentToken}, ctx
+	return &harness{st: st, token: agentToken, customer: &api.CustomerServer{Store: st, Registry: registry}}, ctx
 }
 
 func TestDispatchEndToEnd(t *testing.T) {

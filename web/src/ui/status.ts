@@ -37,7 +37,14 @@ export const taskStatus: Record<TaskState, StatusMeta> = {
   cancelled: { label: "Cancelled", tone: "neutral", icon: Ban, description: "Stopped on request." },
 };
 
-export function getTaskStatus(state: string): StatusMeta {
+/**
+ * `reason` is the task's exit reason: a task you stopped yourself reads
+ * "Stopped" everywhere, not the generic "Cancelled".
+ */
+export function getTaskStatus(state: string, reason?: string): StatusMeta {
+  if (state === "cancelled" && reason === "stopped") {
+    return { ...taskStatus.cancelled, label: "Stopped", description: "Stopped at your request." };
+  }
   return taskStatus[state as TaskState] ?? { label: state, tone: "neutral", icon: CircleDot, description: "" };
 }
 
@@ -51,10 +58,34 @@ export const connectionStatus = (connected: boolean): StatusMeta =>
     ? { label: "Online", tone: "success", icon: Wifi, pulse: false, description: "Connected to the coordinator." }
     : { label: "Offline", tone: "neutral", icon: WifiOff, description: "Not currently connected." };
 
-/** Why a task ended, in words a person can act on. */
-export function exitReason(reason: string | undefined, exitCode: number | undefined): { title: string; detail: string; tone: Tone } | null {
+/** Shown instead of the state while a stop request is waiting for the node to act on it. */
+export const stoppingStatus: StatusMeta = {
+  label: "Stopping",
+  tone: "warning",
+  icon: Ban,
+  pulse: true,
+  description: "You asked for this task to be stopped. Waiting for the node to confirm.",
+};
+
+/**
+ * Why a task ended, in words a person can act on. `started` is whether the
+ * task ever began running, which changes what a customer's stop cost.
+ */
+export function exitReason(
+  reason: string | undefined,
+  exitCode: number | undefined,
+  started = true
+): { title: string; detail: string; tone: Tone } | null {
   if (!reason) return null;
   switch (reason) {
+    case "stopped":
+      return {
+        title: "Stopped by you",
+        detail: started
+          ? "You stopped this task. You were charged only for the time it ran."
+          : "You stopped this task before it started, so nothing was charged.",
+        tone: "neutral",
+      };
     case "exited":
       return exitCode === 0
         ? { title: "Exited cleanly", detail: "The command finished with exit code 0.", tone: "success" }

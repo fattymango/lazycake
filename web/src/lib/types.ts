@@ -58,6 +58,8 @@ export interface Task {
   tunnel_targets?: TunnelTarget[];
   /** How many times the task has been restarted; absent on a first run. */
   attempt?: number;
+  /** The customer asked for it to be stopped and it hasn't finished yet ("Stopping"). */
+  cancel_requested?: boolean;
   exit_code?: number;
   exit_reason?: string;
   created_at_ms: number;

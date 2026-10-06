@@ -313,3 +313,62 @@ func TestResetGatewaysConnected(t *testing.T) {
 		require.Equal(t, []byte("k"), g.NoisePubkey, "the last-known key is kept for display")
 	}
 }
+
+// RequestTaskCancel marks a task only while it is still active, keeps the
+// first request time on repeats, and never marks a finished task.
+func TestRequestTaskCancel(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustNode(t, s, "nod_1", "act_1")
+	newTask := func(id string) {
+		require.NoError(t, s.CreateTask(ctx, Task{
+			ID: id, AccountID: "act_1", State: TaskQueued, Image: "x",
+			Limits:       Limits{CPUCores: 1, MemoryMB: 128, DiskMB: 500},
+			Requirements: Requirements{Arch: "amd64", Isolation: "podman"},
+			Delivery:     AtMostOnce, Retry: Retry{MaxAttempts: 1},
+		}))
+	}
+
+	newTask("tsk_a")
+	ok, err := s.RequestTaskCancel(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.True(t, ok)
+	first, err := s.GetTask(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.NotNil(t, first.CancelRequestedAt)
+
+	ok, err = s.RequestTaskCancel(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.True(t, ok)
+	again, err := s.GetTask(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.True(t, first.CancelRequestedAt.Equal(*again.CancelRequestedAt), "the original request time is kept")
+
+	// A finished task is never marked.
+	newTask("tsk_done")
+	require.NoError(t, s.TransitionTask(ctx, "tsk_done", []TaskState{TaskQueued}, TaskSucceeded, TaskUpdate{}))
+	ok, err = s.RequestTaskCancel(ctx, "tsk_done")
+	require.NoError(t, err)
+	require.False(t, ok, "a finished task can't be stopped")
+	done, err := s.GetTask(ctx, "tsk_done")
+	require.NoError(t, err)
+	require.Nil(t, done.CancelRequestedAt)
+
+	ok, err = s.RequestTaskCancel(ctx, "tsk_does_not_exist")
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// ListCancelRequested returns only active, dispatched/running, requested tasks.
+	node := "nod_1"
+	require.NoError(t, s.TransitionTask(ctx, "tsk_a", []TaskState{TaskQueued}, TaskRunning, TaskUpdate{NodeID: &node}))
+	list, err := s.ListCancelRequested(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, "tsk_a", list[0].ID)
+	newTask("tsk_plain")
+	require.NoError(t, s.TransitionTask(ctx, "tsk_plain", []TaskState{TaskQueued}, TaskRunning, TaskUpdate{NodeID: &node}))
+	list, err = s.ListCancelRequested(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1, "a running task nobody asked to stop isn't listed")
+}

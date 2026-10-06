@@ -114,8 +114,7 @@ page, a status, a theme) in `web/README.md`.
 
 ### Task 8.12 — Stop a task (customer-initiated cancel)
 
-**Status: queued, not started.** Requested 2026-10-07; to be built once the owner has verified the redesigned UI end
-to end. Nothing in the product can stop a task on request today: the old UI never had a stop button, there is no
+**Status: DONE 2026-10-07** (see "As built" below). Requested 2026-10-07 and built once the owner signed off the UI. Nothing in the product can stop a task on request today: the old UI never had a stop button, there is no
 portal endpoint, no `CustomerService` RPC and no `lcctl` command. What exists is the plumbing underneath:
 `store.TaskCancelled`, the agent's handling of the coordinator's `Cancel` message
 (`executor.CancelTask`, already used by task adoption on reconnect) and `terminalState("cancelled")`.
@@ -133,7 +132,32 @@ portal endpoint, no `CustomerService` RPC and no `lcctl` command. What exists is
    dialog, optimistic state, and the existing live `task_state` event to confirm; disabled with a spinner while the
    request is in flight; an error toast if it fails.
 
-**Verify (these are the risky parts, so test them, don't just try it once):** cancel a queued task; cancel a running
+**As built (where it differs from the sketch above, and why):**
+- A customer's stop is its own exit reason, **`stopped`** (state `cancelled`), distinct from the coordinator's `cancelled`. The billing
+  rules deliberately never pay for a coordinator cancel, but a customer's stop is real work the host did, so `stopped` is billable
+  (`billing.billable`), while `cancelled` is unchanged. The agent reports both as "cancelled"; the scheduler tells them apart by the new
+  `tasks.cancel_requested_at` column (migration 016) and rewrites the reason before billing, so there is still exactly one settlement path.
+- Queued: cancelled on the spot (transition conditional on `queued`; if a node claimed it in that instant it re-reads and takes the active
+  path). Reserved/dispatched/running: `RequestTaskCancel` records the request (only while the task is still active, so a task that finished
+  in the same instant is never marked) and the node is nudged immediately.
+- **The scheduler keeps nudging**: a node still pulling the image can't act on a Cancel, and one lost on a busy stream is never seen, so
+  `resendCancels` re-sends every 5s until the task finishes (the agent treats an unknown/finished task as a no-op).
+- **A node that has gone quiet**: the reclaimer finishes a cancel-requested task as `stopped` (billing the time it ran if it had started)
+  instead of requeueing it elsewhere or abandoning it as a vanished host.
+- A task that finishes by itself in the instant of the request settles as a normal completion (the request changes nothing).
+- Idempotent: stopping an already-stopped task succeeds; stopping a finished one is `FAILED_PRECONDITION` (HTTP 422); someone else's task is NotFound.
+- Surfaces: `POST /api/portal/customer/tasks/{id}/cancel`, gRPC `CustomerService.CancelTask`, `lcctl cancel <id>` (`lcctl status` shows
+  "stopping"), a "Stop task" button with a confirmation dialog on the task page, a "Stopping" status (header, tables, timeline) and
+  "Stopped by you" wording throughout.
+
+**Verified:** unit tests (every state, idempotency, ownership, offline node); Postgres integration tests for the store query, the scheduler
+(rewrite, throttled resend, dead-node finish, a race where the task completes anyway) and the HTTP endpoint; a billing test that a stop charges
+exactly the price of the time used and credits the host (and a mutation check that breaking either rule makes the tests fail); a real
+end-to-end test (`internal/e2e/stop_test.go`) with a real agent and podman: a 5-minute task is stopped, the container is really gone, the
+customer is charged for the time it ran, the host is paid, the hold is released, a repeat doesn't bill twice; and the full UI flow in a
+real browser against a real agent (Stopping shown in 38 ms, "Stopped by you" 198 ms after the click, 0 containers left, $0.000143 charged).
+
+**Original verification list:** cancel a queued task; cancel a running
 task and check the container is really gone on the node; cancel a task that is finishing in the same instant (no double
 settlement, no negative balance); cancel twice; cancel someone else's task (404); cancel while the node is offline;
 the ledger and balance afterwards. Add the e2e check to `web/e2e/behaviour.mjs`.

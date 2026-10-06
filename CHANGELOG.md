@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## Unreleased
+
+### Added
+- **Stop a task** (task 8.12): a "Stop task" button on the task page, `lcctl cancel <id>`, `POST /api/portal/customer/tasks/{id}/cancel` and the
+  `CancelTask` RPC. A queued task is cancelled at once and costs nothing; a running one is stopped on its node and you are charged only for the time
+  it ran. Shown as "Stopping" until the node confirms, then "Stopped by you". Needs migration 016.
+
 ## v0.2.0 — 2026-10-07
 
 The web portals, a redesigned UI, public images, and a round of fixes found by running the whole thing for real.
@@ -34,7 +41,7 @@ The web portals, a redesigned UI, public images, and a round of fixes found by r
 - Unknown `/api/portal/*` paths return the API's JSON error shape.
 
 ### Known limitations / next
-- Nothing can stop a running task on request yet; gateways can't be tested from the UI; gateway traffic and machine usage aren't recorded over time.
+- Gateways can't be tested from the UI; gateway traffic and machine usage aren't recorded over time.
   Planned as tasks 8.12–8.15 in `docs/02-frontend-overhaul/IMPLEMENTATION.md`.
 - Two coordinators sharing one database fight over node `connected` flags; run a single coordinator.
 
