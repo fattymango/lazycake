@@ -235,7 +235,7 @@ export function LogViewer({
             <p className="px-3 py-6 text-center text-term-muted">No lines match.</p>
           ) : (
             shown.map((l) => (
-              <div key={l.seq} className={cn("flex gap-3 px-3 hover:bg-white/[0.03]", l.stream === "stderr" && "bg-danger/[0.08]")}>
+              <div key={l.seq} className={cn("flex gap-3 px-3 hover:bg-fg/[0.04]", l.stream === "stderr" && "bg-danger/[0.08]")}>
                 <span className="w-10 shrink-0 select-none text-right text-term-muted/70" aria-hidden data-tnum>
                   {l.seq}
                 </span>
