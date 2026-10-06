@@ -11,16 +11,16 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: 9 11 16;
-  --surface: 16 19 26;
-  --raised: 22 26 35;
-  --overlay: 27 32 43;
-  --border: 34 39 53;
-  --border-strong: 52 59 78;
+  --bg: 17 20 29;
+  --surface: 24 28 39;
+  --raised: 32 37 50;
+  --overlay: 39 45 60;
+  --border: 46 52 69;
+  --border-strong: 66 74 97;
 
-  --fg: 233 235 241;
-  --muted: 139 146 166;
-  --subtle: 108 116 136;
+  --fg: 234 237 243;
+  --muted: 150 157 177;
+  --subtle: 118 126 147;
 
   --accent: 124 131 255;
   --accent-fg: 10 12 30;
@@ -35,11 +35,11 @@
   --grid-line: 255 255 255;
 
   /* Log/terminal surfaces: they follow the theme (a dark terminal in the light theme looks like a hole). */
-  --term-bg: 7 9 13;
-  --term-fg: 214 218 228;
-  --term-muted: 106 114 134;
+  --term-bg: 12 15 22;
+  --term-fg: 216 220 230;
+  --term-muted: 114 122 143;
   --term-err: 255 123 128;
-  --term-border: 30 35 48;
+  --term-border: 38 44 59;
 }
 
 [data-theme="light"] {

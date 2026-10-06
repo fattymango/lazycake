@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CheckCircle2, KeyRound, Loader2, ServerCog, ShieldCheck, Terminal } from "lucide-react";
 import { apiPost, errorMessage } from "@/lib/api";
@@ -38,6 +38,21 @@ export function AddMachine() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectedId, setConnectedId] = useState<string | null>(null);
+  const [waitedLong, setWaitedLong] = useState(false);
+
+  // An agent runs inside a container, where 127.0.0.1 is the container itself,
+  // so a command pointing at a loopback address can never connect from another
+  // machine, or from the agent's own container. It happens when the coordinator
+  // is run locally without LAZYCAKE_PUBLIC_GRPC_ADDR set.
+  const loopback = !!result && /LAZYCAKE_COORDINATOR_ADDR=(127\.|localhost|\[?::1)/.test(result.install_command);
+
+  // After a while with no connection, stop saying "wait" and say what to check.
+  useEffect(() => {
+    setWaitedLong(false);
+    if (!result || connectedId) return;
+    const t = window.setTimeout(() => setWaitedLong(true), 40_000);
+    return () => window.clearTimeout(t);
+  }, [result, connectedId]);
 
   // A machine that registers after we minted a token is almost certainly this one.
   useLiveEvents((e) => {
@@ -75,7 +90,9 @@ export function AddMachine() {
                 </p>
                 <CodeBlock
                   label="Shell"
-                  code={"podman info --format json | grep -E '\"(cgroupVersion|rootless)\"'\n# expect:  \"cgroupVersion\": \"v2\",   \"rootless\": true,"}
+                  code={
+                    'podman info --format json | grep -E \'"(cgroupVersion|rootless)"\'\n# expect:  "cgroupVersion": "v2",   "rootless": true,'
+                  }
                 />
                 <p className="text-xs leading-5 text-muted">
                   Also run <span className="font-mono">loginctl enable-linger $USER</span> so the agent keeps running after you log out.
@@ -100,6 +117,14 @@ export function AddMachine() {
                       The token is shown once. Anyone with it can register a machine to your account. If it leaks or you lose it, generate a
                       new one.
                     </Alert>
+                    {loopback && (
+                      <Alert tone="danger" title="This command points at 127.0.0.1, so it can't connect">
+                        The agent runs in a container, where 127.0.0.1 is the container itself, not the machine running LazyCake. The
+                        coordinator needs to advertise an address your machines can reach: set{" "}
+                        <span className="font-mono">LAZYCAKE_PUBLIC_GRPC_ADDR</span> (for example{" "}
+                        <span className="font-mono">203.0.113.5:7443</span>) and generate a new command.
+                      </Alert>
+                    )}
                     <CodeBlock label="Run on your machine" code={result.install_command} />
                     <p className="text-xs leading-5 text-muted">
                       By default it offers 2 CPU cores, 2 GB of RAM and 8 GB of disk. Change the three{" "}
@@ -126,10 +151,28 @@ export function AddMachine() {
                     </Button>
                   </>
                 ) : result ? (
-                  <p className="flex items-center gap-2.5 text-sm text-muted">
-                    <Loader2 className="size-4 animate-spin text-accent" aria-hidden />
-                    Waiting for the agent to connect. This page updates by itself.
-                  </p>
+                  <>
+                    <p className="flex items-center gap-2.5 text-sm text-muted">
+                      <Loader2 className="size-4 animate-spin text-accent" aria-hidden />
+                      Waiting for the agent to connect. This page updates by itself.
+                    </p>
+                    {waitedLong && (
+                      <Alert tone="warning" title="Still waiting? Check these">
+                        <ol className="mt-1 list-decimal space-y-1.5 pl-4">
+                          <li>
+                            Read why it isn't connecting:
+                            <CodeBlock code="podman logs lazycake-agent" className="mt-1.5" />
+                          </li>
+                          <li>
+                            The machine must reach the coordinator on <span className="font-mono">7443</span> (TCP) to connect, and{" "}
+                            <span className="font-mono">7444</span> (UDP) for gateway tunnels. Check any firewall in between.
+                          </li>
+                          <li>The command's address must be one this machine can reach (not 127.0.0.1 or localhost).</li>
+                          <li>If this machine already runs an agent, running the command again replaces it (same container name).</li>
+                        </ol>
+                      </Alert>
+                    )}
+                  </>
                 ) : (
                   <p className="text-sm text-muted">Once you run the command, this page detects the machine automatically.</p>
                 )}

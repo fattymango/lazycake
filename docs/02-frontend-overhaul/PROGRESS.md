@@ -60,3 +60,13 @@ verified.
     CgroupVersion`): the field is `CgroupsVersion`, and it differs across podman versions. The page now greps the stable JSON
     keys instead (`podman info --format json | grep -E '"(cgroupVersion|rootless)"'`), tested on podman 5.7; the same wrong
     name in `HANDOVER.md` is corrected.
+
+- Owner feedback, 2026-10-07: (1) the dark theme was too dark: backgrounds, panels, borders and muted text lifted one small step
+  (`--bg` 9 11 16 -> 17 20 29, etc. in `ui/tokens.css`), contrast unchanged in practice. (2) "Add a machine" never showed connected: the
+  agent's log showed it dialing 127.0.0.1 (the local demo coordinator advertised a loopback address, which inside the agent's
+  container is the container itself), and a rootless container also can't reach its own host's LAN address, so the local demo can only
+  connect an agent with `--network=host`. The page now warns when the command points at a loopback address and, after 40s of
+  waiting, lists what to check (`podman logs lazycake-agent`, ports 7443/tcp and 7444/udp, the address, a second run replacing the
+  first). Verified in a real browser against a real agent: the page flips to "Your machine is connected". Not a product bug, but
+  note: two coordinators pointed at one database fight over node `connected` flags (seen while testing), so don't run replicas
+  against a shared database without addressing that.
