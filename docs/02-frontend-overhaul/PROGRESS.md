@@ -20,17 +20,25 @@ verified.
 - Tasks 8.1–8.2 done, 2026-10-06 (committed earlier as `8.1+8.2`): SPA fallback no longer
   redirect-loops; the log stream sends `id:<seq>`, honours `Last-Event-ID` and ends with an `end` event.
   Go tests fail without the fixes and pass with them.
-- Tasks 8.3–8.9 written, 2026-10-06, NOT yet fully verified (work in progress, uncommitted until now):
-  - New design system under `web/src/ui` (tokens, themes, primitives, shell, DataTable, Identifier/Truncate,
-    LogViewer, charts), data layer in `web/src/lib`, pages in `web/src/features/{auth,customer,provider}`.
-    Old `shared/`, `customer/`, `provider/`, `pages/` deleted. One shared SSE stream per session
-    (`lib/live.tsx`); the log hook de-duplicates by `seq` and closes on `end`.
-  - Backend: task view now also returns `wall_timeout_s`, `tunnel_targets`, `attempt` (additive).
-  - Tooling: Prettier, Vitest (21 unit tests pass), puppeteer-core e2e (`web/e2e/shoot.mjs` screenshots +
-    overflow audit, `web/e2e/behaviour.mjs` deep-link/refresh and log-repeat checks, `web/e2e/seed.py` demo data).
-  - Eyeballed in dark theme at 1440px: login, kit, customer overview/tasks/task detail/submit/gateways/billing,
-    provider overview/machine/add. `tsc` and unit tests are clean.
-  - NOT done yet: run `shoot.mjs` full audit (3 widths x 2 themes) and fix what it flags; run `behaviour.mjs`
-    against the production build (build with `vite build --outDir ../internal/coordinator/webassets/dist
-    --emptyOutDir`, then run the Go coordinator on :18081); light-theme and phone-width review of the new pages;
-    ESLint pass; `docs/screenshots`, README and `web/README.md` (task 8.10/8.11); deploy to the server.
+- Tasks 8.3–8.11 done, 2026-10-06 (verified in a real browser against the production build):
+  - Design system under `web/src/ui` (tokens + dark/light themes, primitives, app shell, DataTable, Identifier/Truncate,
+    charts), product components in `web/src/components`, pages in `web/src/features/{auth,customer,provider}`,
+    data layer in `web/src/lib`. The old `shared/`, `customer/`, `provider/`, `pages/` trees are deleted.
+    `web/README.md` documents the rules and the extension points (page, status, template, theme, primitive).
+  - Overflow: IDs shorten in the middle with full value on hover and one-click copy; hostnames/images truncate; tables are
+    fixed-layout. `e2e/shoot.mjs` audited every page x {390, 820, 1440}px x {dark, light} (90 views): no layout problems.
+  - Bug 1 (refresh -> Chrome error page): `e2e/behaviour.mjs` against the production build: deep links and refreshes return
+    200 with no redirects; unknown routes show the app's 404; a missing asset is a real 404; an unknown API path is JSON.
+  - Bug 2 (repeating log): a failed task's 17 lines stay 17 after 11s with exactly one stream request; a running task stays
+    live with unique ascending line numbers. 19/19 checks pass.
+  - Found while testing, fixed: full-page navigations left old documents parked in the back/forward cache with their
+    EventSources open, until new requests stalled at the browser's 6-connection limit. Streaming hooks now close on
+    `pagehide` and reconnect on a restore (`lib/hooks/usePageRestore.ts`). Unknown `/api/portal/*` paths now answer
+    in the API's JSON error shape (was Go's plain-text 404), with a Go test.
+  - Also: the shell opens one shared account event stream per tab (the old app opened up to three per page); the task view
+    API gained `wall_timeout_s`, `tunnel_targets`, `attempt`; submit parses commands with quotes (`sh -c "a; b"`).
+  - Checks: `make web-check` (tsc, ESLint, Prettier, 21 Vitest tests), `go vet`, and `go test -p 1 -race -tags=integration`
+    (28 packages) all green. Screenshots are in `docs/screenshots/`.
+  - Not done / follow-ups: no command palette, notifications centre or per-task resource charts (needs a metrics endpoint);
+    the dev-only gallery at `/_kit` is the place to add new primitives; tablet width (820px) was audited for overflow
+    but only dark desktop, light desktop and phone were reviewed by eye.

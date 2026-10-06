@@ -51,12 +51,14 @@ async function api(page, path) {
 
 async function login(page, role) {
   const [user, pass] = ACCOUNTS[role];
-  await page.goto(BASE + "/login", { waitUntil: "networkidle0" });
+  await page.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('input[name="username"]');
   await page.type('input[autocomplete="username"], input[name="username"]', user);
   await page.type('input[type="password"]', pass);
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => location.pathname !== "/login", { timeout: 15000 });
-  await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+  await page.goto(BASE + "/", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("main#main");
 }
 
 async function routesFor(page, role) {
@@ -112,7 +114,10 @@ function auditScript() {
 for (const role of ROLES) {
   for (const theme of THEMES) {
     for (const width of WIDTHS) {
-      const page = await browser.newPage();
+      // A fresh browser context per pass: contexts share nothing, so a previous
+      // pass's session cookie can't turn /login into an instant redirect.
+      const context = await browser.createBrowserContext();
+      const page = await context.newPage();
       page.on("console", (m) => m.type() === "error" && !/401 \(Unauthorized\)/.test(m.text()) && consoleErrors.push(`[${role}/${theme}/${width}] ${m.text().slice(0, 160)}`));
       page.on("pageerror", (e) => consoleErrors.push(`[${role}/${theme}/${width}] pageerror: ${String(e).slice(0, 160)}`));
       await page.setViewport({ width, height: width < 600 ? 800 : 900, deviceScaleFactor: 1 });
@@ -122,14 +127,15 @@ for (const role of ROLES) {
       for (const [name, route] of await routesFor(page, role)) {
         const label = `${role}-${name}`;
         if (ONLY && !ONLY.test(label)) continue;
-        await page.goto(BASE + route, { waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 400));
+        await page.goto(BASE + route, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+        await page.waitForSelector("main#main", { timeout: 10000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 900)); // let data load and animations settle
         const file = `${OUT}/${label}.${theme}.${width}.png`;
         await page.screenshot({ path: file, fullPage: true });
         const bad = await safeEvaluate(page, auditScript);
         if (bad.length) problems.push({ page: `${label} ${theme} ${width}px`, bad });
       }
-      await page.close();
+      await context.close();
     }
   }
 }

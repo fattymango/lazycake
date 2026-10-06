@@ -1,12 +1,8 @@
 import { ProgressBar } from "@/ui/ProgressBar";
 import { Tooltip } from "@/ui/Tooltip";
-import type { Tone } from "@/ui/tone";
+import { trustTone } from "@/lib/trust";
 
-/** 0..1 trust score as a labelled meter. New machines start at 0.50 and earn their way up. */
-export function trustTone(score: number): Tone {
-  return score >= 0.8 ? "success" : score >= 0.5 ? "warning" : "danger";
-}
-
+/** A 0..1 trust score as a labelled meter. New machines start at 0.50 and earn their way up. */
 export function TrustMeter({ score }: { score: number }) {
   return (
     <Tooltip content="Trust score. It rises as a machine reliably finishes work and reports honest benchmarks, and falls when it doesn't. Higher scores are scheduled first.">

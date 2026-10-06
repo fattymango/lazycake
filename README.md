@@ -69,6 +69,17 @@ Tasks need a digest-pinned image, so use the digest the registry reports
 (`podman pull` then `podman image inspect` shows the *local* digest, which
 differs from the registry's after a push).
 
+## Web portals
+
+Customers and providers get separate, authenticated web apps served by the coordinator itself (open
+`http://localhost:8080` and sign in). Customers submit tasks, watch live logs, manage gateways and billing; providers
+register machines and track earnings. See `web/README.md` for the design system and how to extend it.
+
+| | |
+| --- | --- |
+| ![Overview](docs/screenshots/customer-dashboard.dark.1440.png) | ![Task detail with live logs](docs/screenshots/customer-task-failed.dark.1440.png) |
+| ![Light theme](docs/screenshots/customer-task-running.light.1440.png) | ![Phone width](docs/screenshots/customer-task-failed.dark.390.png) |
+
 ## Architecture
 
 Three components, and a strict split between the control plane and the data

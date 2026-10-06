@@ -34,7 +34,7 @@ export function Tasks() {
     (e) => e.type === "task_state"
   );
 
-  const all = tasks.data ?? [];
+  const all = useMemo(() => tasks.data ?? [], [tasks.data]);
   const costs = useMemo(() => costByTask(ledger.data), [ledger.data]);
 
   const counts = useMemo(
