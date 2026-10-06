@@ -240,7 +240,7 @@ func run() error {
 	select {
 	case <-ctx.Done():
 		log.Info("coordinator shutting down")
-		grpcServer.GracefulStop()
+		stopGRPC(grpcServer, 10*time.Second, log)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)

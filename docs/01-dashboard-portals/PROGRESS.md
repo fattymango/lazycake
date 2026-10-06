@@ -297,3 +297,13 @@ started.
   pass with them. Not done: nodes' `connected` flags have the same
   stale-after-restart shape and were left alone.
 
+- Coordinator shutdown could hang for 90s, 2026-10-06 - found by the live
+  check of the gateway reconnect fix: restarting the coordinator logged
+  "shutting down", closed the relay, then sat until systemd's 90s stop
+  timeout SIGKILLed it. `grpcServer.GracefulStop()` had no bound and an
+  agent's Connect stream is deliberately long-lived (a GOAWAY alone doesn't
+  end it), so with an agent connected the stop could wait forever - and the
+  relay was already shut down, so gateways couldn't reconnect for the whole
+  window. New `stopGRPC` waits 10s then forces `Stop()`. The test hangs
+  until its timeout without the fix and passes with it.
+
