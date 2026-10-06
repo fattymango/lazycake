@@ -86,3 +86,10 @@ func (s *PostgresStore) SetGatewayConnected(ctx context.Context, id string, conn
 	}
 	return nil
 }
+
+func (s *PostgresStore) ResetGatewaysConnected(ctx context.Context) error {
+	if _, err := s.pool.Exec(ctx, `UPDATE gateways SET connected = false WHERE connected`); err != nil {
+		return fmt.Errorf("resetting gateways connected: %w", err)
+	}
+	return nil
+}

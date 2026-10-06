@@ -291,3 +291,25 @@ func TestImageCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 }
+
+// A coordinator restart kills every relay connection, so the connected
+// flags it left in the database must all be cleared at startup.
+func TestResetGatewaysConnected(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	for _, id := range []string{"gw_a", "gw_b"} {
+		require.NoError(t, s.CreateGateway(ctx, Gateway{ID: id, AccountID: "act_1", Label: id}))
+		require.NoError(t, s.SetGatewayConnected(ctx, id, true, []byte("k")))
+	}
+
+	require.NoError(t, s.ResetGatewaysConnected(ctx))
+
+	gws, err := s.ListGatewaysByAccount(ctx, "act_1")
+	require.NoError(t, err)
+	require.Len(t, gws, 2)
+	for _, g := range gws {
+		require.False(t, g.Connected, "%s still marked connected", g.ID)
+		require.Equal(t, []byte("k"), g.NoisePubkey, "the last-known key is kept for display")
+	}
+}

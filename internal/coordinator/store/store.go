@@ -171,6 +171,11 @@ type Gateways interface {
 	// time (nil/empty otherwise - it isn't cleared on disconnect, so the
 	// last-known key stays around for display/debugging).
 	SetGatewayConnected(ctx context.Context, id string, connected bool, noisePubkey []byte) error
+	// ResetGatewaysConnected marks every gateway disconnected. The relay's
+	// live connections die with the coordinator process, but the flag is in
+	// the database and would otherwise keep claiming a gateway is connected
+	// after a restart until it happens to reconnect.
+	ResetGatewaysConnected(ctx context.Context) error
 }
 
 // Meters persists task_meters rows (IMPLEMENTATION.md task 4.2): duration

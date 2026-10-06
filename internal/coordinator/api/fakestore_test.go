@@ -666,3 +666,13 @@ func (f *fakeStore) RevokeSession(ctx context.Context, idHash []byte) error {
 }
 
 var _ store.Store = (*fakeStore)(nil)
+
+func (f *fakeStore) ResetGatewaysConnected(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, g := range f.gateways {
+		g.Connected = false
+		f.gateways[id] = g
+	}
+	return nil
+}
