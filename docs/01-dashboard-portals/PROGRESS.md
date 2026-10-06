@@ -244,3 +244,35 @@ started.
   the project owner has been testing it directly in their own browser in
   parallel, which is in fact how the `<cores>` bug was first noticed (a
   copy-paste from the live UI failing in a real terminal).
+
+- Public images + live gateway test, 2026-10-06 - published
+  `docker.io/fattymango/lazycake-agent` and a new `cmd/lcbench` benchmark
+  workload (`docker.io/fattymango/lcbench`). Ran a real gateway on a second
+  machine (the Ubuntu VM, bridged onto the LAN) registered through the
+  customer portal; a task on this machine's agent fetched a file from it
+  through the droplet's relay, with the gateway logging
+  `forwarded connection closed` and byte counts.
+
+  Found while doing it, all fixed in this pass:
+  - The install command pulled a bare `lazycake-agent`, which Docker Hub
+    denies. It now uses the full public image name.
+  - The install command's agent still failed *every* task: it resolved
+    `lcinit` inside its own container but the engine resolves bind sources
+    on the host (`mkdir /usr/local/bin/lcinit: permission denied`). New
+    `LAZYCAKE_LCINIT_HOST_DIR`: the command mounts one directory at the same
+    path on both sides and the agent stages its bundled `lcinit` there.
+  - `conn.Runner.Send` read `sendCh` without the mutex while `runOnce`
+    wrote it on every reconnect - a real data race (caught by `-race` in
+    `TestSelfFence`). Now guarded.
+  - `lcbench`'s own CPU readout spiked past the cap (a Ticker delivers a
+    stale tick right after a late one when the process is throttled, giving
+    a near-zero sampling interval). Now a plain sleep, with the counter and
+    clock read together.
+
+  Validated: `go test -p 1 -race -tags=integration ./...` all green except
+  `internal/agent/bench`'s `TestBenchStability`, which needs <5% spread and
+  measures ~6.6% on this laptop (CPU governor `powersave`; the code is
+  identical to master, so this is the machine, not a regression). Note
+  `-p 1` is required: the store, billing and portalapi tests truncate the
+  same Postgres tables and interfere when run in parallel packages.
+

@@ -49,6 +49,26 @@ Watch it queue, dispatch, run and settle on the dashboard in real time. For
 something that actually exercises the CPU-bound reference workload and its
 `--count` fan-out, see `cmd/refworkload` and `deploy/chaos-demo.sh`.
 
+## Public images
+
+Prebuilt images are on Docker Hub, so a host or customer doesn't need to
+build anything:
+
+| Image | What it is |
+| --- | --- |
+| `docker.io/fattymango/lazycake-agent` | The host agent. The provider portal's "Add a machine" command pulls this. |
+| `docker.io/fattymango/lcbench` | A benchmark workload for checking a node enforces its limits. |
+
+`lcbench` burns CPU on every host core and allocates memory for
+`LCBENCH_DURATION` (default `60s`; `60`, `60s` and `1m` all work), printing
+the container's cgroup usage next to the limits it was given once a second.
+A capped task shows `cpu_used` pinned at `cpu_limit` with `throttled_periods`
+climbing, and memory levelling off below `mem_limit`. Submit it with **empty
+args** (the image's own entrypoint runs) and `LCBENCH_DURATION` as an env var.
+Tasks need a digest-pinned image, so use the digest the registry reports
+(`podman pull` then `podman image inspect` shows the *local* digest, which
+differs from the registry's after a push).
+
 ## Architecture
 
 Three components, and a strict split between the control plane and the data
