@@ -52,7 +52,7 @@ stack Podman's WSL2 machine does, but hasn't been fully exercised yet
 Ran directly, not through the agent's own probe yet at first:
 
 ```sh
-podman info --format "{{.Host.CgroupManager}} {{.Host.CgroupVersion}}"
+podman info --format "{{.Host.CgroupManager}} {{.Host.CgroupsVersion}}"   # note: CgroupsVersion, with an "s"
 podman run --rm --memory=64m alpine sh -c \
   "cat /sys/fs/cgroup/memory.max; dd if=/dev/zero of=/dev/shm/fill bs=1M count=128; echo EXIT=\$?"
 ```

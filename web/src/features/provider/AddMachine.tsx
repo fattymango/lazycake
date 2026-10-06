@@ -75,7 +75,7 @@ export function AddMachine() {
                 </p>
                 <CodeBlock
                   label="Shell"
-                  code={"podman info --format '{{.Host.CgroupVersion}} {{.Host.Security.Rootless}}'\n# expect: v2 true"}
+                  code={"podman info --format json | grep -E '\"(cgroupVersion|rootless)\"'\n# expect:  \"cgroupVersion\": \"v2\",   \"rootless\": true,"}
                 />
                 <p className="text-xs leading-5 text-muted">
                   Also run <span className="font-mono">loginctl enable-linger $USER</span> so the agent keeps running after you log out.

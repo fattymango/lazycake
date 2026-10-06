@@ -5,6 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { errorMessage } from "@/lib/api";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
+import { resolveReturnPath, type ReturnState } from "@/lib/returnPath";
 import { Alert } from "@/ui/Alert";
 import { Button } from "@/ui/Button";
 import { Field, Input } from "@/ui/Input";
@@ -14,14 +15,13 @@ export function Login() {
   usePageTitle("Sign in");
   const { me, login } = useAuth();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (me) return <Navigate to={from} replace />;
+  if (me) return <Navigate to={resolveReturnPath(location.state as ReturnState | null, me.role)} replace />;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
