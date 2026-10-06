@@ -24,7 +24,8 @@ RUN go build -o /out/coordinator ./cmd/coordinator \
  && go build -o /out/gateway ./cmd/gateway \
  && go build -o /out/lcctl ./cmd/lcctl \
  && CGO_ENABLED=0 go build -o /out/lcinit ./cmd/lcinit \
- && CGO_ENABLED=0 go build -o /out/refworkload ./cmd/refworkload
+ && CGO_ENABLED=0 go build -o /out/refworkload ./cmd/refworkload \
+ && CGO_ENABLED=0 go build -o /out/lcbench ./cmd/lcbench
 
 FROM alpine:3.20 AS coordinator
 RUN apk add --no-cache ca-certificates
@@ -67,3 +68,10 @@ ENTRYPOINT ["/usr/local/bin/lcctl"]
 FROM alpine:3.20 AS refworkload
 COPY --from=build /out/refworkload /usr/local/bin/refworkload
 ENTRYPOINT ["/usr/local/bin/refworkload"]
+
+# lcbench is a public benchmark workload: burns CPU and allocates memory for
+# LCBENCH_DURATION (default 60s) while printing the container's cgroup usage
+# next to its limits, to show a node really enforces what it provisioned.
+FROM alpine:3.20 AS lcbench
+COPY --from=build /out/lcbench /usr/local/bin/lcbench
+ENTRYPOINT ["/usr/local/bin/lcbench"]
