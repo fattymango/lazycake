@@ -1,0 +1,106 @@
+/*
+ * Design tokens - the only place raw color values live.
+ *
+ * Every color is an "R G B" triplet so Tailwind can apply opacity
+ * (bg-accent/10) and so a theme is nothing but a different set of values for
+ * the same names. To rebrand, change --accent*. To add a theme, add another
+ * [data-theme="..."] block and list it in src/lib/theme.tsx.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: 9 11 16;
+  --surface: 16 19 26;
+  --raised: 22 26 35;
+  --overlay: 27 32 43;
+  --border: 34 39 53;
+  --border-strong: 52 59 78;
+
+  --fg: 233 235 241;
+  --muted: 139 146 166;
+  --subtle: 108 116 136;
+
+  --accent: 124 131 255;
+  --accent-fg: 10 12 30;
+
+  --success: 62 207 142;
+  --warning: 245 165 36;
+  --danger: 244 91 96;
+  --info: 90 169 255;
+
+  --shadow: 0 0 0;
+  --shadow-strength: 0.5;
+  --grid-line: 255 255 255;
+
+  /* Log/terminal surfaces stay dark in the light theme too. */
+  --term-bg: 7 9 13;
+  --term-fg: 214 218 228;
+  --term-muted: 106 114 134;
+  --term-err: 255 123 128;
+  --term-border: 30 35 48;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: 246 247 250;
+  --surface: 255 255 255;
+  --raised: 241 243 247;
+  --overlay: 255 255 255;
+  --border: 226 229 237;
+  --border-strong: 203 208 220;
+
+  --fg: 16 19 28;
+  --muted: 92 100 120;
+  --subtle: 128 136 154;
+
+  --accent: 84 86 230;
+  --accent-fg: 255 255 255;
+
+  --success: 15 140 90;
+  --warning: 176 106 0;
+  --danger: 212 44 54;
+  --info: 31 108 214;
+
+  --shadow: 20 25 45;
+  --shadow-strength: 0.1;
+  --grid-line: 20 25 45;
+
+  --term-bg: 15 18 26;
+  --term-fg: 214 218 228;
+  --term-muted: 112 120 140;
+  --term-err: 255 123 128;
+  --term-border: 36 41 56;
+}
+
+/* No saved choice and JS not yet run: follow the OS. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: 246 247 250;
+    --surface: 255 255 255;
+    --raised: 241 243 247;
+    --overlay: 255 255 255;
+    --border: 226 229 237;
+    --border-strong: 203 208 220;
+    --fg: 16 19 28;
+    --muted: 92 100 120;
+    --subtle: 128 136 154;
+    --accent: 84 86 230;
+    --accent-fg: 255 255 255;
+    --success: 15 140 90;
+    --warning: 176 106 0;
+    --danger: 212 44 54;
+    --info: 31 108 214;
+    --shadow: 20 25 45;
+    --shadow-strength: 0.1;
+    --grid-line: 20 25 45;
+    --term-bg: 15 18 26;
+    --term-fg: 214 218 228;
+    --term-muted: 112 120 140;
+    --term-err: 255 123 128;
+    --term-border: 36 41 56;
+  }
+}

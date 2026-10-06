@@ -13,7 +13,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@shared": resolve(__dirname, "src/shared"),
+      "@": resolve(__dirname, "src"),
     },
   },
   build: {
@@ -22,7 +22,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api/portal": {
-        target: "http://localhost:8080",
+        target: process.env.LAZYCAKE_PROXY || "http://localhost:8080",
         changeOrigin: true,
       },
     },

@@ -16,3 +16,21 @@ verified.
   hand-rolled icons and components, one-off colors in `tailwind.config.js`,
   no design tokens. Headless Chrome is available on the dev machine
   (`/usr/bin/google-chrome`) for screenshot verification.
+
+- Tasks 8.1–8.2 done, 2026-10-06 (committed earlier as `8.1+8.2`): SPA fallback no longer
+  redirect-loops; the log stream sends `id:<seq>`, honours `Last-Event-ID` and ends with an `end` event.
+  Go tests fail without the fixes and pass with them.
+- Tasks 8.3–8.9 written, 2026-10-06, NOT yet fully verified (work in progress, uncommitted until now):
+  - New design system under `web/src/ui` (tokens, themes, primitives, shell, DataTable, Identifier/Truncate,
+    LogViewer, charts), data layer in `web/src/lib`, pages in `web/src/features/{auth,customer,provider}`.
+    Old `shared/`, `customer/`, `provider/`, `pages/` deleted. One shared SSE stream per session
+    (`lib/live.tsx`); the log hook de-duplicates by `seq` and closes on `end`.
+  - Backend: task view now also returns `wall_timeout_s`, `tunnel_targets`, `attempt` (additive).
+  - Tooling: Prettier, Vitest (21 unit tests pass), puppeteer-core e2e (`web/e2e/shoot.mjs` screenshots +
+    overflow audit, `web/e2e/behaviour.mjs` deep-link/refresh and log-repeat checks, `web/e2e/seed.py` demo data).
+  - Eyeballed in dark theme at 1440px: login, kit, customer overview/tasks/task detail/submit/gateways/billing,
+    provider overview/machine/add. `tsc` and unit tests are clean.
+  - NOT done yet: run `shoot.mjs` full audit (3 widths x 2 themes) and fix what it flags; run `behaviour.mjs`
+    against the production build (build with `vite build --outDir ../internal/coordinator/webassets/dist
+    --emptyOutDir`, then run the Go coordinator on :18081); light-theme and phone-width review of the new pages;
+    ESLint pass; `docs/screenshots`, README and `web/README.md` (task 8.10/8.11); deploy to the server.
