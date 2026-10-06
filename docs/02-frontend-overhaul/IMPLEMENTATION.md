@@ -137,3 +137,75 @@ portal endpoint, no `CustomerService` RPC and no `lcctl` command. What exists is
 task and check the container is really gone on the node; cancel a task that is finishing in the same instant (no double
 settlement, no negative balance); cancel twice; cancel someone else's task (404); cancel while the node is offline;
 the ledger and balance afterwards. Add the e2e check to `web/e2e/behaviour.mjs`.
+
+### Task 8.13 — Gateway "Test connection" (with a legend)
+
+**Status: backlog, not started.** Suggested 2026-10-07. Order of the queued work: 8.12 (stop a task), then 8.13, then
+8.14. 8.13 and 8.14 both change the gateway binary, so they should ship in one gateway release.
+
+**Why.** Misconfigured gateways are the likeliest first-run failure and today the only symptom is a task dying with
+"bad address" or a reset. A gateway has two independent layers that fail separately: the gateway program (connected to our
+relay, shown as Online/Offline) and each published service (a port on the gateway's own machine, e.g. `postgres:5432`). A test
+that only checked the first would show green exactly when a service is dead, so it must check both.
+
+**Result states (the headline above a per-service checklist):**
+- **Green** — gateway connected and every published service reachable.
+- **Yellow** — gateway connected but at least one service fails (also "0 of N reachable"; the checklist names the failing ones).
+- **Red** — the gateway itself isn't connected, so there is nothing to test. (Deliberately *not* "nothing reachable": a connected
+  gateway with every service refusing is a service-side fix and shows yellow with a count.)
+- **Grey** — connected, but an old gateway without the probe, so services can't be verified: "Connected, services not
+  verified. Update your gateway for a full test". Never green: green must mean verified.
+
+**Build:**
+1. Backend `POST /api/portal/customer/gateways/{id}/test`: returns `{gateway: {connected, rtt_ms}, services: [{name, port, ok,
+   error, ms}], verified: bool}`. Hard server-side timeout (~5s) so a dead gateway can't hold a request open. **No server-side
+   rate limiting** (decided: keep it simple; one authenticated user, one cheap probe per click).
+2. Gateway-side probe: a relayed stream whose header carries a probe marker; the gateway dials the local service and answers a
+   plaintext `{ok, error}`. It carries no customer data and happens *before* any Noise session, so the coordinator never holds a
+   Noise key. The relay must **reject probe headers arriving from agents** (only coordinator-originated), so an agent can't use it
+   to scan a customer's network. `Relay.ProbeGateway(ctx, gatewayID, service)` is what the portal calls.
+3. Check 1 needs no gateway change: relay session alive plus QUIC round-trip time.
+4. UI: a "Test connection" button per gateway card. **Throttled in the frontend only**: disabled while a test runs, plus a ~10s
+   cooldown. Result shown as the colored headline and a checklist with one line per check and a one-line fix for each failure
+   ("connection refused: nothing is listening on that port on the gateway's machine").
+5. **Legend:** a "?" icon beside the button opening a popover explaining the four states and what to do for each; colors come from
+   the existing status registry (`ui/status.ts`).
+
+**Verify:** all-green; a service port with nothing listening (yellow); gateway stopped (red); an old gateway (grey, and
+no green ever); two services where one fails; timeout path; an agent sending a probe header is rejected; the throttle (button
+disabled during and after a run). Redeploy both of the owner's gateways (VM and server) and test against the real ones.
+
+### Task 8.14 — Gateway traffic: totals, time series, and per-task/per-gateway usage
+
+**Status: backlog, not started.** Suggested 2026-10-07.
+
+**Today.** The gateway already reports bytes after each forwarded connection (`ReportBytes`: gateway ID, task ID, and the two
+directions separately). The coordinator throws the gateway ID and the direction away: it adds the total into an in-memory per-task
+counter used for billing reconciliation (`billing.Reconciler`), which also resets on restart. So nothing about per-gateway usage is
+kept anywhere.
+
+**Decision: Postgres, not InfluxDB.** The droplet has ~450 MB RAM and the coordinator runs under a 150 MB cap; a second datastore
+means another service to deploy, secure and back up, against the project's "Postgres only, no broker" design; and the volume is one
+row per forwarded connection (thousands a day). Revisit a time-series store (TimescaleDB first, since it is still Postgres) only if we
+add live per-second metrics or CPU/memory series for tasks and nodes. The raw rows can be moved later.
+
+**Build:**
+1. Migration: an append-only `gateway_transfers` table, one row per forwarded connection (task, gateway, service, bytes each way,
+   start and end). Retention: prune (or roll up to daily totals) after 60-90 days so it can't fill the 10 GB disk.
+2. Ingest in `GatewayServer.ReportBytes` (it already receives everything needed); keep feeding the existing reconciler unchanged.
+3. **Progress reports:** today a connection is reported only when it closes, so a 2-hour database session would appear as one spike at
+   the end. The gateway sends a small delta every ~10s while a connection is open, which makes "over time" honest. (Shares the gateway
+   release with 8.13.)
+4. API: per-gateway totals and daily/hourly series; per-task breakdown by gateway (and service); a gateway's busiest tasks.
+5. UI: lifetime totals on each gateway card; a gateway detail view with a 7/30-day chart (existing `BarChart`) and its busiest tasks;
+   on the task page's **Network** card, each target shows what actually flowed, e.g. `postgres:5432 via production-postgres  ↑ 12.4 MB
+   ↓ 310 MB`, with a total across gateways, ticking up live for a running task. Optional "Transferred" column on the tasks list (off by default).
+6. Labels from the customer's side, not the ambiguous "in/out": "Received from tasks" and "Sent to tasks", with arrows.
+
+**Caveats to keep in the UI copy:** counts are "as reported by your gateway" and are a floor (a gateway that can't reach the
+coordinator loses that report); there is no backfill, totals start the day this ships; the system also has agent-side and relay-side
+counts and already flags large three-way disagreement, so show the gateway's (customer-owned) number and mark a task where they diverge.
+
+**Verify:** per-gateway attribution when one task uses three gateways (no leakage between them); a long-lived connection shows
+steady growth, not one spike; coordinator restart loses nothing already stored; retention pruning; migration up/down; the chart and
+per-task numbers against a task whose traffic is known exactly (e.g. fetch a file of a known size).

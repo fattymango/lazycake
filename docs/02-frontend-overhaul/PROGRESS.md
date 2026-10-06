@@ -46,3 +46,7 @@ verified.
 - Queued 2026-10-07: task 8.12, "Stop a task" (customer-initiated cancel). The owner asked whether the redesign had dropped a
   stop button; it hadn't: the product never had one (no endpoint, RPC or CLI command). Parked until the redesigned UI is
   signed off. Design notes and the verification list are in `IMPLEMENTATION.md`.
+
+- Backlog 2026-10-07: tasks 8.13 (gateway "Test connection" with a green/yellow/red/grey result and a legend) and 8.14 (gateway
+  traffic: Postgres event table, progress reports, per-gateway series, per-task per-gateway usage) designed and recorded in
+  `IMPLEMENTATION.md`; InfluxDB considered and rejected for now (see 8.14 for why). Queue order: 8.12, 8.13, 8.14. Nothing built.
