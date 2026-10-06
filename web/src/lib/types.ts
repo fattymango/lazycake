@@ -144,3 +144,25 @@ export type PortalEvent =
   | { type: "node_connected"; node_id: string }
   | { type: "node_disconnected"; node_id: string }
   | { type: "balance"; balance_micros: number };
+
+/** Result of GET-less POST /api/portal/customer/gateways/{id}/test. */
+export type GatewayTestStatus = "green" | "yellow" | "red" | "grey";
+
+export interface GatewayServiceTest {
+  name: string;
+  port: number;
+  ok: boolean;
+  error?: string;
+  ms?: number;
+  /** False when the gateway never replied about this service (an older gateway). */
+  answered: boolean;
+}
+
+export interface GatewayTestResult {
+  status: GatewayTestStatus;
+  connected: boolean;
+  rtt_ms?: number;
+  verified: boolean;
+  services: GatewayServiceTest[];
+  tested_at_ms: number;
+}

@@ -1,6 +1,20 @@
-import { Ban, CheckCircle2, Clock3, Ghost, Loader, ShieldAlert, Send, XCircle, Wifi, WifiOff, CircleDot } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Clock3,
+  Ghost,
+  HelpCircle,
+  Loader,
+  ShieldAlert,
+  Send,
+  XCircle,
+  Wifi,
+  WifiOff,
+  CircleDot,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { TaskState } from "@/lib/types";
+import type { GatewayTestStatus, TaskState } from "@/lib/types";
 import type { Tone } from "./tone";
 
 // One registry for every status the UI shows. A new task state is one entry
@@ -126,3 +140,38 @@ export function exitReason(
       return { title: reason.replace(/_/g, " "), detail: "", tone: "neutral" };
   }
 }
+
+/**
+ * The headline of a gateway connection test, with the wording shared by the
+ * result and the legend so they can never drift apart. `hint` is what to do.
+ */
+export const gatewayTestStatuses: Record<GatewayTestStatus, StatusMeta & { hint: string }> = {
+  green: {
+    label: "All services reachable",
+    tone: "success",
+    icon: CheckCircle2,
+    description: "The gateway is connected and every service it publishes answered.",
+    hint: "Tasks can use this gateway.",
+  },
+  yellow: {
+    label: "Connected, but a service isn't reachable",
+    tone: "warning",
+    icon: AlertTriangle,
+    description: "The gateway is connected, but at least one service it publishes didn't answer.",
+    hint: "Check that the service is running on the gateway's machine and that the port matches.",
+  },
+  red: {
+    label: "Gateway not connected",
+    tone: "danger",
+    icon: XCircle,
+    description: "The gateway isn't connected to LazyCake, so there is nothing to test.",
+    hint: "Check that the gateway is running and can reach the coordinator.",
+  },
+  grey: {
+    label: "Connected, services not verified",
+    tone: "neutral",
+    icon: HelpCircle,
+    description: "The gateway is connected, but it is too old to check its services.",
+    hint: "Update the gateway for a full test.",
+  },
+};

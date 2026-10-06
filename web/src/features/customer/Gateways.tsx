@@ -18,6 +18,7 @@ import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { Identifier } from "@/ui/Identifier";
 import { Field, Input } from "@/ui/Input";
 import { PageHeader } from "@/ui/PageHeader";
+import { GatewayTester } from "./GatewayTest";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { useToast } from "@/ui/Toast";
@@ -219,7 +220,7 @@ export function Gateways() {
           {list.map((g) => (
             <li key={g.id} className="min-w-0">
               <Card className="flex h-full flex-col">
-                <CardBody className="flex-1 space-y-4">
+                <CardBody className="space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-raised text-muted">
@@ -247,6 +248,10 @@ export function Gateways() {
                     )}
                   </div>
                 </CardBody>
+                <div className="border-t border-border px-5 py-4">
+                  <GatewayTester gatewayId={g.id} />
+                </div>
+                <div className="flex-1" aria-hidden />
                 <CardFooter>
                   <Identifier value={g.id} className="text-muted" />
                   <span className="shrink-0 text-xs text-subtle">{relativeTime(g.created_at_ms)}</span>

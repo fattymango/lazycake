@@ -240,6 +240,15 @@ func (r *Relay) relayStream(agentStream *quicgo.Stream) {
 		return
 	}
 
+	// Only the coordinator may probe a gateway. An agent-opened stream whose
+	// "task" is a probe marker would let an agent ask a customer's gateway
+	// which ports on its network answer, so refuse it here.
+	if _, isProbe := ProbeService(hdr.TaskID); isProbe {
+		r.Log.Warn("refusing a probe marker on an agent stream", "gateway_id", hdr.GatewayID)
+		agentStream.CancelWrite(5)
+		return
+	}
+
 	r.mu.Lock()
 	gwConn, ok := r.gateways[hdr.GatewayID]
 	r.mu.Unlock()

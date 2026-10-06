@@ -150,6 +150,27 @@ check("stopping it again is harmless", again === 200, `status ${again}`);
 const fin = await page.evaluate(async (id) => (await fetch(`/api/portal/customer/tasks/${id}/cancel`, { method: "POST", credentials: "include" })).status, failed.id);
 check("a finished task can't be stopped", fin === 422, `status ${fin}`);
 
+// --- gateway "Test connection" (task 8.13) --------------------------------------
+// The seeded gateways have no process behind them, so they must read as not
+// connected (red). The green/yellow/grey states need real gateways and are
+// checked by hand and in the Go tests.
+await go(`${BASE}/gateways`);
+await page.waitForSelector("main#main ul > li");
+const testButtons = await page.$$eval("button", (bs) => bs.filter((x) => /Test connection/.test(x.textContent)).length);
+check("every gateway has a Test connection button", testButtons >= 1, `${testButtons} button(s)`);
+await page.evaluate(() => [...document.querySelectorAll("button")].find((x) => /Test connection/.test(x.textContent))?.click());
+await page.waitForSelector('[data-testid="gateway-test-result"]', { timeout: 15000 });
+const gwStatus = await page.$eval('[data-testid="gateway-test-result"]', (e) => e.getAttribute("data-status"));
+check("a gateway that isn't running tests as red", gwStatus === "red", gwStatus);
+const gwText = await page.$eval('[data-testid="gateway-test-result"]', (e) => e.innerText);
+check("and says what to do about it", /Gateway not connected/.test(gwText) && /running/.test(gwText));
+check("the button is throttled for a few seconds afterwards (frontend-only)", await page.evaluate(() => [...document.querySelectorAll("button")].some((x) => /Test again in \d+s/.test(x.textContent) && x.disabled)));
+await page.evaluate(() => document.querySelector('button[aria-label="What do the results mean?"]')?.click());
+await page.waitForFunction(() => /What the results mean/.test(document.body.innerText), { timeout: 5000 }).catch(() => {});
+const legendText = await page.$eval("body", (b) => b.innerText);
+check("the legend names every state", ["All services reachable", "Connected, but a service isn't reachable", "Gateway not connected", "Connected, services not verified"].every((t) => legendText.includes(t)));
+await page.keyboard.press("Escape");
+
 // --- signing out clears the remembered page ----------------------------------
 // Reported bug: log out on a customer's task page, sign in as a provider, and
 // land on the customer's /tasks/<id> (which doesn't exist for a provider).

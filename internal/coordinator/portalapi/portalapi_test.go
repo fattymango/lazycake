@@ -25,6 +25,7 @@ import (
 	"github.com/mkassab215/lazycake/internal/coordinator/events"
 	"github.com/mkassab215/lazycake/internal/coordinator/pricing"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
+	"github.com/mkassab215/lazycake/internal/tunnel/quic"
 )
 
 // testStore connects to LAZYCAKE_TEST_DATABASE_URL, same convention as
@@ -815,4 +816,96 @@ func newTestClientFor(t *testing.T, c *testClient) *testClient {
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
 	return &testClient{t: t, base: c.base, hc: &http.Client{Jar: jar}}
+}
+
+// --- Gateway "Test connection" (phase 8, task 8.13) ---
+
+// scriptedProber answers every probe with a fixed result.
+type scriptedProber struct{ result quic.GatewayProbe }
+
+func (p scriptedProber) ProbeGateway(_ context.Context, _ string, services []string) quic.GatewayProbe {
+	out := p.result
+	out.Services = nil
+	for i, name := range services {
+		if i < len(p.result.Services) {
+			s := p.result.Services[i]
+			s.Name = name
+			out.Services = append(out.Services, s)
+		}
+	}
+	return out
+}
+
+func newTestServerWithProber(t *testing.T, p GatewayProber) (*testClient, store.Store) {
+	t.Helper()
+	st := testStore(t)
+	bus := events.NewBus()
+	srv := &Server{
+		Store: st, Customer: &api.CustomerServer{Store: st, Rates: pricing.DefaultRates(), Bus: bus},
+		Bus: bus, Prober: p, Log: discardLog(), Dev: true,
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	return &testClient{t: t, base: ts.URL, hc: &http.Client{Jar: jar}}, st
+}
+
+func createGatewayForTest(t *testing.T, c *testClient, label string, services ...gatewayServiceView) string {
+	t.Helper()
+	resp := c.do(http.MethodPost, "/api/portal/customer/gateways", createGatewayRequest{Label: label, Services: services})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	return decodeBody[createGatewayResponse](t, resp).ID
+}
+
+func TestGatewayTestReportsEachState(t *testing.T) {
+	two := []gatewayServiceView{{Name: "db", Port: 5432}, {Name: "files", Port: 8000}}
+	answered := func(ok bool, msg string) quic.ServiceProbe {
+		return quic.ServiceProbe{OK: ok, Answered: true, Error: msg, Ms: 3}
+	}
+	cases := []struct {
+		name   string
+		result quic.GatewayProbe
+		want   string
+	}{
+		{"green", quic.GatewayProbe{Connected: true, RTTMs: 41, Verified: true, Services: []quic.ServiceProbe{answered(true, ""), answered(true, "")}}, "green"},
+		{"yellow", quic.GatewayProbe{Connected: true, RTTMs: 41, Verified: true, Services: []quic.ServiceProbe{answered(true, ""), answered(false, "connection refused")}}, "yellow"},
+		{"red", quic.GatewayProbe{}, "red"},
+		{"grey", quic.GatewayProbe{Connected: true, RTTMs: 41, Verified: false, Services: []quic.ServiceProbe{{Error: "may need updating"}, {Error: "may need updating"}}}, "grey"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newTestServerWithProber(t, scriptedProber{result: tc.result})
+			signUpCustomer(t, c, "tester")
+			id := createGatewayForTest(t, c, "gw", two...)
+
+			resp := c.do(http.MethodPost, "/api/portal/customer/gateways/"+id+"/test", nil)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			got := decodeBody[gatewayTestResponse](t, resp)
+			require.Equal(t, tc.want, got.Status)
+			require.Equal(t, tc.result.Connected, got.Connected)
+			require.Len(t, got.Services, 2, "one row per registered service, with its port")
+			require.Equal(t, "db", got.Services[0].Name)
+			require.Equal(t, 5432, got.Services[0].Port)
+			require.NotZero(t, got.TestedAtMS)
+		})
+	}
+}
+
+func TestGatewayTestOfSomeoneElsesGatewayIsNotFound(t *testing.T) {
+	c, _ := newTestServerWithProber(t, scriptedProber{result: quic.GatewayProbe{Connected: true, Verified: true}})
+	signUpCustomer(t, c, "owner")
+	id := createGatewayForTest(t, c, "mine", gatewayServiceView{Name: "db", Port: 5432})
+
+	other := newTestClientFor(t, c)
+	signUpCustomer(t, other, "stranger")
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodPost, "/api/portal/customer/gateways/"+id+"/test", nil).StatusCode)
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodPost, "/api/portal/customer/gateways/gw_nope/test", nil).StatusCode)
+}
+
+func TestGatewayTestWithoutAProberIs503(t *testing.T) {
+	c, _ := newTestServerWithProber(t, nil)
+	signUpCustomer(t, c, "owner")
+	id := createGatewayForTest(t, c, "mine", gatewayServiceView{Name: "db", Port: 5432})
+	require.Equal(t, http.StatusServiceUnavailable, c.do(http.MethodPost, "/api/portal/customer/gateways/"+id+"/test", nil).StatusCode)
 }

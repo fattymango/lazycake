@@ -7,10 +7,13 @@ package listener
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"syscall"
+	"time"
 
 	quicgo "github.com/quic-go/quic-go"
 
@@ -62,7 +65,65 @@ func (l *Listener) Run(ctx context.Context) error {
 	}
 }
 
+// localDialTimeout bounds a probe's dial of a local service. It must stay
+// below the coordinator's reply timeout (quic.probeReplyTimeout) so a slow
+// service shows up as a failed dial, not as a silent gateway.
+const localDialTimeout = 2 * time.Second
+
+// handleProbe answers a connectivity probe from the coordinator: dial the named
+// service on this machine and say whether it worked. No customer data is
+// involved, and the connection is closed straight away.
+func (l *Listener) handleProbe(service string, stream *quicgo.Stream) {
+	defer stream.Close()
+	reply := quic.ProbeReply{}
+	addr, ok := l.Services[service]
+	if !ok {
+		reply.Error = "this gateway doesn't publish a service with that name"
+	} else {
+		start := time.Now()
+		var conn net.Conn
+		var err error
+		if l.Dial != nil {
+			conn, err = l.Dial("tcp", addr)
+		} else {
+			conn, err = net.DialTimeout("tcp", addr, localDialTimeout)
+		}
+		reply.Ms = time.Since(start).Milliseconds()
+		if err != nil {
+			reply.Error = probeDialError(err)
+		} else {
+			conn.Close()
+			reply.OK = true
+		}
+	}
+	if err := quic.WriteProbeReply(stream, reply); err != nil {
+		l.Log.Debug("answering a probe", "service", service, "error", err)
+	}
+}
+
+// probeDialError turns a dial failure into a sentence a person can act on,
+// without leaking more than the cause.
+func probeDialError(err error) string {
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused: nothing is listening on that port on the gateway's machine"
+	case errors.Is(err, context.DeadlineExceeded), isTimeout(err):
+		return "timed out: the service didn't answer in time"
+	default:
+		return "could not connect: " + err.Error()
+	}
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 func (l *Listener) handleStream(taskID string, stream *quicgo.Stream) {
+	if service, isProbe := quic.ProbeService(taskID); isProbe {
+		l.handleProbe(service, stream)
+		return
+	}
 	session, _, err := noise.DoResponderHandshake(stream, l.Keypair)
 	if err != nil {
 		l.Log.Warn("noise handshake failed", "task_id", taskID, "error", err)
