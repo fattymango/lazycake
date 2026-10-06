@@ -276,3 +276,24 @@ started.
   `-p 1` is required: the store, billing and portalapi tests truncate the
   same Postgres tables and interfere when run in parallel packages.
 
+- Gateway reconnect + stale "connected" flags, 2026-10-06 - found by
+  deploying the coordinator to the live server: the restart killed every
+  relay connection, the VM's gateway exited (it had no reconnect logic;
+  `Restart=on-failure` brought it back ~35s later) and the portal kept
+  showing it as connected the whole time. Fixed:
+  - `cmd/gateway` now reconnects with capped backoff (1s..30s) instead of
+    exiting, so it no longer depends on a process supervisor.
+  - The relay closes every live connection on shutdown (peers learn at once
+    instead of at the idle timeout) and the QUIC idle timeout drops 30s ->
+    15s (keepalive 10s -> 5s).
+  - The coordinator clears every gateway's `connected` flag at startup
+    (`Store.ResetGatewaysConnected`; single-coordinator assumption, noted
+    in the code).
+  - A latent race: a gateway that reconnected before its old connection
+    timed out had its flag set back to disconnected by the old connection's
+    late cleanup. Only the still-registered connection may mark it
+    disconnected now, and a superseded connection is closed.
+  Tests fail without the fixes (checked by reverting the relay change) and
+  pass with them. Not done: nodes' `connected` flags have the same
+  stale-after-restart shape and were left alone.
+
