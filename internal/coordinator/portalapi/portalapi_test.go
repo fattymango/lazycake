@@ -13,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -618,4 +619,115 @@ func mustNode(t *testing.T, st store.Store, id, accountID string) {
 		ID: id, AccountID: accountID, Hostname: "h", Arch: "amd64",
 		OfferCores: 4, OfferMemoryMB: 8192, OfferDiskMB: 20000,
 	}))
+}
+
+// --- Task log stream (phase 8, task 8.2) ---
+
+// failedTaskWithLogs submits a task, appends n log lines to it and marks it
+// failed, returning its ID. The stream endpoint under test reads only the
+// store, so this stands in for an agent having run and died.
+func failedTaskWithLogs(t *testing.T, c *testClient, st store.Store, n int) string {
+	t.Helper()
+	signed := signUpCustomer(t, c, "logger")
+	fundAccount(t, st, signed.AccountID, 10_000_000)
+	resp := c.do(http.MethodPost, "/api/portal/customer/tasks", submitTaskRequest{
+		Image: "alpine@sha256:abc", Cores: 1, MemoryMB: 256, WallTimeoutS: 30,
+	})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	id := decodeBody[taskView](t, resp).ID
+
+	ctx := context.Background()
+	lines := make([]store.LogLine, n)
+	for i := range lines {
+		lines[i] = store.LogLine{TaskID: id, Seq: int64(i + 1), Stream: "stderr", At: time.Now(), Line: "boom " + strconv.Itoa(i+1)}
+	}
+	require.NoError(t, st.AppendLogs(ctx, lines))
+	reason := "error"
+	require.NoError(t, st.TransitionTask(ctx, id, []store.TaskState{store.TaskQueued}, store.TaskFailed, store.TaskUpdate{ExitReason: &reason}))
+	return id
+}
+
+// sseFrames reads an SSE response to EOF (or fails if it doesn't end), and
+// returns each frame's id, event name and data.
+type sseFrame struct{ id, event, data string }
+
+func readSSEFrames(t *testing.T, resp *http.Response) []sseFrame {
+	t.Helper()
+	defer resp.Body.Close()
+	type result struct {
+		frames []sseFrame
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		var frames []sseFrame
+		var cur sseFrame
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			line := sc.Text()
+			switch {
+			case line == "":
+				if cur != (sseFrame{}) {
+					frames = append(frames, cur)
+					cur = sseFrame{}
+				}
+			case strings.HasPrefix(line, "id: "):
+				cur.id = strings.TrimPrefix(line, "id: ")
+			case strings.HasPrefix(line, "event: "):
+				cur.event = strings.TrimPrefix(line, "event: ")
+			case strings.HasPrefix(line, "data: "):
+				cur.data = strings.TrimPrefix(line, "data: ")
+			}
+		}
+		done <- result{frames, sc.Err()}
+	}()
+	select {
+	case r := <-done:
+		return r.frames
+	case <-time.After(8 * time.Second):
+		t.Fatal("the log stream of a finished task never ended")
+		return nil
+	}
+}
+
+// The bug: a finished task's stream closed with no signal, the browser's
+// EventSource reconnected, and the whole log replayed again - forever.
+func TestLogStreamOfFinishedTaskEndsWithAnEndEvent(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	id := failedTaskWithLogs(t, c, st, 3)
+
+	frames := readSSEFrames(t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+id+"/logs", nil))
+	require.Len(t, frames, 4, "3 log lines then the end event: %+v", frames)
+	for i, f := range frames[:3] {
+		require.Equal(t, strconv.Itoa(i+1), f.id, "every line carries its seq as the SSE id")
+		require.Empty(t, f.event)
+		require.Contains(t, f.data, "boom "+strconv.Itoa(i+1))
+	}
+	require.Equal(t, "end", frames[3].event, "the stream says it is done instead of just closing")
+}
+
+// A reconnect (network blip, laptop sleep) resumes after the last line seen.
+func TestLogStreamResumesFromLastEventID(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	id := failedTaskWithLogs(t, c, st, 5)
+
+	req, err := http.NewRequest(http.MethodGet, c.base+"/api/portal/customer/tasks/"+id+"/logs", nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "3")
+	resp, err := c.hc.Do(req)
+	require.NoError(t, err)
+
+	frames := readSSEFrames(t, resp)
+	require.Len(t, frames, 3, "lines 4 and 5 then end, never a replay: %+v", frames)
+	require.Equal(t, "4", frames[0].id)
+	require.Equal(t, "5", frames[1].id)
+	require.Equal(t, "end", frames[2].event)
+
+	// Resuming from the very last line yields nothing but the end.
+	req.Header.Set("Last-Event-ID", "5")
+	resp, err = c.hc.Do(req)
+	require.NoError(t, err)
+	frames = readSSEFrames(t, resp)
+	require.Len(t, frames, 1)
+	require.Equal(t, "end", frames[0].event)
 }

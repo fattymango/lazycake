@@ -9,12 +9,7 @@
 // contents here, which deploy/Dockerfile's node build stage does before the
 // Go build stage runs.
 //
-// This package is not yet wired into cmd/coordinator/run.go: that wiring
-// belongs with Phase 7A's portalapi package (docs/01-dashboard-portals/
-// IMPLEMENTATION.md tasks 7.2-7.5), which had not landed as of this
-// frontend build (7.6-7.9). Handler here is what run.go should mount at
-// "/", "/customer.html"+"/tasks"+"/gateways"+... , and "/provider.html"+
-// "/machines"+... once that lands (task 7.10).
+// cmd/coordinator mounts Handler("index.html") at "/".
 package webassets
 
 import (
@@ -40,13 +35,25 @@ func FS() fs.FS {
 }
 
 // Handler serves the embedded build output as static files, falling back
-// to entryFile (e.g. "customer.html" or "provider.html") for any path that
-// isn't a real file on disk - the standard single-page-app pattern, so
-// client-side routes like /tasks/abc123 load the app instead of 404ing.
-// entryFile == "" serves the root chooser page (index.html) with no
-// fallback, since it has no client-side routes of its own.
+// to entryFile (e.g. "index.html") for any path that isn't a real file - the
+// standard single-page-app pattern, so client-side routes like
+// /tasks/abc123 load the app instead of 404ing, including when the browser
+// is refreshed on one. entryFile == "" serves the build output with no
+// fallback.
 func Handler(entryFile string) http.Handler {
-	fsys := FS()
+	return handlerFor(FS(), entryFile)
+}
+
+// handlerFor is Handler over an arbitrary filesystem, so tests don't depend
+// on whether a frontend build is present in dist/.
+//
+// The fallback writes the entry file's bytes itself. It must not rewrite
+// the request path to "/index.html" and hand it to http.FileServer: the
+// file server answers any path ending in "/index.html" with a redirect to
+// "./", which for a deep link like /tasks/abc resolves to /tasks/, which
+// falls back and redirects again - an infinite loop that the browser
+// reports as ERR_TOO_MANY_REDIRECTS (a refresh on any non-root page).
+func handlerFor(fsys fs.FS, entryFile string) http.Handler {
 	fileServer := http.FileServer(http.FS(fsys))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,20 +61,52 @@ func Handler(entryFile string) http.Handler {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-
-		clean := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-		if clean == "" || clean == "." {
-			clean = entryFile
-		}
-		if _, err := fs.Stat(fsys, clean); err != nil {
-			// Not a real asset (JS/CSS/etc) - it's a client-side route, so
-			// serve the SPA's entry point and let react-router take over.
-			r2 := new(http.Request)
-			*r2 = *r
-			r2.URL.Path = "/" + entryFile
-			fileServer.ServeHTTP(w, r2)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		fileServer.ServeHTTP(w, r)
+
+		clean := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if clean != "" {
+			if info, err := fs.Stat(fsys, clean); err == nil && !info.IsDir() {
+				if strings.HasPrefix(clean, "assets/") {
+					// Vite content-hashes everything under assets/, so a given
+					// URL never changes meaning.
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// Anything under /api/ that reached here is a typo'd endpoint: say so
+		// as JSON instead of returning the app shell with a 200.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"not found"}`))
+			return
+		}
+		// A missing file (it has an extension: a stale hashed bundle after a
+		// redeploy, a favicon that doesn't exist) is a real 404. Returning the
+		// HTML shell for it makes the browser try to run HTML as JavaScript.
+		if path.Ext(clean) != "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		body, err := fs.ReadFile(fsys, entryFile)
+		if err != nil {
+			http.Error(w, "frontend not built", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// The shell references hashed bundles; it must be revalidated on every
+		// load or a user keeps an old shell pointing at deleted files.
+		w.Header().Set("Cache-Control", "no-cache")
+		if r.Method == http.MethodHead {
+			return
+		}
+		w.Write(body)
 	})
 }
