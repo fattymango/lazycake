@@ -70,3 +70,6 @@ verified.
   first). Verified in a real browser against a real agent: the page flips to "Your machine is connected". Not a product bug, but
   note: two coordinators pointed at one database fight over node `connected` flags (seen while testing), so don't run replicas
   against a shared database without addressing that.
+
+- Backlog 2026-10-07: task 8.15 (machine usage over time with a per-task breakdown on hover) designed and recorded in `IMPLEMENTATION.md`; shares its
+  time-series groundwork with 8.14. Queue order: 8.12, 8.13, 8.14, 8.15. Nothing built.
