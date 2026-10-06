@@ -13,5 +13,13 @@ module.exports = {
     "react-refresh/only-export-components": "warn",
     "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
   },
+  overrides: [
+    {
+      // Context providers and their hooks (and cva variant helpers) live in the
+      // same file by design here, so the fast-refresh export rule doesn't apply.
+      files: ["src/lib/**/*.{ts,tsx}", "src/ui/**/*.{ts,tsx}"],
+      rules: { "react-refresh/only-export-components": "off" },
+    },
+  ],
   ignorePatterns: ["dist", "*.config.js", "*.config.ts"],
 };

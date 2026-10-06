@@ -59,7 +59,10 @@ export function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: Depen
     setErrorStatus(null);
     run(true);
     return () => {
-      seq.current++; // invalidate in-flight work for the old deps
+      // Deliberately reads the *current* counter at cleanup time: bumping it
+      // is what invalidates any request still in flight for the old deps.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      seq.current++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

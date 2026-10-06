@@ -2,7 +2,7 @@ MODULE := github.com/mkassab215/lazycake
 BIN    := bin
 GO     ?= go
 
-.PHONY: build test lint migrate migrate-down proto clean
+.PHONY: build test lint migrate migrate-down proto clean web-check web-embed
 
 build:
 	mkdir -p $(BIN)
@@ -34,3 +34,14 @@ proto:
 
 clean:
 	rm -rf $(BIN)
+
+# Frontend (web/): type-check, lint, format check and unit tests.
+web-check:
+	cd web && npm run build >/dev/null && npx eslint src --ext ts,tsx && npm run format:check && npm test
+
+# Build the frontend into the directory the coordinator embeds, then build the
+# coordinator. (The Dockerfile does the same in its own build stage.)
+web-embed:
+	cd web && npx vite build --outDir ../internal/coordinator/webassets/dist --emptyOutDir
+	git checkout -- internal/coordinator/webassets/dist/.gitkeep
+	$(GO) build -o $(BIN)/coordinator ./cmd/coordinator
