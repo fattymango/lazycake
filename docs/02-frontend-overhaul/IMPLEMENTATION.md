@@ -297,3 +297,24 @@ e.g. 32). No new connection. Old agents keep working and the machine page says "
 **Verify:** a known workload (the benchmark task at 0.5 cores / 128 MB) shows ~0.5 cores and a memory curve that levels off; per-task attribution with
 two tasks on one machine (no leakage); an offline gap renders as a gap, not zeros; rollups match the raw averages; pruning keeps the per-task summary;
 an old agent shows the "update" message; heartbeat size with the cap hit; migration up/down.
+
+### Task 8.16 — Gateway (and agent) version indicator with a guided update
+
+**Status: idea, to be discussed (suggested 2026-10-07); not scheduled.**
+
+**Decision so far: do not build a button that pushes an update.** The gateway runs on the customer's machine and only connects out; it is the customer's own
+security boundary. A coordinator-initiated code replacement would put the platform in charge of what runs inside customers' networks (a compromised coordinator
+could push a bad binary to every gateway), and would need signed releases plus permission to replace the running program.
+
+**Proposed instead:**
+1. The gateway reports its version when it connects (the version stamp added in v0.2.0 makes this possible). Each gateway card shows it, with an **"Update available"**
+   badge when it is older than the coordinator's own release (no external lookup). Old gateways send no version: show "version unknown" and the badge.
+   The connect frame is fixed-order length-prefixed strings, so add the field in a backward-compatible way (an optional trailing field the coordinator tolerates missing).
+2. An **"Update" button that opens guided instructions** for how the gateway was installed (new binary, or `podman pull` and restart), with a copy button, the current and new
+   versions, and where to get the release.
+3. The gateway test's grey state ("services not verified: update your gateway") links to the same instructions.
+4. The same mechanism for provider agents: show the agent version and "Update available" on the machine page.
+
+**Later, opt-in only:** a gateway that updates itself when the customer turns it on (checks for releases, verifies a signature, replaces itself). Needs a signed-release pipeline.
+
+**Order:** after 8.15, or ahead of 8.14 if solving updates first matters more.

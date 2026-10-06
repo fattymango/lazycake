@@ -84,3 +84,5 @@ verified.
   `POST .../gateways/{id}/test`, the four-state result with a legend. Verified over real QUIC/TCP, over HTTP, and in a real browser against real gateway processes
   in all four states (36/36 browser checks). A self-inflicted slip caught on the way: a security test that couldn't fail (see the 8.13 notes). Needs a gateway
   update to get the per-service check; older gateways show grey.
+
+- Idea 2026-10-07 (to discuss next): task 8.16, a version indicator and guided update for gateways and agents, deliberately *not* a push-update button. Recorded in `IMPLEMENTATION.md`.
