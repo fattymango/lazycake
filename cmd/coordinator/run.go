@@ -28,6 +28,7 @@ import (
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
+	"github.com/fattymango/lazycake/internal/version"
 )
 
 const (
@@ -58,7 +59,7 @@ func run() error {
 	}
 
 	log := logging.New(os.Stderr, cfg.Dev)
-	log.Info("coordinator starting", "config", cfg)
+	log.Info("coordinator starting", "version", version.Version, "config", cfg)
 
 	st, err := store.NewPostgresStore(ctx, cfg.DatabaseURL)
 	if err != nil {
