@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { closeOnPageHide, usePageRestore } from "./usePageRestore";
 
 export type StreamStatus = "connecting" | "live" | "offline";
 
@@ -9,6 +10,7 @@ export type StreamStatus = "connecting" | "live" | "offline";
  */
 export function useEventStream(url: string | null, onMessage: (data: unknown) => void): StreamStatus {
   const [status, setStatus] = useState<StreamStatus>("connecting");
+  const restored = usePageRestore();
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
@@ -25,8 +27,12 @@ export function useEventStream(url: string | null, onMessage: (data: unknown) =>
         // ignore a malformed frame rather than tearing the stream down
       }
     };
-    return () => es.close();
-  }, [url]);
+    const stopListening = closeOnPageHide(es);
+    return () => {
+      stopListening();
+      es.close();
+    };
+  }, [url, restored]);
 
   return status;
 }

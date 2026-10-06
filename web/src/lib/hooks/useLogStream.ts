@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LogLine } from "../types";
+import { closeOnPageHide, usePageRestore } from "./usePageRestore";
 
 export type LogStatus = "connecting" | "live" | "ended" | "error";
 
@@ -22,6 +23,7 @@ export function useLogStream(taskId: string | undefined) {
   const [status, setStatus] = useState<LogStatus>("connecting");
   const [truncated, setTruncated] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const restored = usePageRestore();
 
   const lastSeq = useRef(0);
   const pending = useRef<LogLine[]>([]);
@@ -73,12 +75,14 @@ export function useLogStream(taskId: string | undefined) {
       setStatus(es.readyState === EventSource.CLOSED ? "error" : "connecting");
     };
 
+    const stopListening = closeOnPageHide(es);
     return () => {
+      stopListening();
       es.close();
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [taskId, attempt, flush]);
+  }, [taskId, attempt, restored, flush]);
 
   const restart = useCallback(() => setAttempt((a) => a + 1), []);
   return { lines, status, truncated, restart };

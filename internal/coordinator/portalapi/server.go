@@ -89,5 +89,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/portal/provider/ledger", s.requireSession(store.RoleProvider, s.handleProviderLedger))
 	mux.HandleFunc("GET /api/portal/provider/events", s.requireSession(store.RoleProvider, s.handleAccountEvents))
 
+	// Anything under /api/portal/ that matched no route above is a typo'd or
+	// removed endpoint: answer in the same {"error": ...} shape as every other
+	// failure instead of net/http's plain-text "404 page not found", which the
+	// frontend can't parse.
+	mux.HandleFunc("/api/portal/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "not found")
+	})
+
 	return mux
 }
