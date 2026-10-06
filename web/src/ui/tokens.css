@@ -34,7 +34,7 @@
   --shadow-strength: 0.5;
   --grid-line: 255 255 255;
 
-  /* Log/terminal surfaces stay dark in the light theme too. */
+  /* Log/terminal surfaces: they follow the theme (a dark terminal in the light theme looks like a hole). */
   --term-bg: 7 9 13;
   --term-fg: 214 218 228;
   --term-muted: 106 114 134;
@@ -68,11 +68,11 @@
   --shadow-strength: 0.1;
   --grid-line: 20 25 45;
 
-  --term-bg: 15 18 26;
-  --term-fg: 214 218 228;
+  --term-bg: 249 250 252;
+  --term-fg: 32 37 52;
   --term-muted: 112 120 140;
-  --term-err: 255 123 128;
-  --term-border: 36 41 56;
+  --term-err: 192 38 48;
+  --term-border: 226 229 237;
 }
 
 /* No saved choice and JS not yet run: follow the OS. */
@@ -97,10 +97,10 @@
     --shadow: 20 25 45;
     --shadow-strength: 0.1;
     --grid-line: 20 25 45;
-    --term-bg: 15 18 26;
-    --term-fg: 214 218 228;
+    --term-bg: 249 250 252;
+    --term-fg: 32 37 52;
     --term-muted: 112 120 140;
-    --term-err: 255 123 128;
-    --term-border: 36 41 56;
+    --term-err: 192 38 48;
+    --term-border: 226 229 237;
   }
 }
