@@ -24,6 +24,13 @@ func (s *Scheduler) reclaimOverdue(ctx context.Context) {
 		return
 	}
 	for _, t := range tasks {
+		// The customer asked for this task to be stopped and its node has gone
+		// quiet: it must end as stopped, not be retried elsewhere or counted
+		// as a host that vanished.
+		if t.CancelRequestedAt != nil {
+			s.finishStopped(ctx, t, now)
+			continue
+		}
 		// t.Attempt counts attempts already consumed before this failure;
 		// this failed dispatch consumes one more, so retry only if that
 		// still leaves at least one attempt under MaxAttempts.

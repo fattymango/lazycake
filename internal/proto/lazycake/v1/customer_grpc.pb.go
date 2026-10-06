@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	CustomerService_SubmitTask_FullMethodName    = "/lazycake.v1.CustomerService/SubmitTask"
 	CustomerService_GetTask_FullMethodName       = "/lazycake.v1.CustomerService/GetTask"
+	CustomerService_CancelTask_FullMethodName    = "/lazycake.v1.CustomerService/CancelTask"
 	CustomerService_StreamLogs_FullMethodName    = "/lazycake.v1.CustomerService/StreamLogs"
 	CustomerService_ListNodes_FullMethodName     = "/lazycake.v1.CustomerService/ListNodes"
 	CustomerService_CreateGateway_FullMethodName = "/lazycake.v1.CustomerService/CreateGateway"
@@ -37,6 +38,11 @@ const (
 type CustomerServiceClient interface {
 	SubmitTask(ctx context.Context, in *SubmitTaskRequest, opts ...grpc.CallOption) (*SubmitTaskResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*TaskStatus, error)
+	// CancelTask stops a task at the customer's request: a queued task is cancelled at once and
+	// costs nothing; a running one is told to stop and finishes shortly after (the returned
+	// status has cancel_requested set until then), charging only the time it ran. Stopping a
+	// task that was already stopped succeeds; stopping one that finished is FAILED_PRECONDITION.
+	CancelTask(ctx context.Context, in *CancelTaskRequest, opts ...grpc.CallOption) (*TaskStatus, error)
 	StreamLogs(ctx context.Context, in *StreamLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskLogLine], error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	CreateGateway(ctx context.Context, in *CreateGatewayRequest, opts ...grpc.CallOption) (*CreateGatewayResponse, error)
@@ -65,6 +71,16 @@ func (c *customerServiceClient) GetTask(ctx context.Context, in *GetTaskRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TaskStatus)
 	err := c.cc.Invoke(ctx, CustomerService_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) CancelTask(ctx context.Context, in *CancelTaskRequest, opts ...grpc.CallOption) (*TaskStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskStatus)
+	err := c.cc.Invoke(ctx, CustomerService_CancelTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +146,11 @@ func (c *customerServiceClient) ListGateways(ctx context.Context, in *ListGatewa
 type CustomerServiceServer interface {
 	SubmitTask(context.Context, *SubmitTaskRequest) (*SubmitTaskResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*TaskStatus, error)
+	// CancelTask stops a task at the customer's request: a queued task is cancelled at once and
+	// costs nothing; a running one is told to stop and finishes shortly after (the returned
+	// status has cancel_requested set until then), charging only the time it ran. Stopping a
+	// task that was already stopped succeeds; stopping one that finished is FAILED_PRECONDITION.
+	CancelTask(context.Context, *CancelTaskRequest) (*TaskStatus, error)
 	StreamLogs(*StreamLogsRequest, grpc.ServerStreamingServer[TaskLogLine]) error
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	CreateGateway(context.Context, *CreateGatewayRequest) (*CreateGatewayResponse, error)
@@ -149,6 +170,9 @@ func (UnimplementedCustomerServiceServer) SubmitTask(context.Context, *SubmitTas
 }
 func (UnimplementedCustomerServiceServer) GetTask(context.Context, *GetTaskRequest) (*TaskStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
+}
+func (UnimplementedCustomerServiceServer) CancelTask(context.Context, *CancelTaskRequest) (*TaskStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelTask not implemented")
 }
 func (UnimplementedCustomerServiceServer) StreamLogs(*StreamLogsRequest, grpc.ServerStreamingServer[TaskLogLine]) error {
 	return status.Error(codes.Unimplemented, "method StreamLogs not implemented")
@@ -215,6 +239,24 @@ func _CustomerService_GetTask_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CustomerServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_CancelTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).CancelTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_CancelTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).CancelTask(ctx, req.(*CancelTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -298,6 +340,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTask",
 			Handler:    _CustomerService_GetTask_Handler,
+		},
+		{
+			MethodName: "CancelTask",
+			Handler:    _CustomerService_CancelTask_Handler,
 		},
 		{
 			MethodName: "ListNodes",

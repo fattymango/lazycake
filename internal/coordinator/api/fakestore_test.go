@@ -676,3 +676,35 @@ func (f *fakeStore) ResetGatewaysConnected(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (f *fakeStore) RequestTaskCancel(ctx context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[id]
+	if !ok {
+		return false, nil
+	}
+	switch t.State {
+	case store.TaskQueued, store.TaskReserved, store.TaskDispatched, store.TaskRunning:
+	default:
+		return false, nil
+	}
+	if t.CancelRequestedAt == nil {
+		now := time.Now()
+		t.CancelRequestedAt = &now
+		f.tasks[id] = t
+	}
+	return true, nil
+}
+
+func (f *fakeStore) ListCancelRequested(ctx context.Context) ([]store.Task, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Task
+	for _, t := range f.tasks {
+		if t.CancelRequestedAt != nil && (t.State == store.TaskDispatched || t.State == store.TaskRunning) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}

@@ -26,7 +26,11 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			fmt.Printf("task_id:  %s\n", st.GetTaskId())
-			fmt.Printf("state:    %s\n", st.GetState())
+			if st.GetCancelRequested() {
+				fmt.Printf("state:    %s (stopping: a stop was requested)\n", st.GetState())
+			} else {
+				fmt.Printf("state:    %s\n", st.GetState())
+			}
 			if st.GetNodeId() != "" {
 				fmt.Printf("node_id:  %s\n", st.GetNodeId())
 			}

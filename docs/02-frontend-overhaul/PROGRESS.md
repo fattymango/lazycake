@@ -73,3 +73,9 @@ verified.
 
 - Backlog 2026-10-07: task 8.15 (machine usage over time with a per-task breakdown on hover) designed and recorded in `IMPLEMENTATION.md`; shares its
   time-series groundwork with 8.14. Queue order: 8.12, 8.13, 8.14, 8.15. Nothing built.
+
+- Task 8.12 (stop a task) done, 2026-10-07: see "As built" in `IMPLEMENTATION.md`. New migration 016 (`tasks.cancel_requested_at`), a billable
+  `stopped` exit reason, scheduler resend + dead-node handling, portal endpoint, gRPC `CancelTask`, `lcctl cancel`, and the Stop button.
+  28 Go packages green with `-race`, including a real-container end-to-end test; 31/31 browser checks (9 new) and 37 unit tests. Found while
+  testing: the e2e harness never wired the agent's cancel handler (production does), so it was added there; restarting a coordinator that
+  has an agent connected takes up to 10s to release its port (the bounded graceful stop), which bit a local restart.

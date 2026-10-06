@@ -742,3 +742,77 @@ func TestUnknownPortalPathIsJSON404(t *testing.T) {
 	body := decodeBody[map[string]string](t, resp)
 	require.NotEmpty(t, body["error"])
 }
+
+// --- Stop a task (phase 8, task 8.12) ---
+
+func submitTaskForTest(t *testing.T, c *testClient) string {
+	t.Helper()
+	resp := c.do(http.MethodPost, "/api/portal/customer/tasks", submitTaskRequest{Image: "alpine@sha256:abc", Cores: 1, MemoryMB: 256, WallTimeoutS: 30})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	return decodeBody[taskView](t, resp).ID
+}
+
+func TestStopQueuedTaskIsImmediateFreeAndRepeatable(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	signed := signUpCustomer(t, c, "stopper")
+	fundAccount(t, st, signed.AccountID, 10_000_000)
+	id := submitTaskForTest(t, c)
+
+	resp := c.do(http.MethodPost, "/api/portal/customer/tasks/"+id+"/cancel", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	got := decodeBody[taskView](t, resp)
+	require.Equal(t, "cancelled", got.State)
+	require.Equal(t, "stopped", got.ExitReason)
+	require.False(t, got.CancelRequested, "a finished task isn't 'stopping'")
+
+	me := decodeBody[meResponse](t, c.do(http.MethodGet, "/api/portal/customer/me", nil))
+	require.Equal(t, int64(10_000_000), me.BalanceMicros, "a task that never ran costs nothing")
+	require.Equal(t, int64(10_000_000), me.AvailableBalanceMicros)
+
+	resp = c.do(http.MethodPost, "/api/portal/customer/tasks/"+id+"/cancel", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "stopping it again is a harmless repeat")
+}
+
+func TestStopRunningTaskRecordsTheRequestAndShowsStopping(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	signed := signUpCustomer(t, c, "runner")
+	fundAccount(t, st, signed.AccountID, 10_000_000)
+	mustNode(t, st, "nod_1", signed.AccountID) // the node's owner doesn't matter to this test
+	id := submitTaskForTest(t, c)
+	node := "nod_1"
+	require.NoError(t, st.TransitionTask(context.Background(), id, []store.TaskState{store.TaskQueued}, store.TaskRunning, store.TaskUpdate{NodeID: &node}))
+
+	resp := c.do(http.MethodPost, "/api/portal/customer/tasks/"+id+"/cancel", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	got := decodeBody[taskView](t, resp)
+	require.Equal(t, "running", got.State, "it isn't finished until the node reports back")
+	require.True(t, got.CancelRequested, "the UI shows 'Stopping'")
+
+	again := decodeBody[taskView](t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+id, nil))
+	require.True(t, again.CancelRequested, "and keeps showing it on a reload")
+}
+
+func TestStopSomeoneElsesOrAFinishedTaskIsRefused(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	owner := signUpCustomer(t, c, "owner")
+	fundAccount(t, st, owner.AccountID, 10_000_000)
+	id := submitTaskForTest(t, c)
+
+	other := newTestClientFor(t, c)
+	signUpCustomer(t, other, "stranger")
+	resp := other.do(http.MethodPost, "/api/portal/customer/tasks/"+id+"/cancel", nil)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode, "someone else's task looks like it doesn't exist")
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodPost, "/api/portal/customer/tasks/tsk_nope/cancel", nil).StatusCode)
+
+	require.NoError(t, st.TransitionTask(context.Background(), id, []store.TaskState{store.TaskQueued}, store.TaskSucceeded, store.TaskUpdate{}))
+	resp = c.do(http.MethodPost, "/api/portal/customer/tasks/"+id+"/cancel", nil)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode, "a finished task can't be stopped")
+}
+
+// newTestClientFor returns a second client (its own cookie jar) against the same server.
+func newTestClientFor(t *testing.T, c *testClient) *testClient {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	return &testClient{t: t, base: c.base, hc: &http.Client{Jar: jar}}
+}

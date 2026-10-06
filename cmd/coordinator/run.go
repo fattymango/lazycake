@@ -169,7 +169,7 @@ func run() error {
 		LeaseS:     leaseS,
 		Bus:        bus,
 	})
-	customerServer := &api.CustomerServer{Store: st, Rates: rates, Bus: bus}
+	customerServer := &api.CustomerServer{Store: st, Rates: rates, Bus: bus, Registry: registry}
 	lazycakev1.RegisterCustomerServiceServer(grpcServer, customerServer)
 	lazycakev1.RegisterGatewayServiceServer(grpcServer, &api.GatewayServer{Store: st, Events: gatewayFanout{reconciler, sched.Canary}})
 

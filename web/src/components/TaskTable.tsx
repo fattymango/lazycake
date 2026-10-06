@@ -60,7 +60,12 @@ export function TaskTable({
         </div>
       ),
     },
-    { id: "status", header: "Status", width: "8.5rem", cell: (t) => <TaskStatusPill state={t.state} /> },
+    {
+      id: "status",
+      header: "Status",
+      width: "8.5rem",
+      cell: (t) => <TaskStatusPill state={t.state} stopping={t.cancel_requested} reason={t.exit_reason} />,
+    },
     {
       id: "resources",
       header: "Resources",
@@ -140,7 +145,7 @@ export function TaskTable({
         <div className="min-w-0 space-y-1.5">
           <div className="flex items-center justify-between gap-3">
             <Identifier value={t.id} copy={false} />
-            <TaskStatusPill state={t.state} size="sm" />
+            <TaskStatusPill state={t.state} size="sm" stopping={t.cancel_requested} reason={t.exit_reason} />
           </div>
           <ImageLabel image={t.image} />
           <p className="text-xs text-muted" data-tnum>

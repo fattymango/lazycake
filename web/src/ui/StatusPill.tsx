@@ -1,5 +1,5 @@
 import { Badge } from "./Badge";
-import { connectionStatus, getTaskStatus } from "./status";
+import { connectionStatus, getTaskStatus, stoppingStatus } from "./status";
 import type { StatusMeta } from "./status";
 
 function Pill({ meta, size }: { meta: StatusMeta; size?: "sm" | "md" }) {
@@ -10,8 +10,19 @@ function Pill({ meta, size }: { meta: StatusMeta; size?: "sm" | "md" }) {
   );
 }
 
-export function TaskStatusPill({ state, size }: { state: string; size?: "sm" | "md" }) {
-  return <Pill meta={getTaskStatus(state)} size={size} />;
+/** `stopping`: the customer asked to stop it and the node hasn't confirmed yet, so show that instead of "Running". */
+export function TaskStatusPill({
+  state,
+  size,
+  stopping,
+  reason,
+}: {
+  state: string;
+  size?: "sm" | "md";
+  stopping?: boolean;
+  reason?: string;
+}) {
+  return <Pill meta={stopping ? stoppingStatus : getTaskStatus(state, reason)} size={size} />;
 }
 
 export function ConnectionPill({ connected, size }: { connected: boolean; size?: "sm" | "md" }) {

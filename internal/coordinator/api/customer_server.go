@@ -39,6 +39,10 @@ type CustomerServer struct {
 	// Bus, if set, publishes a "queued" task_state event on submission for
 	// task 6.1's SSE stream. A nil Bus is a valid no-op.
 	Bus *events.Bus
+	// Registry lets CancelTaskForAccount tell a task's node to stop it right
+	// away. Optional: without it the scheduler's periodic resend still gets
+	// the message there, just a few seconds later.
+	Registry *Registry
 }
 
 var _ lazycakev1.CustomerServiceServer = (*CustomerServer)(nil)
@@ -261,6 +265,7 @@ func taskStatusProto(t store.Task) *lazycakev1.TaskStatus {
 	if t.FinishedAt != nil {
 		out.FinishedAtUnixMs = t.FinishedAt.UnixMilli()
 	}
+	out.CancelRequested = t.CancelRequestedAt != nil && !isFinishedState(t.State)
 	return out
 }
 

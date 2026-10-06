@@ -20,6 +20,7 @@ func main() {
 
 	root.AddCommand(newSubmitCmd())
 	root.AddCommand(newStatusCmd())
+	root.AddCommand(newCancelCmd())
 	root.AddCommand(newLogsCmd())
 	root.AddCommand(newNodesCmd())
 	root.AddCommand(newGatewayCmd())

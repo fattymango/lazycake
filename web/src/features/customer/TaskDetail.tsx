@@ -1,7 +1,7 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Network, RotateCcw, Terminal } from "lucide-react";
-import { apiGet } from "@/lib/api";
+import { CircleStop, Network, RotateCcw, Terminal } from "lucide-react";
+import { ApiError, apiGet, apiPost, errorMessage } from "@/lib/api";
 import { cpu, duration, memory, money, relativeTime, shortDateTime, dateTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useLogStream } from "@/lib/hooks/useLogStream";
@@ -15,6 +15,7 @@ import { Alert } from "@/ui/Alert";
 import { Button } from "@/ui/Button";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { CodeBlock } from "@/ui/CodeBlock";
+import { ConfirmDialog } from "@/ui/Dialog";
 import { ErrorState } from "@/ui/EmptyState";
 import { Identifier, Truncate } from "@/ui/Identifier";
 import { KeyValueList } from "@/ui/KeyValue";
@@ -23,11 +24,12 @@ import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
 import { TaskStatusPill } from "@/ui/StatusPill";
 import { Timeline, type TimelineStep } from "@/ui/Timeline";
+import { useToast } from "@/ui/Toast";
 import { exitReason, getTaskStatus, isTerminalState } from "@/ui/status";
 
 function buildTimeline(t: Task, now: number): TimelineStep[] {
   const terminal = isTerminalState(t.state);
-  const status = getTaskStatus(t.state);
+  const status = getTaskStatus(t.state, t.exit_reason);
   const waited = t.started_at_ms ? t.started_at_ms - t.created_at_ms : undefined;
 
   const steps: TimelineStep[] = [
@@ -65,6 +67,14 @@ function buildTimeline(t: Task, now: number): TimelineStep[] {
       detail: ran !== undefined ? `Ran for ${duration(ran)}` : undefined,
       tone: status.tone,
       state: "done",
+    });
+  } else if (t.cancel_requested) {
+    steps.push({
+      id: "stopping",
+      title: "Stopping",
+      detail: "You asked for this to stop. Waiting for the node to confirm.",
+      tone: "warning",
+      state: "active",
     });
   } else if (t.started_at_ms) {
     steps.push({
@@ -125,6 +135,33 @@ export function TaskDetail() {
 
   const rerun = useCallback(() => navigate("/tasks/new", { state: { from: t } }), [navigate, t]);
 
+  const toast = useToast();
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [stopping, setStopping] = useState(false);
+
+  async function stopTask() {
+    setStopping(true);
+    try {
+      const updated = await apiPost<Task>(`/api/portal/customer/tasks/${encodeURIComponent(id)}/cancel`);
+      task.setData(() => updated);
+      setConfirmStop(false);
+      if (updated.cancel_requested)
+        toast.toast({ title: "Stopping the task", description: "The node is stopping it now.", tone: "neutral" });
+      else toast.success("Task stopped", "It hadn't started, so nothing was charged.");
+    } catch (err) {
+      setConfirmStop(false);
+      if (err instanceof ApiError && err.status === 422) {
+        toast.toast({ title: "Already finished", description: "This task finished before it could be stopped.", tone: "neutral" });
+        reloadTask();
+        reloadLedger();
+      } else {
+        toast.error("Couldn't stop the task", errorMessage(err));
+      }
+    } finally {
+      setStopping(false);
+    }
+  }
+
   if (task.errorStatus === 404) {
     return (
       <NotFound
@@ -146,8 +183,8 @@ export function TaskDetail() {
     );
   }
 
-  const status = getTaskStatus(t.state);
-  const reason = exitReason(t.exit_reason, t.exit_code);
+  const status = getTaskStatus(t.state, t.exit_reason);
+  const reason = exitReason(t.exit_reason, t.exit_code, !!t.started_at_ms);
   const cost = costByTask(ledger.data).get(t.id);
   const ran = taskDurationMs(t, now);
   const cmd = taskCommand(t);
@@ -160,17 +197,25 @@ export function TaskDetail() {
         title={
           <Identifier value={t.id} full copy textClassName="text-xl sm:text-2xl font-semibold tracking-tight" className="max-w-full" />
         }
-        meta={<TaskStatusPill state={t.state} />}
+        meta={<TaskStatusPill state={t.state} stopping={t.cancel_requested} reason={t.exit_reason} />}
         description={
           <>
             Submitted {relativeTime(t.created_at_ms, now)} · <span className="text-subtle">{dateTime(t.created_at_ms)}</span>
           </>
         }
         actions={
-          <Button variant="secondary" onClick={rerun}>
-            <RotateCcw />
-            Run again
-          </Button>
+          <>
+            {active && (
+              <Button variant="danger" onClick={() => setConfirmStop(true)} disabled={t.cancel_requested} loading={t.cancel_requested}>
+                {!t.cancel_requested && <CircleStop />}
+                {t.cancel_requested ? "Stopping…" : "Stop task"}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={rerun}>
+              <RotateCcw />
+              Run again
+            </Button>
+          </>
         }
       />
 
@@ -301,6 +346,21 @@ export function TaskDetail() {
           </Card>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={confirmStop}
+        onOpenChange={setConfirmStop}
+        title="Stop this task?"
+        description={
+          t.started_at_ms
+            ? "It will be stopped now and can't be resumed. You'll be charged only for the time it has already run."
+            : "It hasn't started yet, so nothing will be charged."
+        }
+        confirmLabel="Stop task"
+        danger
+        busy={stopping}
+        onConfirm={stopTask}
+      />
     </div>
   );
 }

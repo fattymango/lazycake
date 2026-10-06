@@ -155,6 +155,10 @@ type Task struct {
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 	CreatedAt  time.Time
+
+	// CancelRequestedAt is when the customer asked for this task to be
+	// stopped (nil if they never did). See Store.RequestTaskCancel.
+	CancelRequestedAt *time.Time
 }
 
 // LogLine is one line of task output, ordered by Seq within a task.

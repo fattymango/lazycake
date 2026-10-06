@@ -36,11 +36,15 @@ type Ledger struct {
 // rather than importing scheduler (which already imports billing) - the
 // two are kept in sync by task 4.4's own test, which drives Settle through
 // every exit reason terminalState handles.
+//
+// "cancelled" (the coordinator moved on) is not billable, but "stopped" (the
+// customer asked for the task to be stopped) is: the host did real work until
+// then, so the customer pays for the time it ran and the host is paid.
 func billable(exitReason string) bool {
 	switch exitReason {
 	case "fenced", "cancelled":
 		return false
-	default: // "exited" (any code), "error", "wall_timeout", "oom", "egress_exceeded"
+	default: // "exited" (any code), "stopped", "error", "wall_timeout", "oom", "egress_exceeded"
 		return true
 	}
 }

@@ -97,6 +97,17 @@ type Tasks interface {
 	// node to claim again. Use ReleaseReservedTask for that instead.
 	TransitionTask(ctx context.Context, id string, fromStates []TaskState, to TaskState, upd TaskUpdate) error
 
+	// RequestTaskCancel records that the customer asked for the task to be
+	// stopped, only while it is still queued/reserved/dispatched/running. It
+	// reports whether the task was still active; repeat calls keep the first
+	// time. It does not change the task's state: stopping is the caller's job.
+	RequestTaskCancel(ctx context.Context, id string) (bool, error)
+
+	// ListCancelRequested returns every dispatched/running task whose customer
+	// asked for it to be stopped, so the scheduler can keep nudging the node
+	// until it actually stops.
+	ListCancelRequested(ctx context.Context) ([]Task, error)
+
 	// ReleaseReservedTask puts a Reserved task back to Queued with
 	// node_id/lease_expires_at/requeue_after all genuinely cleared (SQL
 	// NULL, not COALESCE'd) - for placement giving up on a task it

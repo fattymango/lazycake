@@ -64,6 +64,15 @@ func (s *Scheduler) OnTaskStarted(ctx context.Context, nodeID, taskID string, at
 }
 
 func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.TaskFinishedEvent) error {
+	// The agent reports a task it was told to stop as "cancelled", the same
+	// word it uses when the coordinator itself reclaims a task. If this one
+	// was stopped at the customer's request it is billable, so tell them
+	// apart: only a customer's request leaves cancel_requested_at set.
+	if ev.ExitReason == "cancelled" {
+		if t, err := s.Store.GetTask(ctx, ev.TaskID); err == nil && t.CancelRequestedAt != nil {
+			ev.ExitReason = "stopped"
+		}
+	}
 	to := terminalState(ev.ExitReason, ev.ExitCode)
 	exitCode := int(ev.ExitCode)
 	exitReason := ev.ExitReason
@@ -122,7 +131,7 @@ func terminalState(exitReason string, exitCode int32) store.TaskState {
 	switch exitReason {
 	case "fenced":
 		return store.TaskFenced
-	case "cancelled":
+	case "cancelled", "stopped": // stopped = at the customer's request (billable); cancelled = by the coordinator (not)
 		return store.TaskCancelled
 	case "exited":
 		if exitCode == 0 {
