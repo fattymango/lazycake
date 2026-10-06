@@ -15,14 +15,34 @@ const check = (name, ok, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// "Network idle" never happens while a live-update stream is open, so wait for
+// the app's main content to render instead.
+let page;
+async function go(url) {
+  let res;
+  try {
+    res = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12000 });
+  } catch (err) {
+    const alive = await Promise.race([page.evaluate(() => "alive"), sleep(2500).then(() => "FROZEN")]);
+    console.log(`navigation to ${url} stalled; page ${alive}; now at ${page.url()}; pending=${[...pending].join(" | ")}`);
+    throw err;
+  }
+  await page.waitForSelector("main#main", { timeout: 15000 });
+  await sleep(700);
+  return res;
+}
 
 const browser = await puppeteer.launch({ executablePath: process.env.CHROME || "/usr/bin/google-chrome", headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
-const page = await browser.newPage();
+page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 900 });
 
 // Count every request to a task log stream.
 const logRequests = [];
 page.on("request", (r) => /\/tasks\/[^/]+\/logs/.test(r.url()) && logRequests.push(r.url()));
+const pending = new Set();
+page.on("request", (r) => pending.add(r.url().replace(BASE, "")));
+page.on("requestfinished", (r) => pending.delete(r.url().replace(BASE, "")));
+page.on("requestfailed", (r) => pending.delete(r.url().replace(BASE, "")));
 const redirects = [];
 page.on("response", (r) => r.status() >= 300 && r.status() < 400 && redirects.push(`${r.status()} ${r.url()}`));
 
@@ -39,13 +59,13 @@ const running = tasks.find((t) => t.state === "running");
 const lineCount = () => page.$$eval('[role="log"] > div[class*="flex"]', (els) => els.length);
 
 // --- bug 1: refreshing a deep link -------------------------------------------
-await page.goto(`${BASE}/tasks/${failed.id}`, { waitUntil: "networkidle2" });
+await go(`${BASE}/tasks/${failed.id}`);
 await page.waitForSelector('[role="log"]');
 const before = (await page.$eval("h1", (h) => h.textContent)) || "";
 check("deep link renders the task page", before.includes("tsk_"), before.slice(0, 40));
 
 redirects.length = 0;
-const reloaded = await page.reload({ waitUntil: "networkidle2" });
+const reloaded = await page.reload({ waitUntil: "domcontentloaded" });
 check("refreshing the deep link returns 200, not a redirect loop", reloaded.status() === 200, `status ${reloaded.status()}`);
 check("no redirects were followed", redirects.filter((r) => r.includes("/tasks/")).length === 0, redirects.join(", "));
 await page.waitForSelector('[role="log"]');
@@ -53,15 +73,15 @@ const after = (await page.$eval("h1", (h) => h.textContent)) || "";
 check("after refresh the same task is shown", after === before, after.slice(0, 40));
 
 for (const path of ["/tasks", "/gateways", "/billing", "/tasks/new"]) {
-  const r = await page.goto(BASE + path, { waitUntil: "networkidle2" });
+  const r = await go(BASE + path);
   check(`direct load of ${path} is 200`, r.status() === 200, `status ${r.status()}`);
 }
 
-const nope = await page.goto(BASE + "/this/does/not/exist", { waitUntil: "networkidle2" });
+const nope = await go(BASE + "/this/does/not/exist");
 const nopeText = await page.$eval("body", (b) => b.innerText);
 check("an unknown route shows the app's 404 page", nope.status() === 200 && /Page not found/.test(nopeText), `status ${nope.status()}`);
 
-await page.goto(BASE + "/tasks/tsk_does_not_exist", { waitUntil: "networkidle2" });
+await go(BASE + "/tasks/tsk_does_not_exist");
 const missingText = await page.$eval("body", (b) => b.innerText);
 check("a task that doesn't exist shows a designed not-found", /Task not found/.test(missingText));
 
@@ -75,7 +95,7 @@ check("an unknown API path is a JSON 404", apiTypo[0] === 404 && apiTypo[1].incl
 
 // --- bug 2: a finished task's log must not repeat ----------------------------
 logRequests.length = 0;
-await page.goto(`${BASE}/tasks/${failed.id}`, { waitUntil: "networkidle2" });
+await go(`${BASE}/tasks/${failed.id}`);
 await page.waitForSelector('[role="log"]');
 await sleep(1500);
 const first = await lineCount();
@@ -89,7 +109,7 @@ check("the viewer says the stream finished", /Finished/.test(status));
 
 // --- running task: live stream stays open without duplicating -----------------
 logRequests.length = 0;
-await page.goto(`${BASE}/tasks/${running.id}`, { waitUntil: "networkidle2" });
+await go(`${BASE}/tasks/${running.id}`);
 await page.waitForSelector('[role="log"]');
 await sleep(3000);
 const runLines = await lineCount();

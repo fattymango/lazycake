@@ -85,7 +85,8 @@ def task(tag, state, image, args, cores, mem, age_min, dur_s=None, node=None, ex
       f"VALUES ({q(tid)}, {ALICE}, {q(state)}, {q(image)}, {arr}, {ej}::jsonb, '', {q(arch)}, {cores}, {mem}, 1024, 600, {node_sql}, {ec}, {rs}, {started}, {finished}, now() - interval '{age_min} minutes', {tj}::jsonb);")
     return tid
 
-RUNNING = task("running-demo", "running", IMG_LCBENCH, None, 0.5, 512, 6, env={"LCBENCH_DURATION": "5m"}, node=NODE_IDS[0])
+# The newest running task: the one with the long log, so e2e tests that open "a running task" get one with output.
+RUNNING = task("running-demo", "running", IMG_LCBENCH, None, 0.5, 512, 2, env={"LCBENCH_DURATION": "5m"}, node=NODE_IDS[0])
 FAILED = task("failed-demo", "failed", IMG_PY, ["python", "-m", "etl.load", "--source", "postgres.prod", "--batch-size", "5000"], 1, 1024, 95, dur_s=48, node=NODE_IDS[1], exit_code=1, reason="exited",
               tunnels=[{"gateway_id": gws[0][0], "hostname": "postgres", "port": 5432}])
 task("queued-1", "queued", IMG_ALPINE, ["sleep", "300"], 0.25, 128, 1)

@@ -731,3 +731,14 @@ func TestLogStreamResumesFromLastEventID(t *testing.T) {
 	require.Len(t, frames, 1)
 	require.Equal(t, "end", frames[0].event)
 }
+
+// An unknown endpoint under /api/portal/ must answer in the API's own JSON
+// error shape (the frontend parses it), not net/http's plain-text 404.
+func TestUnknownPortalPathIsJSON404(t *testing.T) {
+	c, _, _ := newTestServer(t)
+	resp := c.do(http.MethodGet, "/api/portal/definitely/not/a/route", nil)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "json")
+	body := decodeBody[map[string]string](t, resp)
+	require.NotEmpty(t, body["error"])
+}

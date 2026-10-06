@@ -32,6 +32,19 @@ const browser = await puppeteer.launch({
 const problems = [];
 const consoleErrors = [];
 
+// A page may still be navigating (a client-side redirect, a late reload) when we
+// measure it; retry instead of crashing the whole run.
+async function safeEvaluate(page, fn, ...args) {
+  for (let i = 0; ; i++) {
+    try {
+      return await page.evaluate(fn, ...args);
+    } catch (err) {
+      if (i >= 4 || !/context was destroyed|navigation/i.test(String(err))) throw err;
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  }
+}
+
 async function api(page, path) {
   return page.evaluate(async (p) => (await fetch(p, { credentials: "include" })).json(), path);
 }
@@ -113,7 +126,7 @@ for (const role of ROLES) {
         await new Promise((r) => setTimeout(r, 400));
         const file = `${OUT}/${label}.${theme}.${width}.png`;
         await page.screenshot({ path: file, fullPage: true });
-        const bad = await page.evaluate(auditScript);
+        const bad = await safeEvaluate(page, auditScript);
         if (bad.length) problems.push({ page: `${label} ${theme} ${width}px`, bad });
       }
       await page.close();
