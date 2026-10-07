@@ -3,10 +3,15 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.7 — 2026-10-07
+
+### Changed
+- The wide layout used by Add a machine tops out at 1400px (it was 1600px, which was too much on a big screen).
+
 ## v0.3.6 — 2026-10-07
 
 ### Changed
-- **Add a machine uses the whole screen**: pages are held to a readable width by default, but this page is mostly controls side by side, so it now opts into a wider layout (`useWideLayout`, up to 1600px) instead of leaving empty margins on a big monitor.
+- **Add a machine uses the whole screen**: pages are held to a readable width by default, but this page is mostly controls side by side, so it now opts into a wider layout (`useWideLayout`, up to 1400px) instead of leaving empty margins on a big monitor.
 
 ## v0.3.5 — 2026-10-07
 
