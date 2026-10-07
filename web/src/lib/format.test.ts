@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bytes, cpu, duration, memory, money, parseImage, relativeTime, signedMoney } from "./format";
+import { bytes, cores, cpu, duration, memory, money, parseImage, relativeTime, signedMoney } from "./format";
 
 describe("money", () => {
   it("uses 2 places for dollars and 4 for sub-dollar amounts", () => {
@@ -64,5 +64,15 @@ describe("bytes", () => {
     expect(bytes(1_230_000_000)).toBe("1.23 GB");
     expect(bytes(52_400_000)).toBe("52.4 MB");
     expect(bytes(740_000_000_000)).toBe("740 GB");
+  });
+});
+
+describe("cores", () => {
+  it("never shows a tiny real amount as zero", () => {
+    expect(cores(0)).toBe("0");
+    expect(cores(undefined)).toBe("0");
+    expect(cores(0.0017)).toBe("<0.01");
+    expect(cores(0.5)).toBe("0.5");
+    expect(cores(1.2549)).toBe("1.25");
   });
 });

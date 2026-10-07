@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity, Cpu, HardDrive, MemoryStick } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import { bytes, memory, relativeTime, shortDateTime } from "@/lib/format";
+import { bytes, cores, memory, relativeTime, shortDateTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
 import { stackTotal } from "@/lib/series";
@@ -114,7 +114,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
       : metric === "memory"
         ? { value: offeredMem, label: `${memory(node.offer_memory_mb)} offered` }
         : undefined;
-  const format = metric === "cpu" ? (v: number) => `${Number(v.toFixed(2))} cores` : bytes;
+  const format = metric === "cpu" ? (v: number) => `${cores(v)} cores` : bytes;
   const metricName = { cpu: "CPU", memory: "Memory", disk: "Disk", network: "Tunnel traffic" }[metric];
 
   return (
@@ -138,7 +138,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
             <Gauge
               icon={Cpu}
               label="CPU used by tasks"
-              value={fresh ? `${Number(l.tasks_cpu_cores.toFixed(2))} of ${node.offer_cores}` : "—"}
+              value={fresh ? `${cores(l.tasks_cpu_cores)} of ${node.offer_cores}` : "—"}
               detail={fresh ? `Whole machine ${percent(l.host_cpu_busy)} busy across ${l.host_cpu_count} cores` : "Not reporting right now"}
               fraction={fresh && node.offer_cores > 0 ? l.tasks_cpu_cores / node.offer_cores : 0}
               tone={toneFor(node.offer_cores > 0 ? l.tasks_cpu_cores / node.offer_cores : 0)}
@@ -222,7 +222,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
               const pt = usageAt(u, p.at);
               if (!pt) return null;
               if (metric === "cpu")
-                return `Tasks ${Number(pt.tasks_cpu_cores.toFixed(2))} of ${node.offer_cores} cores · machine ${percent(pt.host_cpu_busy)} busy`;
+                return `Tasks ${cores(pt.tasks_cpu_cores)} of ${node.offer_cores} cores · machine ${percent(pt.host_cpu_busy)} busy`;
               if (metric === "network")
                 return `Out of the tasks ${bytes(pt.tunnel_out_bytes)} · into the tasks ${bytes(pt.tunnel_in_bytes)}`;
               if (metric === "memory")
