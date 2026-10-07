@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "./Skeleton";
 
@@ -33,6 +33,7 @@ export function DataTable<T>({
   rows,
   getRowKey,
   onRowClick,
+  rowHover,
   loading,
   skeletonRows = 5,
   empty,
@@ -45,6 +46,8 @@ export function DataTable<T>({
   rows: T[];
   getRowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
+  /** A card that follows the pointer while it is over a row (return null for none). */
+  rowHover?: (row: T) => ReactNode;
   loading?: boolean;
   skeletonRows?: number;
   empty?: ReactNode;
@@ -56,6 +59,9 @@ export function DataTable<T>({
   className?: string;
 }) {
   const showEmpty = !loading && rows.length === 0 && empty;
+  const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
+  const hoverRow = hover ? rows.find((r) => getRowKey(r) === hover.key) : undefined;
+  const hoverContent = hoverRow && rowHover ? rowHover(hoverRow) : null;
 
   return (
     <div className={cn("min-w-0", className)}>
@@ -131,7 +137,13 @@ export function DataTable<T>({
                             }
                           : undefined
                       }
-                      className={cn("transition-colors", onRowClick && "cursor-pointer hover:bg-raised/60 focus-visible:bg-raised/60")}
+                      onMouseMove={rowHover ? (e) => setHover({ key: getRowKey(row), x: e.clientX, y: e.clientY }) : undefined}
+                      onMouseLeave={rowHover ? () => setHover(null) : undefined}
+                      className={cn(
+                        "transition-colors",
+                        (onRowClick || rowHover) && "hover:bg-raised/60",
+                        onRowClick && "cursor-pointer focus-visible:bg-raised/60"
+                      )}
                     >
                       {columns.map((c) => (
                         <td
@@ -151,6 +163,18 @@ export function DataTable<T>({
                   ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {hover && hoverContent && (
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[60] max-w-[min(22rem,calc(100vw-1.5rem))] animate-fade-in rounded-lg border border-border bg-overlay px-3 py-2 text-xs leading-5 text-fg shadow-pop"
+          style={{
+            left: Math.min(hover.x + 16, window.innerWidth - 360),
+            top: hover.y + 18 + 150 > window.innerHeight ? hover.y - 150 : hover.y + 18,
+          }}
+        >
+          {hoverContent}
         </div>
       )}
     </div>

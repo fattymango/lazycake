@@ -10,12 +10,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/mkassab215/lazycake/internal/agent/capacity"
 	"github.com/mkassab215/lazycake/internal/agent/netns"
 	"github.com/mkassab215/lazycake/internal/agent/runtime"
+	"github.com/mkassab215/lazycake/internal/agent/usage"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 	"github.com/mkassab215/lazycake/internal/tunnel/noise"
 )
@@ -69,6 +71,29 @@ type activeTask struct {
 	// ("fenced") or CancelTask ("cancelled"), both of which stop the
 	// container out from under whatever normal completion path it was on.
 	overrideReason string
+	// tunnel reads the task's tunnel byte counters; nil until (and unless) a tunnel is up.
+	tunnel func() (toGateway, toTask int64)
+}
+
+// UsageTasks lists the running tasks for the usage sampler (task 8.15): which
+// container to read and, if the task has a tunnel, how to read its byte counters.
+func (e *Executor) UsageTasks() []usage.Task {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]usage.Task, 0, len(e.active))
+	for id, t := range e.active {
+		out = append(out, usage.Task{TaskID: id, ContainerID: t.containerID, Tunnel: t.tunnel})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TaskID < out[j].TaskID })
+	return out
+}
+
+func (e *Executor) setTunnelCounters(taskID string, read func() (int64, int64)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if t, ok := e.active[taskID]; ok {
+		t.tunnel = read
+	}
 }
 
 // FenceAll is the agent's self-fencing action (task 3.2, PLAN.md "Lease and
@@ -289,6 +314,7 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 			return
 		}
 		defer proxy.Close()
+		e.setTunnelCounters(d.GetTaskId(), proxy.Traffic)
 	}
 
 	// Attached right after Start, not before it: a follow-mode log stream

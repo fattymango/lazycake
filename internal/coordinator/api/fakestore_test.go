@@ -31,6 +31,8 @@ type fakeStore struct {
 	holds    map[string]store.LedgerEntry // task_id -> {account_id, amount_micros}
 
 	gwTotals    map[string]store.TrafficTotals
+	usage       []store.NodeUsageSample
+	usageErr    error
 	trafficRows []fakeTrafficRow
 
 	portalCreds map[string]store.PortalCredential // account_id -> credential
@@ -773,5 +775,34 @@ func (f *fakeStore) TaskGatewayUsage(ctx context.Context, taskID string) ([]stor
 }
 
 func (f *fakeStore) PruneGatewayTraffic(ctx context.Context, before time.Time) (int64, error) {
+	return 0, nil
+}
+
+// --- machine usage (task 8.15) ---
+
+func (f *fakeStore) RecordNodeUsage(ctx context.Context, s store.NodeUsageSample) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.usage = append(f.usage, s)
+	return f.usageErr
+}
+
+func (f *fakeStore) NodeUsageLatest(ctx context.Context, nodeID string) (store.NodeUsageLatest, bool, error) {
+	return store.NodeUsageLatest{}, false, nil
+}
+
+func (f *fakeStore) NodeUsageSeries(ctx context.Context, nodeID string, since time.Time, step string) ([]store.NodeUsagePoint, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) NodeTaskSeries(ctx context.Context, nodeID string, since time.Time, step string) ([]store.NodeTaskPoint, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) TaskUsageSummaries(ctx context.Context, taskIDs []string) (map[string]store.TaskUsageSummary, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) PruneNodeUsage(ctx context.Context, before time.Time) (int64, error) {
 	return 0, nil
 }

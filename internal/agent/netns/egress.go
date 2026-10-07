@@ -77,3 +77,25 @@ func (c countingWriter) Write(p []byte) (int, error) {
 	}
 	return n, err
 }
+
+// TunnelCounters is how many bytes one task has moved through its tunnel since it
+// started, across every connection: ToGateway leaves the container, ToTask goes in.
+// Read by the usage sampler (display only; the egress cap uses its own count).
+type TunnelCounters struct {
+	ToGateway atomic.Int64
+	ToTask    atomic.Int64
+}
+
+// meterWriter adds every successful write's size to a counter.
+type meterWriter struct {
+	w io.Writer
+	n *atomic.Int64
+}
+
+func (m meterWriter) Write(p []byte) (int, error) {
+	n, err := m.w.Write(p)
+	if n > 0 {
+		m.n.Add(int64(n))
+	}
+	return n, err
+}

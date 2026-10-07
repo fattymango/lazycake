@@ -25,7 +25,7 @@ func testStore(t *testing.T) *PostgresStore {
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
 
-	_, err = s.pool.Exec(ctx, `TRUNCATE gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
+	_, err = s.pool.Exec(ctx, `TRUNCATE node_usage, node_task_usage, node_usage_latest, task_usage_totals, gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }
@@ -506,4 +506,126 @@ func TestPruningGatewayTrafficKeepsTheTotals(t *testing.T) {
 	usage, _ := s.TaskGatewayUsage(ctx, "tsk_old")
 	require.Len(t, usage, 1, "so does the old task's own total")
 	require.Equal(t, int64(7), usage[0].BytesToLocal)
+}
+
+func mustRunningTask(t *testing.T, s *PostgresStore, id, accountID, nodeID string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, s.CreateTask(ctx, Task{
+		ID: id, AccountID: accountID, State: TaskQueued,
+		Image: "alpine@sha256:a", Limits: Limits{CPUCores: 1, MemoryMB: 256, DiskMB: 512, WallTimeoutS: 60},
+		Requirements: Requirements{Arch: "amd64", Isolation: "podman"},
+		Delivery:     AtMostOnce, Retry: Retry{MaxAttempts: 1},
+	}))
+	_, err := s.pool.Exec(ctx, `UPDATE tasks SET node_id = $2 WHERE id = $1`, id, nodeID)
+	require.NoError(t, err)
+}
+
+// Machine usage (task 8.15): samples average within their bucket, each task's share is
+// attributed to the right machine, a task is counted for the part of the period it ran,
+// and an offline period has no point at all.
+func TestNodeUsageAveragesAttributesAndLeavesGaps(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustNode(t, s, "nod_1", "act_1")
+	mustNode(t, s, "nod_2", "act_1")
+	mustRunningTask(t, s, "tsk_a", "act_1", "nod_1")
+	mustRunningTask(t, s, "tsk_b", "act_1", "nod_1")
+	mustRunningTask(t, s, "tsk_other", "act_1", "nod_2")
+
+	// A bucket start well in the past, aligned to 5 minutes, so the samples below share a bucket.
+	base := time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Hour)
+	rec := func(node string, at time.Time, busy float64, memUsed int64, tasks ...TaskUsageSample) {
+		require.NoError(t, s.RecordNodeUsage(ctx, NodeUsageSample{
+			NodeID: node, At: at, IntervalMS: 15_000, HostCPUBusy: busy, HostCPUCount: 4,
+			HostMemTotal: 8 << 30, HostMemUsed: memUsed, DiskTotal: 100 << 30, DiskUsed: 40 << 30, Tasks: tasks,
+		}))
+	}
+
+	// Two samples in the first bucket: task a throughout, task b only in the second.
+	rec("nod_1", base.Add(10*time.Second), 0.2, 2<<30, TaskUsageSample{TaskID: "tsk_a", CPUCores: 1.0, MemoryBytes: 100 << 20})
+	rec("nod_1", base.Add(25*time.Second), 0.4, 3<<30,
+		TaskUsageSample{TaskID: "tsk_a", CPUCores: 0.5, MemoryBytes: 120 << 20},
+		TaskUsageSample{TaskID: "tsk_b", CPUCores: 2.0, MemoryBytes: 200 << 20},
+		TaskUsageSample{TaskID: "tsk_other", CPUCores: 9, MemoryBytes: 1 << 40}) // not this node's task: ignored
+	// The same time on another machine must not mix in.
+	rec("nod_2", base.Add(10*time.Second), 0.9, 7<<30, TaskUsageSample{TaskID: "tsk_other", CPUCores: 3, MemoryBytes: 1 << 30})
+	// An hour later (the machine was offline in between).
+	rec("nod_1", base.Add(time.Hour+5*time.Second), 0.1, 1<<30)
+
+	series, err := s.NodeUsageSeries(ctx, "nod_1", base.Add(-time.Minute), "5m")
+	require.NoError(t, err)
+	require.Len(t, series, 2, "the offline hour has no point: a gap, not zeros")
+	require.Equal(t, 2, series[0].Samples)
+	require.InDelta(t, 0.3, series[0].HostCPUBusy, 1e-9, "average of 0.2 and 0.4")
+	require.EqualValues(t, int64(5<<30)/2, series[0].HostMemUsed)
+	require.EqualValues(t, 8<<30, series[0].HostMemTotal)
+	require.EqualValues(t, 4, series[0].HostCPUCount)
+	// Tasks' cores: sample 1 had 1.0, sample 2 had 0.5+2.0 (the other machine's task ignored) -> mean 1.75.
+	require.InDelta(t, 1.75, series[0].TasksCPU, 1e-9)
+
+	byTask, err := s.NodeTaskSeries(ctx, "nod_1", base.Add(-time.Minute), "5m")
+	require.NoError(t, err)
+	share := map[string]float64{}
+	for _, p := range byTask {
+		share[p.TaskID] += p.CPUCores
+	}
+	require.InDelta(t, 0.75, share["tsk_a"], 1e-9, "(1.0 + 0.5) / 2 samples")
+	require.InDelta(t, 1.0, share["tsk_b"], 1e-9, "2.0 in one of two samples counts for half the bucket")
+	require.NotContains(t, share, "tsk_other", "a task the node isn't running is never recorded against it")
+
+	// The tasks' shares add up to the machine's task total.
+	require.InDelta(t, series[0].TasksCPU, share["tsk_a"]+share["tsk_b"], 1e-9)
+
+	// Hourly aggregation gives the same overall answer for the first hour.
+	hourly, err := s.NodeUsageSeries(ctx, "nod_1", base.Add(-time.Minute), "hour")
+	require.NoError(t, err)
+	require.Len(t, hourly, 2)
+	require.InDelta(t, 0.3, hourly[0].HostCPUBusy, 1e-9)
+
+	// Latest reading is the newest one, per machine.
+	latest, ok, err := s.NodeUsageLatest(ctx, "nod_1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.EqualValues(t, 1<<30, latest.Sample.HostMemUsed)
+	_, ok, err = s.NodeUsageLatest(ctx, "nod_never")
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// Permanent per-task summary: core-seconds = cores x interval, peak memory, and it never double counts.
+	sums, err := s.TaskUsageSummaries(ctx, []string{"tsk_a", "tsk_b", "tsk_other", "tsk_none"})
+	require.NoError(t, err)
+	require.InDelta(t, (1.0+0.5)*15, sums["tsk_a"].CoreSeconds, 1e-9)
+	require.EqualValues(t, 120<<20, sums["tsk_a"].PeakMemoryBytes)
+	require.InDelta(t, 2.0*15, sums["tsk_b"].CoreSeconds, 1e-9)
+	require.InDelta(t, 3*15, sums["tsk_other"].CoreSeconds, 1e-9, "its own machine did record it")
+	require.NotContains(t, sums, "tsk_none")
+}
+
+func TestPruningNodeUsageKeepsTheTaskSummary(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustNode(t, s, "nod_1", "act_1")
+	mustRunningTask(t, s, "tsk_a", "act_1", "nod_1")
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	require.NoError(t, s.RecordNodeUsage(ctx, NodeUsageSample{
+		NodeID: "nod_1", At: old, IntervalMS: 15_000, HostCPUCount: 2,
+		Tasks: []TaskUsageSample{{TaskID: "tsk_a", CPUCores: 1, MemoryBytes: 1 << 20, TunnelToGateway: 500, TunnelToTask: 900}},
+	}))
+	require.NoError(t, s.RecordNodeUsage(ctx, NodeUsageSample{NodeID: "nod_1", At: time.Now(), IntervalMS: 15_000, HostCPUCount: 2}))
+
+	n, err := s.PruneNodeUsage(ctx, time.Now().Add(-30*24*time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, n, "the old machine bucket and the old task bucket")
+	series, err := s.NodeUsageSeries(ctx, "nod_1", old.Add(-time.Hour), "hour")
+	require.NoError(t, err)
+	require.Len(t, series, 1, "only the recent bucket is left")
+
+	sums, err := s.TaskUsageSummaries(ctx, []string{"tsk_a"})
+	require.NoError(t, err)
+	require.InDelta(t, 15, sums["tsk_a"].CoreSeconds, 1e-9)
+	require.EqualValues(t, 500, sums["tsk_a"].TunnelToGateway)
+	require.EqualValues(t, 900, sums["tsk_a"].TunnelToTask)
 }

@@ -102,4 +102,14 @@ type Runtime interface {
 	// process, for internal/agent/netns.Proxy to join its network
 	// namespace via /proc/<pid>/ns.
 	Pid(ctx context.Context, containerID string) (int, error)
+	// Stats returns one reading of a running container's resource use.
+	Stats(ctx context.Context, containerID string) (Stats, error)
+}
+
+// Stats is one reading of a container's resource use.
+type Stats struct {
+	// CPUNanos is the cumulative CPU time the container has used.
+	CPUNanos uint64
+	// MemoryBytes is its memory use, not counting reclaimable page cache.
+	MemoryBytes uint64
 }

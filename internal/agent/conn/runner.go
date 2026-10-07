@@ -42,6 +42,9 @@ type Handlers struct {
 	// here; Runner just delivers the message.
 	OnShutdown     func(ctx context.Context, s *lazycakev1.Shutdown)
 	RunningTaskIDs func() []string // polled for every heartbeat
+	// Usage, if set, is read for every heartbeat (task 8.15). It may return nil.
+	// Display only: it is never used for billing or trust.
+	Usage func(ctx context.Context) *lazycakev1.UsageSample
 }
 
 // Runner drives one Connect stream at a time and reconnects with backoff
@@ -265,9 +268,17 @@ func (r *Runner) sendLoop(ctx context.Context, stream lazycakev1.AgentService_Co
 			if r.Handlers.RunningTaskIDs != nil {
 				running = r.Handlers.RunningTaskIDs()
 			}
+			var usage *lazycakev1.UsageSample
+			if r.Handlers.Usage != nil {
+				// Bounded: reading a container's stats must never hold up the heartbeat
+				// that keeps the fence deadline alive.
+				uctx, cancel := context.WithTimeout(ctx, heartbeatEvery/3)
+				usage = r.Handlers.Usage(uctx)
+				cancel()
+			}
 			r.recordHeartbeatSent(seq)
 			if err := stream.Send(&lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_Heartbeat{
-				Heartbeat: &lazycakev1.Heartbeat{Seq: seq, RunningTaskIds: running},
+				Heartbeat: &lazycakev1.Heartbeat{Seq: seq, RunningTaskIds: running, Usage: usage},
 			}}); err != nil {
 				select {
 				case errCh <- fmt.Errorf("sending heartbeat: %w", err):

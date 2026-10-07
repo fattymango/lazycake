@@ -6,7 +6,7 @@ import { useAsync } from "@/lib/hooks/useAsync";
 import { useLiveReload } from "@/lib/hooks/useLiveReload";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { dailyEarnings } from "@/lib/spend";
-import type { LedgerEntry, Node, ProviderMe } from "@/lib/types";
+import type { LedgerEntry, Node, NodeUsage, ProviderMe } from "@/lib/types";
 import { TrustMeter } from "@/components/TrustMeter";
 import { BarChart } from "@/ui/BarChart";
 import { Badge } from "@/ui/Badge";
@@ -14,6 +14,7 @@ import { Button } from "@/ui/Button";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { PageHeader } from "@/ui/PageHeader";
+import { Sparkline } from "@/ui/Sparkline";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatCard } from "@/ui/StatCard";
 import { ConnectionPill } from "@/ui/StatusPill";
@@ -29,6 +30,28 @@ function Spec({ icon: Icon, label, value }: { icon: typeof Cpu; label: string; v
       <p className="mt-1 truncate text-sm font-medium text-fg" data-tnum>
         {value}
       </p>
+    </div>
+  );
+}
+
+/** A day of CPU use by tasks, as a line, with the current figure next to it. */
+function UsageTrend({ node }: { node: Node }) {
+  const usage = useAsync(
+    (s) => apiGet<NodeUsage>(`/api/portal/provider/nodes/${encodeURIComponent(node.id)}/usage?range=24h`, s),
+    [node.id]
+  );
+  const u = usage.data;
+  if (!u || !u.supported) return null;
+  const now = u.latest && node.connected ? u.latest.tasks_cpu_cores : undefined;
+  return (
+    <div className="space-y-1.5" aria-label="CPU used by tasks over the last 24 hours">
+      <div className="flex items-center justify-between text-xs text-muted">
+        <span>CPU in use, 24 h</span>
+        <span className="text-fg" data-tnum>
+          {now === undefined ? "—" : `${Number(now.toFixed(2))} of ${node.offer_cores}`}
+        </span>
+      </div>
+      <Sparkline data={u.series.map((p) => p.tasks_cpu_cores)} />
     </div>
   );
 }
@@ -59,6 +82,8 @@ export function MachineCard({ node }: { node: Node }) {
           <Spec icon={MemoryStick} label="RAM" value={memory(node.offer_memory_mb)} />
           <Spec icon={HardDrive} label="Disk" value={memory(node.offer_disk_mb)} />
         </div>
+
+        <UsageTrend node={node} />
 
         <div className="mt-auto space-y-2">
           <div className="flex items-center justify-between text-xs text-muted">

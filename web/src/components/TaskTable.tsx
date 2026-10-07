@@ -31,6 +31,7 @@ export function TaskTable({
   empty,
   showNode = true,
   getHref,
+  rowHover,
   skeletonRows,
 }: {
   tasks: Task[];
@@ -41,6 +42,8 @@ export function TaskTable({
   showNode?: boolean;
   /** Where a row leads (default: /tasks/:id). Pass null for rows that don't link anywhere. */
   getHref?: ((t: Task) => string) | null;
+  /** A card shown next to the pointer while it is over a row. */
+  rowHover?: (t: Task) => ReactNode;
   skeletonRows?: number;
 }) {
   const navigate = useNavigate();
@@ -137,6 +140,7 @@ export function TaskTable({
       rows={tasks}
       getRowKey={(t) => t.id}
       onRowClick={href ? (t) => navigate(href(t)) : undefined}
+      rowHover={rowHover}
       loading={loading}
       skeletonRows={skeletonRows}
       empty={empty}

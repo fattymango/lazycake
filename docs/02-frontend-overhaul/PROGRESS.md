@@ -90,3 +90,7 @@ verified.
 - Task 8.14 (gateway traffic) done, 2026-10-07: see "As built" in `IMPLEMENTATION.md`. Migration 017, delta reports every 10 s from the gateway, lifetime totals on gateway
   cards, a gateway page with a stacked chart and busiest tasks, per-target bytes on the task page. Verified exactly with a known-size file through a real gateway
   and agent, and in a real browser (`web/e2e/traffic.mjs`). Needs migration 017 and a gateway update for the over-time numbers; older gateways still count (one report at close).
+
+- Task 8.15 (machine usage) done, 2026-10-07: see "As built" in `IMPLEMENTATION.md`. Heartbeat usage from the agent, migration 018, provider usage API, a Usage card on the machine
+  page with a stacked per-task hover, task-row hover totals, a sparkline on machine cards. Verified with a real agent (0.5-core benchmark reads 0.5 cores) and in a real browser
+  (`web/e2e/usage.mjs`). Needs migration 018 and an agent update. `TestBenchStability` fails on this desktop with or without these changes (machine too busy); it is unrelated.

@@ -24,6 +24,7 @@ import (
 	"github.com/mkassab215/lazycake/internal/agent/probe"
 	"github.com/mkassab215/lazycake/internal/agent/reconcile"
 	lcruntime "github.com/mkassab215/lazycake/internal/agent/runtime"
+	"github.com/mkassab215/lazycake/internal/agent/usage"
 	"github.com/mkassab215/lazycake/internal/id"
 	"github.com/mkassab215/lazycake/internal/logging"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
@@ -144,6 +145,14 @@ func run() error {
 		LcinitPath:   lcinitPath,
 	}
 	benchTrigger := make(chan struct{}, 1)
+	usageSampler := &usage.Sampler{
+		Tasks:   executor.UsageTasks,
+		DataDir: cfg.DataDir,
+		Stats: func(ctx context.Context, containerID string) (usage.Container, error) {
+			st, err := rt.Stats(ctx, containerID)
+			return usage.Container{CPUNanos: st.CPUNanos, MemoryBytes: st.MemoryBytes}, err
+		},
+	}
 	runner.Handlers = conn.Handlers{
 		OnDispatch: executor.HandleDispatch,
 		OnCancel:   func(ctx context.Context, c *lazycakev1.Cancel) { executor.CancelTask(ctx, c.GetTaskId()) },
@@ -152,6 +161,7 @@ func run() error {
 			stop()
 		},
 		RunningTaskIDs: ledger.TaskIDs,
+		Usage:          usageSampler.Sample,
 		OnRegistered: func(ack *lazycakev1.RegisterAck) {
 			executor.ReplayPending()
 			if ack.GetBenchmarkNow() {

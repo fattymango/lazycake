@@ -317,3 +317,61 @@ type TaskGatewayTraffic struct {
 	Service   string
 	TrafficTotals
 }
+
+// NodeUsageSample is one reading from an agent's heartbeat (task 8.15). Display only.
+type NodeUsageSample struct {
+	NodeID     string
+	At         time.Time
+	IntervalMS int64
+
+	HostCPUBusy               float64 // 0..1 of all the host's CPU
+	HostCPUCount              int
+	HostMemTotal, HostMemUsed int64
+	DiskTotal, DiskUsed       int64
+	Tasks                     []TaskUsageSample
+}
+
+// TaskUsageSample is one running task's share of a reading.
+type TaskUsageSample struct {
+	TaskID          string
+	CPUCores        float64
+	MemoryBytes     int64
+	TunnelToGateway int64 // cumulative since the task started
+	TunnelToTask    int64
+}
+
+// NodeUsagePoint is a machine's averages over one bucket (or hour).
+type NodeUsagePoint struct {
+	At                        time.Time
+	Samples                   int
+	HostCPUBusy               float64
+	HostCPUCount              int
+	HostMemUsed, HostMemTotal int64
+	DiskUsed, DiskTotal       int64
+	TasksCPU                  float64 // cores in use by tasks
+	TasksMem                  int64
+}
+
+// NodeTaskPoint is one task's average share of a machine over a bucket (or hour),
+// averaged over the machine's samples in that period so a task that ran for part
+// of it counts for that part.
+type NodeTaskPoint struct {
+	At          time.Time
+	TaskID      string
+	CPUCores    float64
+	MemoryBytes int64
+}
+
+// TaskUsageSummary is what one task used in total, kept after its detailed samples are pruned.
+type TaskUsageSummary struct {
+	CoreSeconds     float64
+	PeakMemoryBytes int64
+	TunnelToGateway int64
+	TunnelToTask    int64
+}
+
+// NodeUsageLatest is a machine's newest reading.
+type NodeUsageLatest struct {
+	At     time.Time
+	Sample NodeUsageSample
+}

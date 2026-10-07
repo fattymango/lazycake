@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Cpu, HardDrive, MemoryStick, Server, Trash2 } from "lucide-react";
 import { apiDelete, apiGet, errorMessage } from "@/lib/api";
-import { cpu, dateTime, memory, relativeTime } from "@/lib/format";
+import { bytes, cpu, dateTime, duration, memory, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useLiveReload } from "@/lib/hooks/useLiveReload";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
-import type { Node, Task } from "@/lib/types";
+import type { Node, NodeTask } from "@/lib/types";
 import { TaskTable } from "@/components/TaskTable";
 import { TrustMeter } from "@/components/TrustMeter";
+import { MachineUsage } from "./MachineUsage";
 import { Alert } from "@/ui/Alert";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
@@ -37,7 +38,7 @@ export function MachineDetail() {
   const navigate = useNavigate();
   const toast = useToast();
   const node = useAsync((s) => apiGet<Node>(`/api/portal/provider/nodes/${encodeURIComponent(id)}`, s), [id]);
-  const tasks = useAsync((s) => apiGet<Task[]>(`/api/portal/provider/nodes/${encodeURIComponent(id)}/tasks`, s), [id]);
+  const tasks = useAsync((s) => apiGet<NodeTask[]>(`/api/portal/provider/nodes/${encodeURIComponent(id)}/tasks`, s), [id]);
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -79,6 +80,8 @@ export function MachineDetail() {
   }
 
   const n = node.data;
+  const taskLabel = (taskId: string) => `${taskId.slice(0, 8)}…${taskId.slice(-4)}`;
+  const usageOf = new Map((tasks.data ?? []).map((t) => [t.id, t.usage] as const));
   return (
     <div className="space-y-6">
       <PageHeader
@@ -127,6 +130,8 @@ export function MachineDetail() {
         </div>
       </Card>
 
+      <MachineUsage node={n} taskLabel={taskLabel} />
+
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="min-w-0 overflow-hidden">
           <CardHeader title="Recent tasks" description="Work customers have run on this machine." className="pb-4" />
@@ -139,6 +144,23 @@ export function MachineDetail() {
                 loading={tasks.loading}
                 showNode={false}
                 getHref={null}
+                rowHover={(t) => {
+                  const u = usageOf.get(t.id);
+                  if (!u) return <span className="text-muted">No usage reported for this task.</span>;
+                  return (
+                    <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5" data-tnum>
+                      <dt className="col-span-2 mb-0.5 font-medium text-fg">What this task used</dt>
+                      <dt className="text-muted">CPU time</dt>
+                      <dd className="text-right">{duration(u.core_seconds * 1000)} of one core</dd>
+                      <dt className="text-muted">Peak memory</dt>
+                      <dd className="text-right">{bytes(u.peak_memory_bytes)}</dd>
+                      <dt className="text-muted">Tunnel traffic</dt>
+                      <dd className="text-right">
+                        {bytes(u.tunnel_bytes_to_gateway)} out · {bytes(u.tunnel_bytes_to_task)} in
+                      </dd>
+                    </dl>
+                  );
+                }}
                 empty={
                   <EmptyState
                     icon={Layers}

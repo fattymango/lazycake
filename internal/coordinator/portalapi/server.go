@@ -92,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/portal/provider/nodes", s.requireSession(store.RoleProvider, s.handleListNodes))
 	mux.HandleFunc("GET /api/portal/provider/nodes/{id}", s.requireSession(store.RoleProvider, s.handleGetNode))
 	mux.HandleFunc("DELETE /api/portal/provider/nodes/{id}", s.requireSession(store.RoleProvider, s.handleDeleteNode))
+	mux.HandleFunc("GET /api/portal/provider/nodes/{id}/usage", s.requireSession(store.RoleProvider, s.handleNodeUsage))
 	mux.HandleFunc("GET /api/portal/provider/nodes/{id}/tasks", s.requireSession(store.RoleProvider, s.handleNodeTasks))
 	mux.HandleFunc("POST /api/portal/provider/nodes/install-token", s.requireSession(store.RoleProvider, s.handleInstallToken))
 	mux.HandleFunc("GET /api/portal/provider/ledger", s.requireSession(store.RoleProvider, s.handleProviderLedger))

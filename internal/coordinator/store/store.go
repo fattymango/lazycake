@@ -22,6 +22,7 @@ type Store interface {
 	Ledger
 	Holds
 	GatewayTraffic
+	NodeUsage
 	PortalAuth
 }
 
@@ -284,4 +285,26 @@ type PortalAuth interface {
 	// RevokeSession marks a session revoked (logout). A no-op, not an
 	// error, if it doesn't exist or is already revoked.
 	RevokeSession(ctx context.Context, idHash []byte) error
+}
+
+// NodeUsage persists what agents report using (task 8.15). Display only: nothing
+// read from here may feed billing or trust, because the host controls the agent.
+type NodeUsage interface {
+	// RecordNodeUsage folds one reading into the 5-minute buckets, the machine's
+	// latest reading, and each task's permanent summary. A task the node isn't
+	// running (per the tasks table) is ignored, so an agent can't write usage
+	// for someone else's task.
+	RecordNodeUsage(ctx context.Context, s NodeUsageSample) error
+	// NodeUsageLatest returns the machine's newest reading; ok is false if it has never reported.
+	NodeUsageLatest(ctx context.Context, nodeID string) (NodeUsageLatest, bool, error)
+	// NodeUsageSeries returns the machine's averages since `since`, per `step`
+	// ("5m" or "hour"), oldest first. A period with no samples has no point (the
+	// machine was offline), which is different from a point of zeros.
+	NodeUsageSeries(ctx context.Context, nodeID string, since time.Time, step string) ([]NodeUsagePoint, error)
+	// NodeTaskSeries returns each task's average share of the machine over the same periods.
+	NodeTaskSeries(ctx context.Context, nodeID string, since time.Time, step string) ([]NodeTaskPoint, error)
+	// TaskUsageSummaries returns permanent per-task totals; a task never reported has no entry.
+	TaskUsageSummaries(ctx context.Context, taskIDs []string) (map[string]TaskUsageSummary, error)
+	// PruneNodeUsage deletes buckets older than `before`. Summaries are untouched. It returns rows deleted.
+	PruneNodeUsage(ctx context.Context, before time.Time) (int64, error)
 }

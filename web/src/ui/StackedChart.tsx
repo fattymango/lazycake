@@ -20,24 +20,36 @@ export function StackedChart({
   series,
   format,
   formatTime,
+  axisLabel,
   summary,
   heightClass = "h-40",
   emptyLabel = "Nothing in this period",
+  limit,
+  gapLabel = "No data: the machine was offline",
+  footer,
   className,
 }: {
   points: StackPoint[];
   series: ChartSeries[];
   format: (value: number) => string;
   formatTime: (at: number) => string;
+  /** The short label under the axis (default: the date part of formatTime). */
+  axisLabel?: (at: number) => string;
   summary: string;
   heightClass?: string;
   emptyLabel?: string;
+  /** A ceiling to draw as a dashed line (e.g. the cores on offer); the axis always reaches it. */
+  limit?: { value: number; label: string };
+  /** What a gap (a point with no data) means, shown when it is hovered. */
+  gapLabel?: string;
+  /** Extra tooltip line for a hovered column, e.g. "1.4 of 2 cores". */
+  footer?: (p: StackPoint) => string | null;
   className?: string;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const id = useId();
   const max = Math.max(...points.map(stackTotal), 0);
-  const top = niceMax(max);
+  const top = niceMax(Math.max(max, limit?.value ?? 0));
   const n = points.length;
 
   const labelEvery = Math.max(1, Math.ceil(n / 6));
@@ -61,17 +73,30 @@ export function StackedChart({
               </span>
             </div>
           ))}
+          {limit && limit.value > 0 && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-warning/80"
+              style={{ bottom: `${(limit.value / top) * 100}%` }}
+            >
+              <span className="absolute -top-4 right-0 rounded bg-surface px-1 text-2xs text-warning">{limit.label}</span>
+            </div>
+          )}
           {points.map((p, i) => {
             const total = stackTotal(p);
             return (
               <div
                 key={p.at}
                 tabIndex={0}
-                aria-label={`${formatTime(p.at)}: ${format(total)}`}
+                aria-label={`${formatTime(p.at)}: ${p.gap ? gapLabel : format(total)}`}
                 onMouseEnter={() => setActive(i)}
                 onFocus={() => setActive(i)}
                 onBlur={() => setActive(null)}
-                className={cn("relative flex h-full min-w-0 flex-1 flex-col-reverse rounded-sm outline-none", active === i && "bg-fg/5")}
+                className={cn(
+                  "relative flex h-full min-w-0 flex-1 flex-col-reverse rounded-sm outline-none",
+                  active === i && "bg-fg/5",
+                  p.gap && "bg-[repeating-linear-gradient(135deg,transparent_0_3px,rgb(var(--border)/0.55)_3px_4px)]"
+                )}
               >
                 {series.map((s) => {
                   const v = p.values[s.key] ?? 0;
@@ -93,7 +118,7 @@ export function StackedChart({
           })}
         </div>
 
-        {max === 0 && (
+        {max === 0 && !points.some((p) => p.gap) && (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-subtle">{emptyLabel}</p>
         )}
 
@@ -122,8 +147,14 @@ export function StackedChart({
                     </span>
                   </li>
                 ))}
-              {stackTotal(activePoint) === 0 && <li className="text-subtle">Nothing</li>}
+              {activePoint.gap && <li className="text-subtle">{gapLabel}</li>}
+              {!activePoint.gap && stackTotal(activePoint) === 0 && <li className="text-subtle">Nothing</li>}
             </ul>
+            {footer && !activePoint.gap && footer(activePoint) && (
+              <p className="mt-1.5 border-t border-border pt-1.5 text-muted" data-tnum>
+                {footer(activePoint)}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -131,7 +162,7 @@ export function StackedChart({
       <div className="mt-1.5 flex gap-px" aria-hidden>
         {points.map((p, i) => (
           <span key={p.at} className="min-w-0 flex-1 overflow-visible whitespace-nowrap text-2xs text-subtle">
-            {i % labelEvery === 0 ? formatTime(p.at).split(",")[0] : ""}
+            {i % labelEvery === 0 ? (axisLabel ? axisLabel(p.at) : formatTime(p.at).split(",")[0]) : ""}
           </span>
         ))}
       </div>

@@ -72,8 +72,17 @@ type Proxy struct {
 	// freshly built agent binary instead.
 	ExecutablePath string
 
+	// Counters is filled in while the proxy serves; read it with Traffic.
+	Counters TunnelCounters
+
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
+}
+
+// Traffic returns the bytes this task has moved through its tunnel so far: out of
+// the container to the gateway, and in from it.
+func (p *Proxy) Traffic() (toGateway, toTask int64) {
+	return p.Counters.ToGateway.Load(), p.Counters.ToTask.Load()
 }
 
 // Setup brings up loopback and points resolv.conf at the stub resolver
@@ -192,7 +201,7 @@ func (p *Proxy) Setup(ctx context.Context) error {
 
 	serveCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
-	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, p.Log)
+	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, &p.Counters, p.Log)
 
 	// Best-effort: lcinit polls for this file (--wait-file, wired up by
 	// executor.go's wrapWithLcinit) before starting the task's actual

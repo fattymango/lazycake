@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -180,6 +181,34 @@ func (r *PodmanRuntime) Pid(ctx context.Context, containerID string) (int, error
 		return 0, fmt.Errorf("container %s has no state", containerID)
 	}
 	return inspect.State.Pid, nil
+}
+
+func (r *PodmanRuntime) Stats(ctx context.Context, containerID string) (Stats, error) {
+	resp, err := r.cli.ContainerStatsOneShot(ctx, containerID)
+	if err != nil {
+		return Stats{}, fmt.Errorf("reading stats of container %s: %w", containerID, err)
+	}
+	defer resp.Body.Close()
+	var raw types.StatsJSON
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return Stats{}, fmt.Errorf("decoding stats of container %s: %w", containerID, err)
+	}
+	return statsFrom(raw), nil
+}
+
+// statsFrom turns the engine's reading into ours. Memory is usage minus the
+// inactive page cache (what `docker stats` shows), so a task that merely read a
+// big file doesn't look like it holds that much memory.
+func statsFrom(raw types.StatsJSON) Stats {
+	mem := raw.MemoryStats.Usage
+	cache := raw.MemoryStats.Stats["inactive_file"] // cgroup v2
+	if cache == 0 {
+		cache = raw.MemoryStats.Stats["total_inactive_file"] // cgroup v1
+	}
+	if cache < mem {
+		mem -= cache
+	}
+	return Stats{CPUNanos: raw.CPUStats.CPUUsage.TotalUsage, MemoryBytes: mem}
 }
 
 func (r *PodmanRuntime) Exec(ctx context.Context, containerID string, cmd []string) error {
