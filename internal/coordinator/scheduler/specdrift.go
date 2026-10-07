@@ -29,6 +29,12 @@ const specDriftRatioThreshold = 1.8
 // slow task doesn't flag or clear a node on its own.
 const specDriftEWMAAlpha = 0.3
 
+// specDriftMinNormalisedS is the shortest task that says anything about a machine's speed. Below it the
+// timing is dominated by container start-up and scheduling noise, not by the work: a task that takes 0.03 s
+// one time and 0.3 s the next has not slowed down 10x. (Found by the production load test: six sub-second
+// "hello" tasks pushed an honest machine to the ban threshold.)
+const specDriftMinNormalisedS = 10.0
+
 // specDriftMaxWorkloads bounds the memory spent per node: a node's drift is tracked for up to this many
 // distinct workloads, and workloads seen after that are ignored.
 const specDriftMaxWorkloads = 256
@@ -66,6 +72,9 @@ func NewSpecDriftTracker() *SpecDriftTracker {
 // Ratio is meaningless (returns 1, false) until the node has completed specDriftCalibrationSamples
 // tasks of that same workload to establish a baseline.
 func (t *SpecDriftTracker) Observe(nodeID, workload string, normalisedS float64) (ratio float64, flagged bool) {
+	if normalisedS < specDriftMinNormalisedS {
+		return 1, false // too short to measure: neither calibrates nor flags
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
