@@ -3,6 +3,17 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.10 — 2026-10-07
+
+Another finding from the production load test: network-heavy tasks could take the coordinator down far enough that a machine fenced its own tasks.
+
+### Fixed
+- **A gateway batches its byte reports.** It used to send one report to the coordinator for every connection a task opened, and each was a database transaction. A task making hundreds of tiny connections a second
+  starved the coordinator's heartbeats, a machine's lease expired, it fenced 10 tasks, and the penalty banned it. Now the gateway sends one report per task and service every 5 seconds, with exact totals and a count of
+  how many connections closed. **Update your gateways** (`docker.io/fattymango/lazycake-gateway`); an older gateway still works, one report per connection as before.
+- **The agent comes back after a reboot.** The install command now has `--restart=always` (and the page says to enable `podman-restart.service`). Before, a reboot left the agent container exited and the machine silently out of the pool.
+  Machines already installed need the command run again.
+
 ## v0.3.9 — 2026-10-07
 
 ### Fixed

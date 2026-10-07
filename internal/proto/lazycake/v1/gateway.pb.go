@@ -28,13 +28,16 @@ const (
 // one report at close with service unset and final unset; the coordinator treats that as the
 // whole connection.
 type ByteReport struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	GatewayId     string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
-	TaskId        string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	BytesToLocal  int64                  `protobuf:"varint,3,opt,name=bytes_to_local,json=bytesToLocal,proto3" json:"bytes_to_local,omitempty"` // gateway -> local service
-	BytesToTask   int64                  `protobuf:"varint,4,opt,name=bytes_to_task,json=bytesToTask,proto3" json:"bytes_to_task,omitempty"`    // local service -> gateway -> task
-	Service       string                 `protobuf:"bytes,5,opt,name=service,proto3" json:"service,omitempty"`                                  // which published service the connection used
-	Final         bool                   `protobuf:"varint,6,opt,name=final,proto3" json:"final,omitempty"`                                     // the connection has closed; this is its last report
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	GatewayId    string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	TaskId       string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	BytesToLocal int64                  `protobuf:"varint,3,opt,name=bytes_to_local,json=bytesToLocal,proto3" json:"bytes_to_local,omitempty"` // gateway -> local service
+	BytesToTask  int64                  `protobuf:"varint,4,opt,name=bytes_to_task,json=bytesToTask,proto3" json:"bytes_to_task,omitempty"`    // local service -> gateway -> task
+	Service      string                 `protobuf:"bytes,5,opt,name=service,proto3" json:"service,omitempty"`                                  // which published service the connection used
+	Final        bool                   `protobuf:"varint,6,opt,name=final,proto3" json:"final,omitempty"`                                     // the connection has closed; this is its last report
+	// How many connections closed since the previous report, when the gateway batches many into one. A report
+	// with final set and this left at 0 (a gateway built before batching) counts as one.
+	Connections   int32 `protobuf:"varint,7,opt,name=connections,proto3" json:"connections,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,6 +114,13 @@ func (x *ByteReport) GetFinal() bool {
 	return false
 }
 
+func (x *ByteReport) GetConnections() int32 {
+	if x != nil {
+		return x.Connections
+	}
+	return 0
+}
+
 type ByteReportAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -151,7 +161,7 @@ var File_lazycake_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_lazycake_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"\xbe\x01\n" +
+	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"\xe0\x01\n" +
 	"\n" +
 	"ByteReport\x12\x1d\n" +
 	"\n" +
@@ -160,7 +170,8 @@ const file_lazycake_v1_gateway_proto_rawDesc = "" +
 	"\x0ebytes_to_local\x18\x03 \x01(\x03R\fbytesToLocal\x12\"\n" +
 	"\rbytes_to_task\x18\x04 \x01(\x03R\vbytesToTask\x12\x18\n" +
 	"\aservice\x18\x05 \x01(\tR\aservice\x12\x14\n" +
-	"\x05final\x18\x06 \x01(\bR\x05final\"\x0f\n" +
+	"\x05final\x18\x06 \x01(\bR\x05final\x12 \n" +
+	"\vconnections\x18\a \x01(\x05R\vconnections\"\x0f\n" +
 	"\rByteReportAck2T\n" +
 	"\x0eGatewayService\x12B\n" +
 	"\vReportBytes\x12\x17.lazycake.v1.ByteReport\x1a\x1a.lazycake.v1.ByteReportAckB:Z8github.com/mkassab215/lazycake/internal/proto/lazycakev1b\x06proto3"

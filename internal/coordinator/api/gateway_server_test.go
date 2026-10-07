@@ -188,3 +188,32 @@ func TestGatewayReportBytesRejectsNegativeCounts(t *testing.T) {
 		t.Fatal("a rejected report must not reach billing either")
 	}
 }
+
+// A batched report (task: many tiny connections, one report) counts every connection it closes; an older
+// gateway's final report still counts as exactly one.
+func TestGatewayReportBytesCountsBatchedConnections(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("gw-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenGateway})
+	_ = fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_1", AccountID: "act_1"})
+	fs.tasks["tsk_a"] = store.Task{ID: "tsk_a", AccountID: "act_1"}
+	client := startGatewayTestServer(t, fs, &fakeGatewayEvents{})
+	send := func(r *lazycakev1.ByteReport) {
+		t.Helper()
+		r.GatewayId = "gw_1"
+		if _, err := client.ReportBytes(authedCtx("gw-token"), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send(&lazycakev1.ByteReport{TaskId: "tsk_a", Service: "db", BytesToLocal: 10, Final: true, Connections: 250}) // batched
+	send(&lazycakev1.ByteReport{TaskId: "tsk_a", Service: "db", BytesToLocal: 1, Final: true})                    // an older gateway: one
+	send(&lazycakev1.ByteReport{TaskId: "tsk_a", Service: "db", BytesToLocal: 1, Connections: -5, Final: true})   // nonsense count: treated as one
+	send(&lazycakev1.ByteReport{TaskId: "tsk_a", Service: "db", BytesToLocal: 1})                                 // still open: none
+
+	totals, _ := fs.GatewayTotals(context.Background(), []string{"gw_1"})
+	if got := totals["gw_1"].Connections; got != 252 {
+		t.Fatalf("connections = %d, want 250 + 1 + 1 + 0 = 252", got)
+	}
+	if got := totals["gw_1"].BytesToLocal; got != 13 {
+		t.Fatalf("bytes must still add up: %d", got)
+	}
+}

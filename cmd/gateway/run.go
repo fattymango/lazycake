@@ -44,7 +44,7 @@ func run() error {
 		services[s.Name] = s.Addr()
 	}
 
-	reportBytes := newByteReporter(cfg, log)
+	reportBytes := newByteReporter(ctx, cfg, log)
 	return serveForever(ctx, log, func(ctx context.Context) error {
 		return serveOnce(ctx, cfg, keypair, services, log, reportBytes)
 	})
@@ -151,7 +151,7 @@ func loadOrCreateKeypair(path string) (noise.Keypair, error) {
 // no-op if cfg.GRPCAddr wasn't set - reporting is defense in depth, not
 // something the gateway's actual job depends on, so it degrades gracefully
 // rather than failing startup.
-func newByteReporter(cfg config.Config, log *slog.Logger) func(listener.ForwardReport) {
+func newByteReporter(ctx context.Context, cfg config.Config, log *slog.Logger) func(listener.ForwardReport) {
 	if cfg.GRPCAddr == "" {
 		log.Warn("LAZYCAKE_GRPC_ADDR not set, byte reconciliation reports disabled")
 		return func(listener.ForwardReport) {}
@@ -164,12 +164,14 @@ func newByteReporter(cfg config.Config, log *slog.Logger) func(listener.ForwardR
 	}
 	client := lazycakev1.NewGatewayServiceClient(conn)
 
-	return newReporter(cfg.GatewayID, log, func(r *lazycakev1.ByteReport) error {
-		ctx, cancel := context.WithTimeout(
+	rp := newReporter(cfg.GatewayID, log, func(r *lazycakev1.ByteReport) error {
+		callCtx, cancel := context.WithTimeout(
 			metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+cfg.Token)),
 			10*time.Second)
 		defer cancel()
-		_, err := client.ReportBytes(ctx, r)
+		_, err := client.ReportBytes(callCtx, r)
 		return err
-	}).Report
+	})
+	go rp.Run(ctx)
+	return rp.Report
 }

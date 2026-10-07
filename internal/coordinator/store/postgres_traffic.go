@@ -14,8 +14,8 @@ func (s *PostgresStore) RecordGatewayTraffic(ctx context.Context, r GatewayTraff
 	if at.IsZero() {
 		at = time.Now()
 	}
-	conns := 0
-	if r.Final {
+	conns := r.Connections
+	if conns == 0 && r.Final {
 		conns = 1
 	}
 	tx, err := s.pool.Begin(ctx)

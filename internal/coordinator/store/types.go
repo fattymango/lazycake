@@ -285,7 +285,10 @@ type GatewayTrafficReport struct {
 	BytesToTask  int64
 	// Final: the connection has closed, so it counts as one connection.
 	Final bool
-	At    time.Time
+	// Connections is how many connections this report closes (a batched report carries many); when 0,
+	// Final means one.
+	Connections int
+	At          time.Time
 	// RecordTask: the task is known and belongs to the gateway's account, so
 	// the per-task numbers may be recorded. A report about anything else still
 	// counts toward the gateway's own totals.

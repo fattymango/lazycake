@@ -315,7 +315,9 @@ export function AddMachine() {
                     }
                   />
                   <p className="text-xs leading-5 text-muted">
-                    Also run <span className="font-mono">loginctl enable-linger $USER</span> so the agent keeps running after you log out.
+                    Also run <span className="font-mono">loginctl enable-linger $USER</span> and{" "}
+                    <span className="font-mono">systemctl --user enable --now podman-restart.service</span> so the agent keeps running after
+                    you log out and starts again by itself after a reboot.
                   </p>
                 </Step>
 

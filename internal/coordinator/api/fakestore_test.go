@@ -727,8 +727,8 @@ func (f *fakeStore) RecordGatewayTraffic(ctx context.Context, r store.GatewayTra
 	if f.gwTotals == nil {
 		f.gwTotals = map[string]store.TrafficTotals{}
 	}
-	conns := int64(0)
-	if r.Final {
+	conns := int64(r.Connections)
+	if conns == 0 && r.Final {
 		conns = 1
 	}
 	t := f.gwTotals[r.GatewayID]

@@ -1,60 +1,104 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/mkassab215/lazycake/internal/gateway/listener"
 	lazycakev1 "github.com/mkassab215/lazycake/internal/proto/lazycake/v1"
 )
 
-// reporter sends a connection's byte-count deltas to the coordinator. A report
-// that can't be delivered (the coordinator is restarting, a network blip) is not
-// dropped: its bytes are carried and added to the next report for the same task
-// and service, so a gap in connectivity costs a delay in the statistics rather
-// than missing bytes. A connection that closes during the outage and never
-// reports again leaves its carry behind (statistics are "as reported by the
-// gateway", a floor), which is bounded by the number of distinct task/service
-// pairs.
+// flushEvery is how often batched byte counts go to the coordinator. A task that opens hundreds of tiny
+// connections a second used to cost the coordinator one database transaction per connection, which a small
+// coordinator cannot keep up with (found by a production load test: heartbeats starved, agents' leases
+// expired and they fenced their tasks). Now the cost is one report per task and service per interval,
+// however many connections there were.
+const flushEvery = 5 * time.Second
+
+// reporter batches the byte-count deltas of forwarded connections and sends them to the coordinator once per
+// flushEvery, one report per task and service. Nothing is dropped: a report that can't be delivered (the
+// coordinator is restarting, a network blip) stays pending and is added to the next one, so a gap in
+// connectivity costs a delay in the statistics rather than missing bytes.
 type reporter struct {
 	gatewayID string
 	log       *slog.Logger
 	send      func(*lazycakev1.ByteReport) error
 
 	mu      sync.Mutex
-	pending map[string]*lazycakev1.ByteReport // task|service -> unsent bytes
+	pending map[string]*batch // task|service -> unsent totals
+}
+
+type batch struct {
+	task, service string
+	toLocal       int64
+	toTask        int64
+	connections   int32 // connections that closed in this batch
 }
 
 func newReporter(gatewayID string, log *slog.Logger, send func(*lazycakev1.ByteReport) error) *reporter {
-	return &reporter{gatewayID: gatewayID, log: log, send: send, pending: map[string]*lazycakev1.ByteReport{}}
+	return &reporter{gatewayID: gatewayID, log: log, send: send, pending: map[string]*batch{}}
 }
 
-// Report sends r's delta plus anything carried for the same task and service.
+// Report records one connection's delta. It never does I/O, so the forwarding path is never slowed by the
+// coordinator.
 func (rp *reporter) Report(r listener.ForwardReport) {
 	key := r.TaskID + "|" + r.Service
-
 	rp.mu.Lock()
-	out := &lazycakev1.ByteReport{
-		GatewayId: rp.gatewayID, TaskId: r.TaskID, Service: r.Service,
-		BytesToLocal: r.ToLocal, BytesToTask: r.ToTask, Final: r.Final,
+	defer rp.mu.Unlock()
+	b, ok := rp.pending[key]
+	if !ok {
+		b = &batch{task: r.TaskID, service: r.Service}
+		rp.pending[key] = b
 	}
-	if carried, ok := rp.pending[key]; ok {
-		out.BytesToLocal += carried.BytesToLocal
-		out.BytesToTask += carried.BytesToTask
-		out.Final = out.Final || carried.Final // a connection that closed during an outage still counts
-		delete(rp.pending, key)
+	b.toLocal += r.ToLocal
+	b.toTask += r.ToTask
+	if r.Final {
+		b.connections++
 	}
+}
+
+// Flush sends everything pending, one report per task and service. What fails stays pending.
+func (rp *reporter) Flush() {
+	rp.mu.Lock()
+	taken := rp.pending
+	rp.pending = map[string]*batch{}
 	rp.mu.Unlock()
 
-	if err := rp.send(out); err != nil {
-		rp.log.Warn("reporting byte counts; will retry with the next report", "task_id", r.TaskID, "error", err)
-		rp.mu.Lock()
-		if again, ok := rp.pending[key]; ok { // another report for the same key raced us
-			out.BytesToLocal += again.BytesToLocal
-			out.BytesToTask += again.BytesToTask
-			out.Final = out.Final || again.Final
+	for key, b := range taken {
+		if b.toLocal == 0 && b.toTask == 0 && b.connections == 0 {
+			continue
 		}
-		rp.pending[key] = out
-		rp.mu.Unlock()
+		err := rp.send(&lazycakev1.ByteReport{
+			GatewayId: rp.gatewayID, TaskId: b.task, Service: b.service,
+			BytesToLocal: b.toLocal, BytesToTask: b.toTask, Final: b.connections > 0, Connections: b.connections,
+		})
+		if err != nil {
+			rp.log.Warn("reporting byte counts; will retry with the next batch", "task_id", b.task, "error", err)
+			rp.mu.Lock()
+			if again, ok := rp.pending[key]; ok { // new bytes arrived for the same key meanwhile
+				b.toLocal += again.toLocal
+				b.toTask += again.toTask
+				b.connections += again.connections
+			}
+			rp.pending[key] = b
+			rp.mu.Unlock()
+		}
+	}
+}
+
+// Run flushes on a timer until ctx ends, then once more so a clean shutdown doesn't lose the last interval.
+func (rp *reporter) Run(ctx context.Context) {
+	t := time.NewTicker(flushEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			rp.Flush()
+			return
+		case <-t.C:
+			rp.Flush()
+		}
 	}
 }
