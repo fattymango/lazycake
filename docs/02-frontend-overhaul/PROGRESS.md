@@ -94,3 +94,7 @@ verified.
 - Task 8.15 (machine usage) done, 2026-10-07: see "As built" in `IMPLEMENTATION.md`. Heartbeat usage from the agent, migration 018, provider usage API, a Usage card on the machine
   page with a stacked per-task hover, task-row hover totals, a sparkline on machine cards. Verified with a real agent (0.5-core benchmark reads 0.5 cores) and in a real browser
   (`web/e2e/usage.mjs`). Needs migration 018 and an agent update. `TestBenchStability` fails on this desktop with or without these changes (machine too busy); it is unrelated.
+
+- Follow-up to 8.15, 2026-10-07: network over time per machine (Network tab), and a "Resource use" chart on the customer's task page (CPU/memory vs the requested limits, tunnel
+  traffic, gateway traffic). Migration 019. Found and fixed a real bug on the way: the agent never reported bytes at task end, so tunnel tasks cost their machine trust. See
+  "Follow-up" in 8.15 of `IMPLEMENTATION.md`. Needs an agent update.

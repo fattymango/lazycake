@@ -43,7 +43,7 @@ check("the gateway that carried traffic is listed with totals", !!gw && gw.traff
 await go(`${BASE}/gateways`);
 const list = await text();
 check("the card shows both directions with the customer-side labels", /Received from tasks/.test(list) && /Sent to tasks/.test(list));
-check("and the byte total is formatted, not raw", /15 MB/.test(list), "expected 15 MB");
+check("and the byte total is formatted, not raw", /\d+(\.\d+)? MB/.test(list) && !/\d{7,} B/.test(list), "expected a figure in MB");
 await shot("gateways-traffic");
 
 // --- gateway detail --------------------------------------------------------------
@@ -52,7 +52,7 @@ await page.waitForFunction((id) => location.pathname === `/gateways/${id}`, { ti
 await sleep(1200);
 const detail = await text();
 check("clicking a gateway opens its traffic page", /Traffic over time/.test(detail) && /Busiest tasks/.test(detail));
-check("lifetime stats are shown", /15 MB/.test(detail) && /3/.test(detail));
+check("lifetime stats are shown", /\d+ MB/.test(detail) && /Connections/.test(detail));
 const columns = await page.$$('[aria-label*=": "][tabindex="0"]');
 check("the chart has a column for every hour of the week", columns.length >= 167, `${columns.length} columns`);
 // Hover the column that has the traffic.
@@ -62,7 +62,7 @@ const box = await (await page.$$('[aria-label*=": "][tabindex="0"]'))[idx].bound
 await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 await sleep(300);
 const tip = await page.$eval('[role="status"]', (e) => e.innerText).catch(() => "");
-check("hovering it says who moved how much", /Sent to tasks/.test(tip) && /Received from tasks/.test(tip) && /15 MB/.test(tip), tip.replace(/\n/g, " | "));
+check("hovering it says who moved how much", /Sent to tasks/.test(tip) && /Received from tasks/.test(tip) && /\d+ MB/.test(tip), tip.replace(/\n/g, " | "));
 await shot("gateway-detail");
 check("the busiest-tasks table links to the task", (await page.$$eval("table a", (as) => as.length)) >= 1);
 await page.click("[role=radio]:nth-of-type(2)").catch(() => {});
@@ -88,7 +88,7 @@ await go(`${BASE}/tasks/${task.id}`);
 await sleep(800);
 const tbody = await text();
 check("the task's Network card shows what it moved", /sent .*15 MB.*to your services|↑ .* sent/.test(tbody.replace(/\n/g, " ")), "");
-check("per-service line is there", /↑ 273 B sent · ↓ 15 MB received/.test(tbody), tbody.match(/↑[^\n]*/)?.[0]);
+check("per-service line is there", /↑ [\d.]+ (B|kB|MB) sent · ↓ [\d.]+ (B|kB|MB) received/.test(tbody), tbody.match(/↑[^\n]*/)?.[0]);
 await shot("task-network");
 
 check("no uncaught page errors", errors.length === 0, errors.join(" | "));

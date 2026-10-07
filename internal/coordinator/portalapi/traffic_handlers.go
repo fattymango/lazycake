@@ -44,6 +44,9 @@ type taskTrafficRow struct {
 type taskTrafficResponse struct {
 	Totals trafficTotalsView `json:"totals"`
 	Rows   []taskTrafficRow  `json:"rows"`
+	// Series is what the task moved through its gateways per 5-minute bucket, as the
+	// customer's own gateway counted it.
+	Series []trafficPointView `json:"series"`
 }
 
 // handleGatewayTraffic is GET .../gateways/{id}/traffic?range=7d|30d.
@@ -103,7 +106,15 @@ func (s *Server) handleTaskTraffic(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reading traffic")
 		return
 	}
-	resp := taskTrafficResponse{Rows: []taskTrafficRow{}}
+	series, err := s.Store.TaskGatewaySeries(r.Context(), task.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading traffic")
+		return
+	}
+	resp := taskTrafficResponse{Rows: []taskTrafficRow{}, Series: []trafficPointView{}}
+	for _, p := range series {
+		resp.Series = append(resp.Series, trafficPointView{AtMS: p.At.UnixMilli(), ReceivedFromTasksBytes: p.BytesToLocal, SentToTasksBytes: p.BytesToTask})
+	}
 	for _, row := range rows {
 		resp.Rows = append(resp.Rows, taskTrafficRow{GatewayID: row.GatewayID, Service: row.Service, trafficTotalsView: totalsView(row.BytesToLocal, row.BytesToTask, row.Connections)})
 		resp.Totals.ReceivedFromTasksBytes += row.BytesToLocal

@@ -946,6 +946,11 @@ func TestGatewayAndTaskTrafficAreReportedAndScoped(t *testing.T) {
 	require.Len(t, tt.Rows, 1)
 	require.Equal(t, "db", tt.Rows[0].Service)
 	require.EqualValues(t, 120, tt.Totals.ReceivedFromTasksBytes)
+	var seriesSent int64
+	for _, p := range tt.Series {
+		seriesSent += p.SentToTasksBytes
+	}
+	require.EqualValues(t, 4500, seriesSent, "the task's gateway-side series adds up to its total")
 
 	// Someone else sees none of it.
 	other := &testClient{t: t, base: c.base, hc: mustJarClient(t)}
@@ -971,6 +976,12 @@ func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
 	require.Empty(t, before.Series)
 
 	// More tasks than get their own band.
+	tunnel := func(i int, n int64) int64 { // only the biggest CPU consumer and the smallest move data
+		if i == usageTopTasks+1 || i == 0 {
+			return n
+		}
+		return 0
+	}
 	var sample []store.TaskUsageSample
 	for i := 0; i < usageTopTasks+2; i++ {
 		id := "tsk_u" + string(rune('a'+i))
@@ -981,7 +992,7 @@ func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
 		}))
 		_, err := st.(*store.PostgresStore).Pool().Exec(ctx, `UPDATE tasks SET node_id = 'nod_u' WHERE id = $1`, id)
 		require.NoError(t, err)
-		sample = append(sample, store.TaskUsageSample{TaskID: id, CPUCores: float64(i+1) / 10, MemoryBytes: int64(i+1) << 20, TunnelToGateway: 100, TunnelToTask: 200})
+		sample = append(sample, store.TaskUsageSample{TaskID: id, CPUCores: float64(i+1) / 10, MemoryBytes: int64(i+1) << 20, TunnelToGateway: tunnel(i, 100), TunnelToTask: tunnel(i, 200)})
 	}
 	require.NoError(t, st.RecordNodeUsage(ctx, store.NodeUsageSample{
 		NodeID: "nod_u", At: time.Now().Add(-10 * time.Minute), IntervalMS: 15000, HostCPUBusy: 0.5, HostCPUCount: 4,
@@ -993,7 +1004,8 @@ func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
 	require.Equal(t, "5m", got.Step)
 	require.NotNil(t, got.Latest)
 	require.Len(t, got.Latest.Tasks, usageTopTasks+2)
-	require.Len(t, got.Tasks, usageTopTasks, "only the biggest get their own band")
+	require.Len(t, got.Tasks, usageTopTasks+1, "the biggest by CPU get a band, and so does the one task that is heavy on network but tiny on CPU")
+	require.Contains(t, got.Tasks, "tsk_ua", "a network-heavy task must not be hidden in others on the network chart")
 	require.Equal(t, "tsk_u"+string(rune('a'+usageTopTasks+1)), got.Tasks[0], "biggest consumer first")
 	require.Len(t, got.Series, 1)
 	pt := got.Series[0]
@@ -1004,6 +1016,9 @@ func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
 	}
 	require.InDelta(t, pt.TasksCPU, shares, 1e-9, "the bands (including others) add up to the machine's task total")
 	require.Contains(t, pt.PerTask, usageOthersKey)
+	require.EqualValues(t, 200, pt.PerTask["tsk_ua"].TunnelInBytes)
+	require.EqualValues(t, 2*100, pt.TunnelOutBytes, "machine total = the two tasks that moved data")
+	require.EqualValues(t, 2*200, pt.TunnelInBytes)
 	require.Equal(t, "hour", decodeBody[nodeUsageResponse](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=7d", nil)).Step)
 	require.Equal(t, http.StatusBadRequest, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=1y", nil).StatusCode)
 
@@ -1012,11 +1027,48 @@ func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
 	require.Len(t, tasks, usageTopTasks+2)
 	for _, tv := range tasks {
 		require.NotNil(t, tv.Usage, tv.ID)
-		require.EqualValues(t, 200, tv.Usage.TunnelToTask)
 	}
 
 	// Another provider can't see it.
 	other := &testClient{t: t, base: c.base, hc: mustJarClient(t)}
 	signUpProvider(t, other, "otto")
 	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage", nil).StatusCode)
+}
+
+// The customer's own task chart data: readings against the limits asked for, scoped to the owner.
+func TestCustomerTaskUsageIsScopedAndCarriesLimits(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	me := signUpCustomer(t, c, "tess")
+	fundAccount(t, st, me.AccountID, 10_000_000)
+	provider := signUpProvider(t, &testClient{t: t, base: c.base, hc: mustJarClient(t)}, "pru")
+	mustNode(t, st, "nod_t", provider.AccountID)
+	taskID := submitTaskForTest(t, c)
+	ctx := context.Background()
+	_, err := st.(*store.PostgresStore).Pool().Exec(ctx, `UPDATE tasks SET node_id = 'nod_t' WHERE id = $1`, taskID)
+	require.NoError(t, err)
+
+	none := decodeBody[taskUsageResponse](t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/usage", nil))
+	require.False(t, none.Supported)
+	require.Empty(t, none.Points)
+	require.Equal(t, 1.0, none.Limits.Cores)
+	require.Equal(t, 256, none.Limits.MemoryMB)
+
+	now := time.Now()
+	for i, tun := range []int64{0, 1000, 3000} {
+		require.NoError(t, st.RecordNodeUsage(ctx, store.NodeUsageSample{
+			NodeID: "nod_t", At: now.Add(time.Duration(i) * 15 * time.Second), IntervalMS: 15000, HostCPUCount: 2,
+			Tasks: []store.TaskUsageSample{{TaskID: taskID, CPUCores: 0.5, MemoryBytes: 100 << 20, TunnelToGateway: tun}},
+		}))
+	}
+	got := decodeBody[taskUsageResponse](t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/usage", nil))
+	require.True(t, got.Supported)
+	require.Len(t, got.Points, 3)
+	require.EqualValues(t, 1000, got.Points[1].TunnelOutBytes)
+	require.EqualValues(t, 2000, got.Points[2].TunnelOutBytes)
+	require.EqualValues(t, 3000, got.Summary.TunnelToGateway)
+	require.Less(t, got.Points[0].AtMS, got.Points[2].AtMS)
+
+	other := &testClient{t: t, base: c.base, hc: mustJarClient(t)}
+	signUpCustomer(t, other, "nosy")
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/usage", nil).StatusCode)
 }

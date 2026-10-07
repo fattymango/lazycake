@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mkassab215/lazycake/internal/agent/capacity"
@@ -194,6 +195,9 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 	// keeps the coordinator from seeing more than one TaskFinished for
 	// the same task.
 	var finishOnce sync.Once
+	// The tunnel's byte counters, once there is a tunnel: TaskFinished reports them so the
+	// coordinator can cross-check them against what the relay and the gateway counted.
+	var tunnelTraffic atomic.Pointer[func() (int64, int64)]
 	sendFinished := func(exitCode int32, reason string) {
 		finishOnce.Do(func() {
 			if override := e.unregisterActive(d.GetTaskId()); override != "" {
@@ -205,6 +209,9 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 				exitCode = -1
 			}
 			msg := finished(d.GetTaskId(), exitCode, reason, time.Now())
+			if read := tunnelTraffic.Load(); read != nil {
+				msg.GetFinished().BytesSent, msg.GetFinished().BytesRecv = (*read)()
+			}
 			e.mu.Lock()
 			if e.pending == nil {
 				e.pending = make(map[string]*lazycakev1.AgentMessage)
@@ -315,6 +322,8 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 		}
 		defer proxy.Close()
 		e.setTunnelCounters(d.GetTaskId(), proxy.Traffic)
+		read := proxy.Traffic
+		tunnelTraffic.Store(&read)
 	}
 
 	// Attached right after Start, not before it: a follow-mode log stream

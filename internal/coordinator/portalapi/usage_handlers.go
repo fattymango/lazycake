@@ -19,17 +19,23 @@ const usageOthersKey = "_others"
 type usageShare struct {
 	CPUCores    float64 `json:"cpu_cores"`
 	MemoryBytes int64   `json:"memory_bytes"`
+	// Bytes the task moved through its tunnel during the period (sums, not averages).
+	TunnelOutBytes int64 `json:"tunnel_out_bytes"`
+	TunnelInBytes  int64 `json:"tunnel_in_bytes"`
 }
 
 type usagePointView struct {
-	AtMS        int64                 `json:"at_ms"`
-	Samples     int                   `json:"samples"`
-	HostCPUBusy float64               `json:"host_cpu_busy"`
-	HostMemUsed int64                 `json:"host_mem_used_bytes"`
-	DiskUsed    int64                 `json:"disk_used_bytes"`
-	TasksCPU    float64               `json:"tasks_cpu_cores"`
-	TasksMemory int64                 `json:"tasks_memory_bytes"`
-	PerTask     map[string]usageShare `json:"per_task"`
+	AtMS        int64   `json:"at_ms"`
+	Samples     int     `json:"samples"`
+	HostCPUBusy float64 `json:"host_cpu_busy"`
+	HostMemUsed int64   `json:"host_mem_used_bytes"`
+	DiskUsed    int64   `json:"disk_used_bytes"`
+	TasksCPU    float64 `json:"tasks_cpu_cores"`
+	TasksMemory int64   `json:"tasks_memory_bytes"`
+	// All tasks' tunnel bytes during the period: out of the containers, and into them.
+	TunnelOutBytes int64                 `json:"tunnel_out_bytes"`
+	TunnelInBytes  int64                 `json:"tunnel_in_bytes"`
+	PerTask        map[string]usageShare `json:"per_task"`
 }
 
 type usageLatestView struct {
@@ -119,43 +125,54 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 		resp.Supported = true
 	}
 
-	// The biggest consumers over the window get their own band.
-	total := map[string]float64{}
+	// The biggest consumers over the window get their own band: the top few by CPU, plus the
+	// top few by tunnel traffic, so a task that is quiet on CPU but heavy on network isn't
+	// hidden in "others" on the network chart.
+	cpuTotal, netTotal := map[string]float64{}, map[string]int64{}
 	for _, tp := range taskPoints {
-		total[tp.TaskID] += tp.CPUCores
+		cpuTotal[tp.TaskID] += tp.CPUCores
+		netTotal[tp.TaskID] += tp.TunnelOut + tp.TunnelIn
 	}
-	ids := make([]string, 0, len(total))
-	for id := range total {
-		ids = append(ids, id)
+	byCPU := make([]string, 0, len(cpuTotal))
+	for id := range cpuTotal {
+		byCPU = append(byCPU, id)
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		if total[ids[i]] != total[ids[j]] {
-			return total[ids[i]] > total[ids[j]]
+	sort.Slice(byCPU, func(i, j int) bool {
+		if cpuTotal[byCPU[i]] != cpuTotal[byCPU[j]] {
+			return cpuTotal[byCPU[i]] > cpuTotal[byCPU[j]]
 		}
-		return ids[i] < ids[j]
+		return byCPU[i] < byCPU[j]
 	})
+	byNet := append([]string(nil), byCPU...)
+	sort.SliceStable(byNet, func(i, j int) bool { return netTotal[byNet[i]] > netTotal[byNet[j]] })
 	named := map[string]bool{}
-	for i, id := range ids {
+	for i, id := range byCPU {
 		if i < usageTopTasks {
 			named[id] = true
+		}
+	}
+	for i, id := range byNet {
+		if i < usageTopTasks && netTotal[id] > 0 {
+			named[id] = true
+		}
+	}
+	for _, id := range byCPU { // keep the biggest-CPU-first order
+		if named[id] {
 			resp.Tasks = append(resp.Tasks, id)
 		}
 	}
 
+	byAt := map[int64]int{}
 	for _, p := range points {
 		pv := usagePointView{
 			AtMS: p.At.UnixMilli(), Samples: p.Samples, HostCPUBusy: p.HostCPUBusy, HostMemUsed: p.HostMemUsed,
 			DiskUsed: p.DiskUsed, TasksCPU: p.TasksCPU, TasksMemory: p.TasksMem, PerTask: map[string]usageShare{},
 		}
+		byAt[pv.AtMS] = len(resp.Series)
 		resp.Series = append(resp.Series, pv)
 	}
-	// Series holds copies, so fill the per-task maps through an index.
-	idx := map[int64]int{}
-	for i, pv := range resp.Series {
-		idx[pv.AtMS] = i
-	}
 	for _, tp := range taskPoints {
-		i, ok := idx[tp.At.UnixMilli()]
+		i, ok := byAt[tp.At.UnixMilli()]
 		if !ok {
 			continue
 		}
@@ -166,7 +183,11 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 		cur := resp.Series[i].PerTask[key]
 		cur.CPUCores += tp.CPUCores
 		cur.MemoryBytes += tp.MemoryBytes
+		cur.TunnelOutBytes += tp.TunnelOut
+		cur.TunnelInBytes += tp.TunnelIn
 		resp.Series[i].PerTask[key] = cur
+		resp.Series[i].TunnelOutBytes += tp.TunnelOut
+		resp.Series[i].TunnelInBytes += tp.TunnelIn
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -182,4 +203,68 @@ type taskUsageView struct {
 type nodeTaskView struct {
 	taskView
 	Usage *taskUsageView `json:"usage,omitempty"`
+}
+
+type taskUsageLimits struct {
+	Cores    float64 `json:"cores"`
+	MemoryMB int     `json:"memory_mb"`
+}
+
+type taskUsagePoint struct {
+	AtMS           int64   `json:"at_ms"`
+	CPUCores       float64 `json:"cpu_cores"`
+	MemoryBytes    int64   `json:"memory_bytes"`
+	TunnelOutBytes int64   `json:"tunnel_out_bytes"`
+	TunnelInBytes  int64   `json:"tunnel_in_bytes"`
+}
+
+type taskUsageResponse struct {
+	// Supported is false when the machine's agent never reported this task (an agent built
+	// before usage reporting, or a task that never started).
+	Supported bool             `json:"supported"`
+	Limits    taskUsageLimits  `json:"limits"`
+	Points    []taskUsagePoint `json:"points"`
+	Summary   *taskUsageView   `json:"summary,omitempty"`
+}
+
+// maxTaskUsagePoints bounds one response: about 21 hours at the agent's 15 s readings.
+// A longer task shows its most recent stretch.
+const maxTaskUsagePoints = 5000
+
+// handleTaskUsage is GET /api/portal/customer/tasks/{id}/usage: what the customer's own task
+// actually used on the machine it ran on, against the limits it asked for. As reported by the
+// machine's agent, so it is for information and never feeds billing.
+func (s *Server) handleTaskUsage(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromContext(r.Context())
+	task, err := s.getOwnTask(r.Context(), sess.AccountID, r.PathValue("id"))
+	if err != nil {
+		writeStoreOrRPCError(w, err)
+		return
+	}
+	readings, err := s.Store.TaskUsageSeries(r.Context(), task.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading usage")
+		return
+	}
+	if len(readings) > maxTaskUsagePoints {
+		readings = readings[len(readings)-maxTaskUsagePoints:]
+	}
+	resp := taskUsageResponse{
+		Supported: len(readings) > 0,
+		Limits:    taskUsageLimits{Cores: task.Limits.CPUCores, MemoryMB: task.Limits.MemoryMB},
+		Points:    make([]taskUsagePoint, 0, len(readings)),
+	}
+	for _, rd := range readings {
+		resp.Points = append(resp.Points, taskUsagePoint{
+			AtMS: rd.At.UnixMilli(), CPUCores: rd.CPUCores, MemoryBytes: rd.MemoryBytes,
+			TunnelOutBytes: rd.TunnelOut, TunnelInBytes: rd.TunnelIn,
+		})
+	}
+	if sums, err := s.Store.TaskUsageSummaries(r.Context(), []string{task.ID}); err == nil {
+		if u, ok := sums[task.ID]; ok {
+			resp.Summary = &taskUsageView{CoreSeconds: u.CoreSeconds, PeakMemoryBytes: u.PeakMemoryBytes,
+				TunnelToGateway: u.TunnelToGateway, TunnelToTask: u.TunnelToTask}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

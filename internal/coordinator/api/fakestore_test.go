@@ -806,3 +806,11 @@ func (f *fakeStore) TaskUsageSummaries(ctx context.Context, taskIDs []string) (m
 func (f *fakeStore) PruneNodeUsage(ctx context.Context, before time.Time) (int64, error) {
 	return 0, nil
 }
+
+func (f *fakeStore) TaskUsageSeries(ctx context.Context, taskID string) ([]store.TaskUsageReading, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]store.TrafficPoint, error) {
+	return nil, nil
+}

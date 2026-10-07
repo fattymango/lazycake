@@ -77,6 +77,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
   const series = useMemo<ChartSeries[]>(() => {
     if (!u) return [];
     if (metric === "disk") return [{ key: "disk", label: "Disk used", className: "bg-info" }];
+    // On the network chart a task's band is its traffic in both directions.
     const named = u.tasks.map((id, i) => ({ key: id, label: taskLabel(id), className: bandClass(i) }));
     const hasOthers = u.series.some((p) => p.per_task[OTHERS_KEY]);
     return hasOthers ? [...named, { key: OTHERS_KEY, label: "Other tasks", className: "bg-muted/60" }] : named;
@@ -114,6 +115,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
         ? { value: offeredMem, label: `${memory(node.offer_memory_mb)} offered` }
         : undefined;
   const format = metric === "cpu" ? (v: number) => `${Number(v.toFixed(2))} cores` : bytes;
+  const metricName = { cpu: "CPU", memory: "Memory", disk: "Disk", network: "Tunnel traffic" }[metric];
 
   return (
     <Card>
@@ -183,6 +185,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
                   { value: "cpu", label: "CPU" },
                   { value: "memory", label: "Memory" },
                   { value: "disk", label: "Disk" },
+                  { value: "network", label: "Network" },
                 ]}
               />
               <Segmented<Range>
@@ -206,14 +209,22 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
                 ? new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                 : new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
             }
-            summary={`${metric === "cpu" ? "CPU" : metric === "memory" ? "Memory" : "Disk"} used by this machine's tasks over the ${periodLabel}, per ${u.step === "hour" ? "hour" : "five minutes"}.`}
+            summary={`${metricName} ${metric === "network" ? "moved by" : "used by"} this machine's tasks over the ${periodLabel}, per ${u.step === "hour" ? "hour" : "five minutes"}.`}
             limit={limit}
-            emptyLabel={metric === "disk" ? "No reading in this period" : "No task ran in this period"}
+            emptyLabel={
+              metric === "disk"
+                ? "No reading in this period"
+                : metric === "network"
+                  ? "No tunnel traffic in this period"
+                  : "No task ran in this period"
+            }
             footer={(p) => {
               const pt = usageAt(u, p.at);
               if (!pt) return null;
               if (metric === "cpu")
                 return `Tasks ${Number(pt.tasks_cpu_cores.toFixed(2))} of ${node.offer_cores} cores · machine ${percent(pt.host_cpu_busy)} busy`;
+              if (metric === "network")
+                return `Out of the tasks ${bytes(pt.tunnel_out_bytes)} · into the tasks ${bytes(pt.tunnel_in_bytes)}`;
               if (metric === "memory")
                 return `Tasks ${bytes(pt.tasks_memory_bytes)} of ${memory(node.offer_memory_mb)} · machine ${bytes(pt.host_mem_used_bytes)}`;
               return `${bytes(pt.disk_used_bytes)} used${stackTotal(p) > 0 && offeredDisk > 0 ? ` · ${memory(node.offer_disk_mb)} offered` : ""}`;

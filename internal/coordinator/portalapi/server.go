@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/portal/customer/tasks/{id}/logs", s.requireSession(store.RoleCustomer, s.handleTaskLogs))
 	mux.HandleFunc("GET /api/portal/customer/gateways", s.requireSession(store.RoleCustomer, s.handleListGateways))
 	mux.HandleFunc("GET /api/portal/customer/gateways/{id}/traffic", s.requireSession(store.RoleCustomer, s.handleGatewayTraffic))
+	mux.HandleFunc("GET /api/portal/customer/tasks/{id}/usage", s.requireSession(store.RoleCustomer, s.handleTaskUsage))
 	mux.HandleFunc("GET /api/portal/customer/tasks/{id}/traffic", s.requireSession(store.RoleCustomer, s.handleTaskTraffic))
 	mux.HandleFunc("POST /api/portal/customer/gateways/{id}/test", s.requireSession(store.RoleCustomer, s.handleTestGateway))
 	mux.HandleFunc("POST /api/portal/customer/gateways", s.requireSession(store.RoleCustomer, s.handleCreateGateway))

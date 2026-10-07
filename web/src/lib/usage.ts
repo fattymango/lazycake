@@ -5,7 +5,7 @@ import type { NodeUsage } from "./types";
 /** The series key the server uses for every task beyond the biggest few. */
 export const OTHERS_KEY = "_others";
 
-export type UsageMetric = "cpu" | "memory" | "disk";
+export type UsageMetric = "cpu" | "memory" | "disk" | "network";
 
 const WINDOW = { "24h": 24 * 3_600_000, "7d": 7 * 24 * 3_600_000 } as const;
 
@@ -20,7 +20,8 @@ export function usageStack(u: NodeUsage, metric: UsageMetric, now = Date.now()):
       values.disk = p.disk_used_bytes;
     } else {
       for (const [task, share] of Object.entries(p.per_task)) {
-        values[task] = metric === "cpu" ? share.cpu_cores : share.memory_bytes;
+        values[task] =
+          metric === "cpu" ? share.cpu_cores : metric === "memory" ? share.memory_bytes : share.tunnel_out_bytes + share.tunnel_in_bytes;
       }
       // Time with no task running is a real zero, not a gap: make sure the point exists.
     }

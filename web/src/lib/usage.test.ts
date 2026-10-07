@@ -26,6 +26,8 @@ describe("usageStack", () => {
           disk_used_bytes: 5,
           tasks_cpu_cores: 0,
           tasks_memory_bytes: 0,
+          tunnel_out_bytes: 0,
+          tunnel_in_bytes: 0,
           per_task: {},
         },
         {
@@ -36,7 +38,9 @@ describe("usageStack", () => {
           disk_used_bytes: 5,
           tasks_cpu_cores: 1,
           tasks_memory_bytes: 9,
-          per_task: { tsk_a: { cpu_cores: 1, memory_bytes: 9 } },
+          tunnel_out_bytes: 0,
+          tunnel_in_bytes: 0,
+          per_task: { tsk_a: { cpu_cores: 1, memory_bytes: 9, tunnel_out_bytes: 0, tunnel_in_bytes: 0 } },
         },
       ],
     };
@@ -60,11 +64,17 @@ describe("usageStack", () => {
           disk_used_bytes: 777,
           tasks_cpu_cores: 1,
           tasks_memory_bytes: 30,
-          per_task: { tsk_a: { cpu_cores: 0.5, memory_bytes: 10 }, [OTHERS_KEY]: { cpu_cores: 0.5, memory_bytes: 20 } },
+          tunnel_out_bytes: 7,
+          tunnel_in_bytes: 9,
+          per_task: {
+            tsk_a: { cpu_cores: 0.5, memory_bytes: 10, tunnel_out_bytes: 3, tunnel_in_bytes: 4 },
+            [OTHERS_KEY]: { cpu_cores: 0.5, memory_bytes: 20, tunnel_out_bytes: 4, tunnel_in_bytes: 5 },
+          },
         },
       ],
     };
     expect(usageStack(u, "memory", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ tsk_a: 10, [OTHERS_KEY]: 20 });
+    expect(usageStack(u, "network", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ tsk_a: 7, [OTHERS_KEY]: 9 });
     expect(usageStack(u, "disk", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ disk: 777 });
   });
 

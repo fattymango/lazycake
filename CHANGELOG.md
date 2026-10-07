@@ -5,6 +5,10 @@ coordinator logs it at startup.
 
 ## Unreleased
 
+### Fixed
+- **Trust no longer drops for machines that run tunnel tasks**: the agent didn't report its byte counts at task end, so every task that used a gateway looked like a 100% byte
+  mismatch. It now reports them (needs the updated agent).
+
 ### Added
 - **Stop a task** (task 8.12): a "Stop task" button on the task page, `lcctl cancel <id>`, `POST /api/portal/customer/tasks/{id}/cancel` and the
   `CancelTask` RPC. A queued task is cancelled at once and costs nothing; a running one is stopped on its node and you are charged only for the time
@@ -19,6 +23,8 @@ coordinator logs it at startup.
 - **Machine usage** (task 8.15): the machine page shows what the machine's tasks are using right now (CPU, memory, disk against what's on offer) and a 24-hour or 7-day
   history; hovering the chart lists which task used what, offline periods show as gaps, and hovering a task row shows its CPU time, peak memory and tunnel traffic. Machine cards
   get a CPU trend. Display only: it never affects billing or trust. Needs migration 018 and an updated agent.
+- **Network over time and a Resource use chart on the task page**: the machine page gets a Network tab (tunnel traffic per task over time), and every task page shows what the task
+  actually used (CPU and memory against what it asked for, tunnel traffic in both directions, and its gateway traffic). Needs migration 019 and an updated agent.
 
 ## v0.2.0 — 2026-10-07
 

@@ -335,8 +335,18 @@ an old agent shows the "update" message; heartbeat size with the cap hit; migrat
   each task and "Tasks 0.5 of 2 cores · machine 17% busy"); the biggest 8 tasks get a band and the rest are "Other tasks". **Offline periods are hatched gaps, not zeros.** Hovering a
   row in the machine's task table shows that task's CPU time, peak memory and tunnel traffic. Each machine card on the overview has a 24 h CPU sparkline (it skips offline
   periods rather than drawing zeros).
-- **Not done:** a separate tunnel-traffic-over-time chart per machine (tunnel bytes are shown per task in the row hover instead); per-task disk use; the customer-facing "usage
-  against your limits" chart.
+- **Not done:** per-task disk use.
+- **Follow-up, same day (migration 019): network over time and the customer's task chart.**
+  - The agent's cumulative tunnel counters are differenced into per-period bytes (`node_task_usage.tunnel_out/in`; a counter that resets counts as new bytes, never negative). The
+    machine page gets a **Network** tab: stacked per task, hover shows "Out of the tasks X · into the tasks Y". The biggest tasks by CPU *and* by tunnel traffic get bands, so a
+    network-heavy task isn't hidden in "Other tasks".
+  - **The customer's task page now has a "Resource use" card**, placed right under the stats strip (it was missed when it sat below the log panel): CPU against the cores requested,
+    memory against the memory requested, tunnel traffic in both directions, and, for a task that used a gateway, the gateway's own counts. It reads `GET /customer/tasks/{id}/usage`
+    (the task's own readings at heartbeat resolution, kept 30 days in `task_usage_samples`) and `.../traffic` (now with a gateway-side `series`). Readings are grouped into columns of at
+    least 20 s (CPU and memory averaged, network summed); a stretch with no reading is a hatched gap.
+  - **Bug found and fixed on the way:** the agent never filled `bytes_sent/bytes_recv` in `TaskFinished`, so every tunnel task reconciled as 100% divergent against the relay and the
+    gateway and cost the machine trust (visible as a falling trust score). The agent now reports its exact tunnel counters; verified live at 0.07% divergence. **A machine only
+    stops losing trust once its agent is updated.**
 - **Verified:** a real agent in a container ran `lcbench` at 0.5 cores / 128 MB and the page showed 0.5 cores and ~119 MB, levelling off; three concurrent tasks (0.25 / 0.5 / 1 core)
   attributed correctly with no leakage; the tunnel counters read exactly 273 B out / 15,000,615 B in for the 3 x 5 MB download; an offline period rendered as a gap. Browser checks
   in `web/e2e/usage.mjs`.

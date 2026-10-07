@@ -26,6 +26,7 @@ export function StackedChart({
   emptyLabel = "Nothing in this period",
   limit,
   gapLabel = "No data: the machine was offline",
+  showZero = false,
   footer,
   className,
 }: {
@@ -40,6 +41,8 @@ export function StackedChart({
   emptyLabel?: string;
   /** A ceiling to draw as a dashed line (e.g. the cores on offer); the axis always reaches it. */
   limit?: { value: number; label: string };
+  /** List every series in the tooltip even when its value is zero (a real reading of zero is information). */
+  showZero?: boolean;
   /** What a gap (a point with no data) means, shown when it is hovered. */
   gapLabel?: string;
   /** Extra tooltip line for a hovered column, e.g. "1.4 of 2 cores". */
@@ -134,7 +137,7 @@ export function StackedChart({
             <p className="mb-1 font-medium text-fg">{formatTime(activePoint.at)}</p>
             <ul className="space-y-0.5">
               {series
-                .filter((s) => (activePoint.values[s.key] ?? 0) > 0)
+                .filter((s) => showZero || (activePoint.values[s.key] ?? 0) > 0)
                 .sort((a, b) => (activePoint.values[b.key] ?? 0) - (activePoint.values[a.key] ?? 0))
                 .map((s) => (
                   <li key={s.key} className="flex items-center justify-between gap-3">
@@ -148,7 +151,7 @@ export function StackedChart({
                   </li>
                 ))}
               {activePoint.gap && <li className="text-subtle">{gapLabel}</li>}
-              {!activePoint.gap && stackTotal(activePoint) === 0 && <li className="text-subtle">Nothing</li>}
+              {!activePoint.gap && !showZero && stackTotal(activePoint) === 0 && <li className="text-subtle">Nothing</li>}
             </ul>
             {footer && !activePoint.gap && footer(activePoint) && (
               <p className="mt-1.5 border-t border-border pt-1.5 text-muted" data-tnum>
