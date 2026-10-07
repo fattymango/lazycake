@@ -121,8 +121,8 @@ export interface GatewayTraffic {
 export interface TaskTraffic {
   totals: TrafficTotals;
   rows: ({ gateway_id: string; service: string } & TrafficTotals)[];
-  /** Per 5-minute bucket, as the customer's own gateway counted it. */
-  series: { at_ms: number; received_from_tasks_bytes: number; sent_to_tasks_bytes: number }[];
+  /** One entry per gateway per period (10 s bins), as the customer's own gateway counted it. */
+  series: { at_ms: number; gateway_id: string; received_from_tasks_bytes: number; sent_to_tasks_bytes: number }[];
 }
 
 export interface CreateGatewayRequest {

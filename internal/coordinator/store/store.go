@@ -307,9 +307,10 @@ type NodeUsage interface {
 	TaskUsageSummaries(ctx context.Context, taskIDs []string) (map[string]TaskUsageSummary, error)
 	// TaskUsageSeries returns one task's own readings (about one per 15 s), oldest first.
 	TaskUsageSeries(ctx context.Context, taskID string) ([]TaskUsageReading, error)
-	// TaskGatewaySeries returns what one task moved through its gateways per 5-minute bucket,
-	// as the customer's own gateway counted it.
-	TaskGatewaySeries(ctx context.Context, taskID string) ([]TrafficPoint, error)
+	// TaskGatewaySeries returns what one task moved through each of its gateways over time (10-second
+	// bins; 5-minute buckets for traffic recorded before those existed), as the customer's own gateway
+	// counted it. One entry per gateway per bin, oldest first.
+	TaskGatewaySeries(ctx context.Context, taskID string) ([]TaskGatewayPoint, error)
 	// PruneNodeUsage deletes buckets older than `before`. Summaries are untouched. It returns rows deleted.
 	PruneNodeUsage(ctx context.Context, before time.Time) (int64, error)
 }

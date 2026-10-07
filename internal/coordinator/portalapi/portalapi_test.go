@@ -951,6 +951,9 @@ func TestGatewayAndTaskTrafficAreReportedAndScoped(t *testing.T) {
 		seriesSent += p.SentToTasksBytes
 	}
 	require.EqualValues(t, 4500, seriesSent, "the task's gateway-side series adds up to its total")
+	for _, p := range tt.Series {
+		require.Equal(t, gw, p.GatewayID, "every point says which gateway it came from")
+	}
 
 	// Someone else sees none of it.
 	other := &testClient{t: t, base: c.base, hc: mustJarClient(t)}

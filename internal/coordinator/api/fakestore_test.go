@@ -811,6 +811,6 @@ func (f *fakeStore) TaskUsageSeries(ctx context.Context, taskID string) ([]store
 	return nil, nil
 }
 
-func (f *fakeStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]store.TrafficPoint, error) {
+func (f *fakeStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]store.TaskGatewayPoint, error) {
 	return nil, nil
 }

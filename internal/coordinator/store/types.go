@@ -305,6 +305,14 @@ type TrafficPoint struct {
 	BytesToTask  int64
 }
 
+// TaskGatewayPoint is what one task moved through one gateway in one period.
+type TaskGatewayPoint struct {
+	At           time.Time
+	GatewayID    string // empty for traffic recorded before gateways were tracked per sample
+	BytesToLocal int64
+	BytesToTask  int64
+}
+
 // TaskTraffic is what one task moved through a gateway.
 type TaskTraffic struct {
 	TaskID string

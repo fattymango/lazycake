@@ -267,7 +267,7 @@ export function TaskDetail() {
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-6">
-          <TaskResources task={t} traffic={traffic.data} />
+          <TaskResources task={t} traffic={traffic.data} gatewayLabel={gwLabel} />
           <section className="min-w-0 space-y-3" aria-labelledby="output-h">
             <div className="flex items-center gap-2">
               <Terminal className="size-4 text-muted" aria-hidden />

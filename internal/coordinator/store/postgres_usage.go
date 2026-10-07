@@ -362,28 +362,27 @@ func (s *PostgresStore) TaskUsageSeries(ctx context.Context, taskID string) ([]T
 	return out, rows.Err()
 }
 
-func (s *PostgresStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]TrafficPoint, error) {
-	// Fine-grained (10 s) when we have it; older traffic only exists in 5-minute buckets.
+func (s *PostgresStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]TaskGatewayPoint, error) {
 	fine, err := s.taskGatewaySeriesFrom(ctx, `
-		SELECT at, bytes_to_local, bytes_to_task FROM task_gateway_samples WHERE task_id = $1 ORDER BY at`, taskID)
+		SELECT at, gateway_id, bytes_to_local, bytes_to_task FROM task_gateway_samples WHERE task_id = $1 ORDER BY at, gateway_id`, taskID)
 	if err != nil || len(fine) > 0 {
 		return fine, err
 	}
 	return s.taskGatewaySeriesFrom(ctx, `
-		SELECT bucket, SUM(bytes_to_local), SUM(bytes_to_task)
-		FROM gateway_traffic WHERE task_id = $1 GROUP BY bucket ORDER BY bucket`, taskID)
+		SELECT bucket, gateway_id, SUM(bytes_to_local), SUM(bytes_to_task)
+		FROM gateway_traffic WHERE task_id = $1 GROUP BY bucket, gateway_id ORDER BY bucket, gateway_id`, taskID)
 }
 
-func (s *PostgresStore) taskGatewaySeriesFrom(ctx context.Context, query, taskID string) ([]TrafficPoint, error) {
+func (s *PostgresStore) taskGatewaySeriesFrom(ctx context.Context, query, taskID string) ([]TaskGatewayPoint, error) {
 	rows, err := s.pool.Query(ctx, query, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("reading task gateway series: %w", err)
 	}
 	defer rows.Close()
-	var out []TrafficPoint
+	var out []TaskGatewayPoint
 	for rows.Next() {
-		var p TrafficPoint
-		if err := rows.Scan(&p.At, &p.BytesToLocal, &p.BytesToTask); err != nil {
+		var p TaskGatewayPoint
+		if err := rows.Scan(&p.At, &p.GatewayID, &p.BytesToLocal, &p.BytesToTask); err != nil {
 			return nil, fmt.Errorf("scanning task gateway series: %w", err)
 		}
 		out = append(out, p)

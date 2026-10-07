@@ -726,6 +726,36 @@ func TestFineGrainedSeriesForShortTasksAndFreshMachines(t *testing.T) {
 		sent += p.BytesToTask
 	}
 	require.EqualValues(t, 1200, sent, "nothing lost or leaked from tsk_b")
+	for _, p := range gw {
+		require.Equal(t, "gw_1", p.GatewayID)
+	}
+
+	// Two gateways in the same ten seconds stay separate: each gateway's own consumption.
+	mustGateway(t, s, "gw_2", "act_1")
+	at := base.Add(5 * time.Minute)
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_1", TaskID: "tsk_a", Service: "db", BytesToLocal: 1, BytesToTask: 10, At: at, RecordTask: true}))
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_2", TaskID: "tsk_a", Service: "files", BytesToLocal: 2, BytesToTask: 20, At: at, RecordTask: true}))
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_2", TaskID: "tsk_a", Service: "files", BytesToLocal: 3, BytesToTask: 30, At: at.Add(time.Second), RecordTask: true}))
+	both, err := s.TaskGatewaySeries(ctx, "tsk_a")
+	require.NoError(t, err)
+	per := map[string]int64{}
+	for _, p := range both {
+		if p.At.After(base.Add(4 * time.Minute)) {
+			per[p.GatewayID] += p.BytesToTask
+		}
+	}
+	require.Equal(t, map[string]int64{"gw_1": 10, "gw_2": 50}, per)
+	gw = both[:0:0]
+	for _, p := range both {
+		if p.GatewayID == "gw_1" && !p.At.After(base.Add(4*time.Minute)) {
+			gw = append(gw, p)
+		}
+	}
+	sent = 0
+	for _, p := range gw {
+		sent += p.BytesToTask
+	}
+	require.EqualValues(t, 1200, sent)
 
 	// A machine's heartbeats for ten minutes: the 30-second view has ~20 points, with the tasks attributed.
 	for i := 0; i < 40; i++ {
