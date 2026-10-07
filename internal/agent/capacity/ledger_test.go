@@ -98,24 +98,3 @@ func TestSetOfferDrainsNotEvicts(t *testing.T) {
 		t.Fatal("expected new admission to be rejected after offer was lowered below allocated")
 	}
 }
-
-func TestClampOffer(t *testing.T) {
-	physical := Resources{Cores: 8, MemoryMB: 16384, DiskMB: 500000}
-
-	got := ClampOffer(physical, Resources{Cores: 8, MemoryMB: 16384, DiskMB: 500000})
-	if got.Cores != 6 { // 75% of 8
-		t.Fatalf("expected cores clamped to 6, got %v", got.Cores)
-	}
-	if got.MemoryMB != 16384-2048 {
-		t.Fatalf("expected memory headroom reserved, got %v", got.MemoryMB)
-	}
-	if got.DiskMB != 500000-10240 {
-		t.Fatalf("expected disk headroom reserved, got %v", got.DiskMB)
-	}
-
-	// A conservative request under the cap is left alone.
-	got = ClampOffer(physical, Resources{Cores: 2, MemoryMB: 4096, DiskMB: 10000})
-	if got.Cores != 2 || got.MemoryMB != 4096 || got.DiskMB != 10000 {
-		t.Fatalf("expected conservative request unchanged, got %+v", got)
-	}
-}

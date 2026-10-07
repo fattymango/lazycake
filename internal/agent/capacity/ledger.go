@@ -15,6 +15,10 @@ type Resources struct {
 	Cores    float64
 	MemoryMB int
 	DiskMB   int
+	// NetworkMbps is the tunnel bandwidth: what is offered, or (for a machine's physical
+	// capacity) its fastest physical link, 0 when that can't be read. It is enforced as a rate
+	// limit on tunnel traffic, not by admission, so Fits and the ledger ignore it.
+	NetworkMbps float64
 }
 
 // Fits reports whether want fits within have on every dimension.

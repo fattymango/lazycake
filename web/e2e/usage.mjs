@@ -86,7 +86,7 @@ await shot("machine-usage-memory");
 await page.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === "7 days")?.click());
 await sleep(1200);
 const week = await chartInfo(page);
-check("7 days switches to one point per hour", week.points === 168, `${week.points}`);
+check("7 days switches to one point per hour, starting at the first reading", week.points >= 2 && week.points <= 168, `${week.points}`);
 await shot("machine-usage-7d");
 
 // --- hover on a task row ---------------------------------------------------------------------

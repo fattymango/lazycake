@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Cpu, HardDrive, MemoryStick, Plus, Server, ShieldCheck, Wallet, Wifi } from "lucide-react";
+import { Cpu, Gauge, HardDrive, MemoryStick, Plus, Server, ShieldCheck, Wallet, Wifi } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import { cores, cpu, memory, money, relativeTime, count } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
@@ -77,10 +77,11 @@ export function MachineCard({ node }: { node: Node }) {
           <ConnectionPill connected={node.connected} size="sm" />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Spec icon={Cpu} label="CPU" value={cpu(node.offer_cores)} />
           <Spec icon={MemoryStick} label="RAM" value={memory(node.offer_memory_mb)} />
           <Spec icon={HardDrive} label="Disk" value={memory(node.offer_disk_mb)} />
+          <Spec icon={Gauge} label="Net" value={node.offer_network_mbps > 0 ? `${node.offer_network_mbps} Mbps` : "—"} />
         </div>
 
         <UsageTrend node={node} />

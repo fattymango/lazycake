@@ -40,6 +40,14 @@ func main() {
 		return
 	}
 
+	if len(args) > 0 && args[0] == "capacity" {
+		if err := runCapacity(); err != nil {
+			fmt.Fprintln(os.Stderr, "agent capacity:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "agent:", err)
 		os.Exit(1)

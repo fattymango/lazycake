@@ -687,8 +687,11 @@ type Offer struct {
 	DiskMb           int32                  `protobuf:"varint,3,opt,name=disk_mb,json=diskMb,proto3" json:"disk_mb,omitempty"`
 	BandwidthMbMonth int64                  `protobuf:"varint,4,opt,name=bandwidth_mb_month,json=bandwidthMbMonth,proto3" json:"bandwidth_mb_month,omitempty"`
 	ImageCacheMb     int32                  `protobuf:"varint,5,opt,name=image_cache_mb,json=imageCacheMb,proto3" json:"image_cache_mb,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Tunnel bandwidth on offer in Mbit/s, enforced by the agent as a rate limit on all its tunnel
+	// traffic; 0 means no limit was set.
+	NetworkMbps   int32 `protobuf:"varint,6,opt,name=network_mbps,json=networkMbps,proto3" json:"network_mbps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Offer) Reset() {
@@ -752,6 +755,13 @@ func (x *Offer) GetBandwidthMbMonth() int64 {
 func (x *Offer) GetImageCacheMb() int32 {
 	if x != nil {
 		return x.ImageCacheMb
+	}
+	return 0
+}
+
+func (x *Offer) GetNetworkMbps() int32 {
+	if x != nil {
+		return x.NetworkMbps
 	}
 	return 0
 }
@@ -2060,13 +2070,14 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\x06gvisor\x18\x05 \x01(\bR\x06gvisor\x12#\n" +
 	"\rsystemd_slice\x18\x06 \x01(\bR\fsystemdSlice\x12\x18\n" +
 	"\aruntime\x18\a \x01(\tR\aruntime\x12%\n" +
-	"\x0ecgroup_version\x18\b \x01(\tR\rcgroupVersion\"\xa7\x01\n" +
+	"\x0ecgroup_version\x18\b \x01(\tR\rcgroupVersion\"\xca\x01\n" +
 	"\x05Offer\x12\x14\n" +
 	"\x05cores\x18\x01 \x01(\x01R\x05cores\x12\x1b\n" +
 	"\tmemory_mb\x18\x02 \x01(\x05R\bmemoryMb\x12\x17\n" +
 	"\adisk_mb\x18\x03 \x01(\x05R\x06diskMb\x12,\n" +
 	"\x12bandwidth_mb_month\x18\x04 \x01(\x03R\x10bandwidthMbMonth\x12$\n" +
-	"\x0eimage_cache_mb\x18\x05 \x01(\x05R\fimageCacheMb\"\x85\x01\n" +
+	"\x0eimage_cache_mb\x18\x05 \x01(\x05R\fimageCacheMb\x12!\n" +
+	"\fnetwork_mbps\x18\x06 \x01(\x05R\vnetworkMbps\"\x85\x01\n" +
 	"\vRegisterAck\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1f\n" +
 	"\vheartbeat_s\x18\x02 \x01(\x05R\n" +

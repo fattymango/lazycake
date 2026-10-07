@@ -135,7 +135,7 @@ The direct-tunnel decision removed object storage from the design entirely. Ther
 
 ### Offer and admission
 
-The agent clamps whatever the host's slider says: cap at roughly 75% of physical cores, leave several GB of RAM and real disk headroom. A host who offers everything and then cannot open a browser will call it malware.
+The agent clamps whatever the host's slider says: cap at roughly 75% of physical cores, leave several GB of RAM and real disk headroom. *(Superseded 2026-10-07: the agent no longer shrinks an offer silently. It rejects any offer bigger than the machine really has and refuses to start; see task 8.17 in `docs/02-frontend-overhaul/IMPLEMENTATION.md`. Headroom is the provider's choice.)* A host who offers everything and then cannot open a browser will call it malware.
 
 A node runs several tasks concurrently, so the agent keeps its own capacity ledger. The coordinator reserves optimistically and dispatches; the agent may reject; the coordinator requeues. Without that veto, two 3 GB tasks eventually land in 4 GB of free RAM.
 

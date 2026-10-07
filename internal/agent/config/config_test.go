@@ -25,3 +25,29 @@ func TestLoadValid(t *testing.T) {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }
+
+func TestOfferNetworkMbpsIsOptionalAndNeverNegative(t *testing.T) {
+	base := map[string]string{
+		"LAZYCAKE_COORDINATOR_ADDR": "c:7443", "LAZYCAKE_TOKEN": "t",
+		"LAZYCAKE_OFFER_CORES": "2", "LAZYCAKE_OFFER_MEMORY_MB": "1024", "LAZYCAKE_OFFER_DISK_MB": "2048",
+	}
+	get := func(extra map[string]string) func(string) string {
+		return func(k string) string {
+			if v, ok := extra[k]; ok {
+				return v
+			}
+			return base[k]
+		}
+	}
+	cfg, err := Load(get(nil))
+	if err != nil || cfg.OfferNetworkMbps != 0 {
+		t.Fatalf("unset must mean no limit: %+v %v", cfg, err)
+	}
+	cfg, err = Load(get(map[string]string{"LAZYCAKE_OFFER_NETWORK_MBPS": "250"}))
+	if err != nil || cfg.OfferNetworkMbps != 250 {
+		t.Fatalf("got %+v %v", cfg, err)
+	}
+	if _, err := Load(get(map[string]string{"LAZYCAKE_OFFER_NETWORK_MBPS": "-5"})); err == nil {
+		t.Fatal("a negative network offer must be rejected")
+	}
+}

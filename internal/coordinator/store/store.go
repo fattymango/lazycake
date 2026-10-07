@@ -63,7 +63,7 @@ type Nodes interface {
 	// own history is meaningful long after the node that ran it is gone.
 	DeleteNode(ctx context.Context, id string) error
 	RecordHeartbeat(ctx context.Context, id string, at time.Time) error
-	SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB int) error
+	SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB, networkMbps int) error
 	SetNodeBenchScore(ctx context.Context, id string, score float64) error
 	SetNodeTrustScore(ctx context.Context, id string, score float64) error
 }

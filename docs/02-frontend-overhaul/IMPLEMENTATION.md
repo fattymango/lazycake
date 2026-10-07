@@ -377,3 +377,28 @@ could push a bad binary to every gateway), and would need signed releases plus p
 **Later, opt-in only:** a gateway that updates itself when the customer turns it on (checks for releases, verifies a signature, replaces itself). Needs a signed-release pipeline.
 
 **Order:** after 8.15, or ahead of 8.14 if solving updates first matters more.
+
+### Task 8.17 — Choose what to lend when adding a machine, and the agent refuses an offer bigger than the machine
+
+**Status: DONE 2026-10-07.** Requested by the owner: the Add machine page must let a provider choose CPU, memory, storage and network, capped to what the device really has, and the agent
+must enforce it by rejecting any value bigger than the actual system.
+
+**As built**
+- **Agent (the authority).** `capacity.ValidateOffer` compares the offer to the machine's real totals: CPU count, total RAM, **free** disk where the agent keeps its data, and its fastest
+  *physical* network link (read from `/sys/class/net/*/speed`, ignoring virtual interfaces). Anything bigger returns one error naming every oversize setting and the agent exits before it does
+  anything else (before the capability probe), e.g. `LAZYCAKE_OFFER_CORES=64 is more than this machine has (12 CPU cores); ... Lower the offer and start the agent again`. It is **no longer
+  clamped**: the old 75%-of-cores / keep-2-GB / keep-10-GB policy in the original plan is gone, because it silently gave a provider less than they asked for and contradicted "capped to what the
+  device has". Headroom is now the provider's choice. A link speed that can't be read (virtual machines and wifi often report none) can't be checked, so a network offer is then only enforced as a
+  rate limit.
+- **Network is a new offer, enforced.** `LAZYCAKE_OFFER_NETWORK_MBPS` (optional, 0 = no limit), carried in `Offer.network_mbps`, stored as `nodes.offer_network_mbps` (migration 022) and shown on the
+  machine page and machine cards. The agent enforces it as one token-bucket limiter shared by **every task's tunnel traffic together, both directions** (`netns.NewBandwidthLimiter`), so the limit is on
+  the machine, not per task. Tested: the rate holds, no bytes are lost, and two concurrent tasks share one budget.
+- **`agent capacity`.** Prints what the machine has on one line (`cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000`). It needs `--network=host` to see the real network interfaces, so the
+  install command now uses host networking too.
+- **Dashboard.** Add machine has a "Choose what to lend" step: CPU, memory, storage and network, each a slider plus a number field. Optionally paste the output of `agent capacity` and every limit becomes
+  the machine's real number ("This machine only has 12 cores."); oversize values are flagged in plain words and the install button is disabled. Without that paste the page can't know the machine, so it
+  says the agent will do the check itself when it starts. `POST /provider/nodes/install-token` takes the offer (validated for nonsense: cores 0.25-1024, memory >= 256 MB, storage >= 1 GB, network 1-100,000 Mbps)
+  and puts it into the command; with no body it uses the old defaults.
+- **Verified:** the real agent binary refuses an oversize offer immediately with the message above (exit 1) and `agent capacity` prints this PC's numbers; unit tests for the validation, link-speed detection,
+  config and the limiter; portal tests for the endpoint; 16 browser checks (`web/e2e/addmachine.mjs`).
+- **Not done:** the dashboard can't read a machine's hardware before an agent runs on it, hence the optional paste step; a monthly data allowance (the unused `Offer.bandwidth_mb_month` field) is not implemented.
