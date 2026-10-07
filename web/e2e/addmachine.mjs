@@ -142,7 +142,7 @@ await typeInto("CPU", "48");
 body = await text();
 check("the field accepts a number past the slider's top (48 cores)", (await val("CPU")) === "48" && !/CPU[^\n]*only has/.test(body));
 check("the slider stays at its end", await page.$eval('input[aria-label="CPU slider"]', (e) => Number(e.value) === Number(e.max)));
-check("and says it is beyond the slider", /beyond the slider/.test(body));
+check("and says it is beyond the slider", /[Bb]eyond the slider/.test(body));
 check("the install command can still be generated", (await genButton()) === false);
 await typeInto("CPU", "2");
 

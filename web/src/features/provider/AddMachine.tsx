@@ -65,10 +65,10 @@ function Step({ n, title, done, last, children }: { n: number; title: string; do
 }
 
 const ROWS: { field: OfferField; icon: typeof Cpu; hint: string }[] = [
-  { field: "cores", icon: Cpu, hint: "CPU cores customers' tasks can use at the same time." },
-  { field: "memoryGB", icon: MemoryStick, hint: "Memory shared by every task running here." },
-  { field: "storageGB", icon: HardDrive, hint: "Disk for task scratch space and cached images." },
-  { field: "networkMbps", icon: Gauge, hint: "Bandwidth for task traffic through gateways, all tasks together." },
+  { field: "cores", icon: Cpu, hint: "Cores tasks can use at the same time." },
+  { field: "memoryGB", icon: MemoryStick, hint: "Shared by every task running here." },
+  { field: "storageGB", icon: HardDrive, hint: "Scratch space and cached images." },
+  { field: "networkMbps", icon: Gauge, hint: "Gateway traffic, all tasks together." },
 ];
 
 const BIG_PHRASE: Record<OfferField, (v: number) => string> = {
@@ -105,13 +105,15 @@ function CapacityRow({
   const usableStops = knownMax ? stops.filter((s) => s <= max[field]) : stops;
   const sliderStops = usableStops.length >= 2 ? usableStops : stops;
   return (
-    <li className="space-y-2">
+    <li className="space-y-3 rounded-xl border border-border bg-raised/30 p-4">
       <div className="flex items-center justify-between gap-3">
-        <label htmlFor={`offer-${field}`} className="flex items-center gap-2 text-sm font-medium text-fg">
-          <Icon className="size-4 text-muted" aria-hidden />
+        <label htmlFor={`offer-${field}`} className="flex items-center gap-2 text-sm font-semibold text-fg">
+          <span className="flex size-7 items-center justify-center rounded-lg border border-border bg-surface text-muted">
+            <Icon className="size-3.5" aria-hidden />
+          </span>
           {FIELD_LABEL[field]}
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Input
             id={`offer-${field}`}
             aria-label={`${FIELD_LABEL[field]} to lend`}
@@ -126,17 +128,17 @@ function CapacityRow({
             }}
             aria-invalid={!!error}
             aria-describedby={`offer-${field}-note`}
-            className="w-24 text-right"
+            className="h-9 w-20 text-right text-base font-semibold"
             mono
           />
-          <span className="w-11 text-xs text-muted">{unit}</span>
+          <span className="w-10 text-xs text-muted">{unit}</span>
         </div>
       </div>
       <StopSlider stops={sliderStops} value={value} onChange={onChange} label={`${FIELD_LABEL[field]} slider`} />
       <p id={`offer-${field}-note`} className={cn("text-xs leading-5", error ? "text-danger" : "text-muted")}>
         {error ??
           `${hint}${knownMax ? ` This machine has ${max[field].toLocaleString("en-US")} ${unit}${field === "storageGB" ? " free" : ""}.` : ""}${
-            beyondSlider ? ` That's beyond the slider: fine if the machine has it.` : ""
+            beyondSlider ? " Beyond the slider: fine if the machine has it." : ""
           }`}
       </p>
     </li>
@@ -210,20 +212,20 @@ export function AddMachine() {
     <div className="space-y-6">
       <PageHeader title="Add a machine" description="Choose what to lend, then run the command it generates. About two minutes." />
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* Section 1: what to lend */}
         <Card>
           <CardHeader
             title="1 · What to lend"
             description="Whole numbers only. Drag to a checkpoint, or type a bigger number in the box if your machine has it."
           />
-          <CardBody className="space-y-6">
+          <CardBody className="space-y-5">
             <Alert tone="warning" title="Only offer what this machine can really provide">
               If it can't provide these numbers, the agent shuts down right away and the machine fails to connect. It never shrinks your
               offer to fit.
             </Alert>
 
-            <ul className="space-y-6" aria-label="What to lend">
+            <ul className="grid gap-4 xl:grid-cols-2" aria-label="What to lend">
               {ROWS.map((r) => (
                 <CapacityRow
                   key={r.field}
