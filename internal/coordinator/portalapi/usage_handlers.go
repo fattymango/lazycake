@@ -221,10 +221,13 @@ type taskUsagePoint struct {
 type taskUsageResponse struct {
 	// Supported is false when the machine's agent never reported this task (an agent built
 	// before usage reporting, or a task that never started).
-	Supported bool             `json:"supported"`
-	Limits    taskUsageLimits  `json:"limits"`
-	Points    []taskUsagePoint `json:"points"`
-	Summary   *taskUsageView   `json:"summary,omitempty"`
+	Supported bool `json:"supported"`
+	// AgentReportsUsage is whether the machine the task ran on has ever reported usage at all.
+	// When it hasn't, no reading will ever come for this task: its agent is an older version.
+	AgentReportsUsage bool             `json:"agent_reports_usage"`
+	Limits            taskUsageLimits  `json:"limits"`
+	Points            []taskUsagePoint `json:"points"`
+	Summary           *taskUsageView   `json:"summary,omitempty"`
 }
 
 // maxTaskUsagePoints bounds one response: about 21 hours at the agent's 15 s readings.
@@ -259,6 +262,12 @@ func (s *Server) handleTaskUsage(w http.ResponseWriter, r *http.Request) {
 			AtMS: rd.At.UnixMilli(), CPUCores: rd.CPUCores, MemoryBytes: rd.MemoryBytes,
 			TunnelOutBytes: rd.TunnelOut, TunnelInBytes: rd.TunnelIn,
 		})
+	}
+	resp.AgentReportsUsage = resp.Supported
+	if !resp.Supported && task.NodeID != nil {
+		if _, ok, err := s.Store.NodeUsageLatest(r.Context(), *task.NodeID); err == nil {
+			resp.AgentReportsUsage = ok
+		}
 	}
 	if sums, err := s.Store.TaskUsageSummaries(r.Context(), []string{task.ID}); err == nil {
 		if u, ok := sums[task.ID]; ok {

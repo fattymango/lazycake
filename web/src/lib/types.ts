@@ -259,6 +259,8 @@ export interface TaskReading {
 
 export interface TaskUsage {
   supported: boolean;
+  /** Whether the machine the task ran on has ever reported usage. False means its agent is too old to. */
+  agent_reports_usage: boolean;
   limits: { cores: number; memory_mb: number };
   points: TaskReading[];
   summary?: TaskUsageTotals;
