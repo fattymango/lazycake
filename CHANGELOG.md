@@ -3,6 +3,11 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.4 — 2026-10-07
+
+### Changed
+- **Add a machine layout**: the capacity section is wider than the steps beside it, and the four resources sit in a 2×2 grid of tiles instead of a tall stack.
+
 ## v0.3.3 — 2026-10-07
 
 ### Changed
