@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -39,6 +40,16 @@ func (r *PodmanRuntime) Close() error { return r.cli.Close() }
 var _ Runtime = (*PodmanRuntime)(nil)
 
 func (r *PodmanRuntime) Pull(ctx context.Context, image string) (int64, error) {
+	// A digest-pinned image is immutable: if it is already here, it is exactly the image asked for and there is
+	// nothing to fetch. Contacting the registry anyway cost every task a round trip and, past a few hundred
+	// tasks, exhausted Docker Hub's anonymous pull allowance, after which a machine could no longer start tasks
+	// even with every image cached (found by a production load test).
+	if isDigestPinned(image) {
+		if inspect, _, err := r.cli.ImageInspectWithRaw(ctx, image); err == nil {
+			return inspect.Size, nil
+		}
+	}
+
 	rc, err := r.cli.ImagePull(ctx, image, types.ImagePullOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("pulling %s: %w", image, err)
@@ -56,6 +67,11 @@ func (r *PodmanRuntime) Pull(ctx context.Context, image string) (int64, error) {
 		return 0, fmt.Errorf("inspecting %s after pull: %w", image, err)
 	}
 	return inspect.Size, nil
+}
+
+// isDigestPinned reports whether image names a content digest ("repo@sha256:..."), as every task image must.
+func isDigestPinned(image string) bool {
+	return strings.Contains(image, "@sha256:")
 }
 
 // ImageEntrypoint returns image's own built-in Entrypoint and Cmd, for a

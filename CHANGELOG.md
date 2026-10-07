@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.11 — 2026-10-07
+
+### Fixed
+- **The agent no longer contacts the registry for an image it already has.** Task images are pinned by digest, so a cached copy is exactly the image asked for, yet the agent pulled before every task. A few hundred
+  tasks used up Docker Hub's anonymous pull allowance for the machine's address, after which it could not start tasks at all, even with every image cached, and the failed pulls kept its capacity reserved. Found by a
+  production load test. Needs the updated agent (`docker.io/fattymango/lazycake-agent:v0.3.11`).
+
 ## v0.3.10 — 2026-10-07
 
 Another finding from the production load test: network-heavy tasks could take the coordinator down far enough that a machine fenced its own tasks.
