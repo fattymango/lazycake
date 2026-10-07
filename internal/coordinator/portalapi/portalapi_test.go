@@ -1049,6 +1049,7 @@ func TestCustomerTaskUsageIsScopedAndCarriesLimits(t *testing.T) {
 
 	none := decodeBody[taskUsageResponse](t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/usage", nil))
 	require.False(t, none.Supported)
+	require.False(t, none.AgentReportsUsage, "a machine that never reported usage: no reading will ever come, and the page must say so")
 	require.Empty(t, none.Points)
 	require.Equal(t, 1.0, none.Limits.Cores)
 	require.Equal(t, 256, none.Limits.MemoryMB)
@@ -1062,6 +1063,7 @@ func TestCustomerTaskUsageIsScopedAndCarriesLimits(t *testing.T) {
 	}
 	got := decodeBody[taskUsageResponse](t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/usage", nil))
 	require.True(t, got.Supported)
+	require.True(t, got.AgentReportsUsage)
 	require.Len(t, got.Points, 3)
 	require.EqualValues(t, 1000, got.Points[1].TunnelOutBytes)
 	require.EqualValues(t, 2000, got.Points[2].TunnelOutBytes)

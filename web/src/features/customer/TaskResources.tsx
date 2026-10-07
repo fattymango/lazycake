@@ -122,7 +122,9 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
           title={
             u?.supported
               ? `Peak ${Number(peakCPU.toFixed(2))} of ${u.limits.cores} cores · ${bytes(peakMem)} of ${memory(u.limits.memory_mb)} memory`
-              : "Resource use"
+              : u && !u.agent_reports_usage
+                ? "Usage isn't available for this machine yet"
+                : "Waiting for readings"
           }
           description="As reported by the machine the task ran on, about every 15 seconds."
           action={<Segmented<Tab> label="What to chart" value={tab} onChange={setTab} options={tabs} />}
@@ -131,10 +133,12 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
           {!u ? (
             <Skeleton className="h-48 rounded-lg" />
           ) : !u.supported ? (
-            <p className="py-10 text-center text-sm text-muted">
-              {active
-                ? "Waiting for the first reading from the machine (it arrives within about 15 seconds)."
-                : "The machine this task ran on didn't report usage for it, most likely because its agent is an older version."}
+            <p className="mx-auto max-w-lg py-10 text-center text-sm leading-6 text-muted">
+              {!u.agent_reports_usage
+                ? "The machine running this task has an older agent that can't report usage yet. Once its owner updates the agent, tasks on it will show their CPU, memory and network here."
+                : active
+                  ? "Waiting for the first reading from the machine (it arrives within about 15 seconds)."
+                  : "The machine didn't report usage for this task."}
             </p>
           ) : (
             <StackedChart
