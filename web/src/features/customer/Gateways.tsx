@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, Network, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
+import { gatewayInstallCommand } from "@/lib/gatewayInstall";
 import { bytes, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
@@ -26,18 +27,6 @@ import { useToast } from "@/ui/Toast";
 interface ServiceRow {
   name: string;
   port: string;
-}
-
-function installSnippet(g: CreateGatewayResponse): string {
-  const services = g.services.map((s) => `${s.name}:${s.port}`).join(",");
-  return [
-    `LAZYCAKE_COORDINATOR_ADDR=${window.location.hostname}:7444 \\`,
-    `LAZYCAKE_GRPC_ADDR=${window.location.hostname}:7443 \\`,
-    `LAZYCAKE_TOKEN=${g.install_token} \\`,
-    `LAZYCAKE_GATEWAY_ID=${g.id} \\`,
-    `LAZYCAKE_SERVICES=${services} \\`,
-    `./gateway`,
-  ].join("\n");
 }
 
 function CreateGatewayDialog({
@@ -93,7 +82,7 @@ function CreateGatewayDialog({
       {created ? (
         <DialogContent
           title="Install your gateway"
-          description="Run this on the machine that can reach your service. It connects out to LazyCake, so no inbound ports are needed."
+          description="Run this on the machine that can reach your service (it needs podman). It connects out to LazyCake, so no inbound ports are needed."
           className="max-w-xl"
           footer={<Button onClick={() => close(false)}>Done</Button>}
         >
@@ -101,17 +90,18 @@ function CreateGatewayDialog({
             <Alert tone="warning" title="Copy the token now">
               It's only shown once. If you lose it, delete this gateway and create a new one.
             </Alert>
-            <CodeBlock label="Shell" code={installSnippet(created)} />
+            <CodeBlock label="Shell" code={gatewayInstallCommand(created, window.location.hostname)} />
             <p className="text-xs leading-5 text-muted">
-              The gateway binary is built from <span className="font-mono">cmd/gateway</span>. Ports <span className="font-mono">7443</span>{" "}
-              (gRPC) and <span className="font-mono">7444</span> (UDP, QUIC) on the coordinator must be reachable from that machine.
+              The gateway runs as a container with host networking, so it can reach your services on that machine's own localhost. Ports{" "}
+              <span className="font-mono">7443</span> (gRPC) and <span className="font-mono">7444</span> (UDP, QUIC) on the coordinator must
+              be reachable from that machine.
             </p>
           </div>
         </DialogContent>
       ) : (
         <DialogContent
           title="New gateway"
-          description="A gateway is a small program you run next to your data. Tasks can reach only the services you publish through it."
+          description="A gateway is a small container you run next to your data. Tasks can reach only the services you publish through it."
           footer={
             <>
               <Button variant="secondary" onClick={() => close(false)} type="button">

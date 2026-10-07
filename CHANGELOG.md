@@ -3,6 +3,12 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.1 — 2026-10-07
+
+### Changed
+- **A gateway always runs as a container.** There is now a public image, `docker.io/fattymango/lazycake-gateway`, and the dashboard's "New gateway" command is a `podman run` (host networking so it
+  reaches your services, a volume for its key, restart on boot) instead of a binary to download. Existing gateways can be moved by running the new command; the old binary still works.
+
 ## v0.3.0 — 2026-10-07
 
 Gateway traffic, machine usage, and a Resource use chart on every task. **Update your agents and gateways**: usage, per-task network and the trust fix only work with the new binaries.

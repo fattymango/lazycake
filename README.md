@@ -57,6 +57,7 @@ build anything:
 | Image | What it is |
 | --- | --- |
 | `docker.io/fattymango/lazycake-agent` | The host agent. The provider portal's "Add a machine" command pulls this. |
+| `docker.io/fattymango/lazycake-gateway` | The gateway, always run as a container (`--network=host`, so it reaches the services on its own machine). The dashboard's "New gateway" command pulls this. |
 | `docker.io/fattymango/lcbench` | A benchmark workload for checking a node enforces its limits. |
 
 `lcbench` burns CPU on every host core and allocates memory for
