@@ -15,27 +15,34 @@ import {
 } from "lucide-react";
 import { apiPost, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { useLiveEvents } from "@/lib/live";
+import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import {
   CAPACITY_COMMAND,
-  OFFER_BOUNDS,
+  FIELD_LABEL,
+  FIELD_UNIT,
+  HARD_LIMITS,
+  OFFER_FIELDS,
+  SLIDER_STOPS,
+  bigOffers,
   defaultOffer,
   maxOffer,
   offerProblems,
   offerRequest,
   parseCapacity,
+  parseWhole,
   type MachineCaps,
   type OfferField,
   type OfferInput,
 } from "@/lib/offer";
-import { useLiveEvents } from "@/lib/live";
-import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import type { InstallToken } from "@/lib/types";
 import { Alert } from "@/ui/Alert";
 import { Button } from "@/ui/Button";
-import { Card, CardBody } from "@/ui/Card";
+import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { CodeBlock } from "@/ui/CodeBlock";
-import { Field, Input, Textarea } from "@/ui/Input";
+import { Input, Textarea } from "@/ui/Input";
 import { PageHeader } from "@/ui/PageHeader";
+import { StopSlider } from "@/ui/StopSlider";
 
 function Step({ n, title, done, last, children }: { n: number; title: string; done?: boolean; last?: boolean; children: React.ReactNode }) {
   return (
@@ -57,93 +64,89 @@ function Step({ n, title, done, last, children }: { n: number; title: string; do
   );
 }
 
-const OFFER_ROWS: { field: OfferField; label: string; unit: string; icon: typeof Cpu; step: number; hint: string }[] = [
-  { field: "cores", label: "CPU", unit: "cores", icon: Cpu, step: 0.25, hint: "CPU cores customers' tasks can use at the same time." },
-  { field: "memoryGB", label: "Memory", unit: "GB", icon: MemoryStick, step: 0.25, hint: "RAM shared by all tasks running here." },
-  { field: "storageGB", label: "Storage", unit: "GB", icon: HardDrive, step: 1, hint: "Disk for task scratch space and cached images." },
-  {
-    field: "networkMbps",
-    label: "Network",
-    unit: "Mbps",
-    icon: Gauge,
-    step: 10,
-    hint: "Bandwidth for task traffic through gateways, all tasks together.",
-  },
+const ROWS: { field: OfferField; icon: typeof Cpu; hint: string }[] = [
+  { field: "cores", icon: Cpu, hint: "CPU cores customers' tasks can use at the same time." },
+  { field: "memoryGB", icon: MemoryStick, hint: "Memory shared by every task running here." },
+  { field: "storageGB", icon: HardDrive, hint: "Disk for task scratch space and cached images." },
+  { field: "networkMbps", icon: Gauge, hint: "Bandwidth for task traffic through gateways, all tasks together." },
 ];
 
-function OfferControls({
-  offer,
+const BIG_PHRASE: Record<OfferField, (v: number) => string> = {
+  cores: (v) => `${v} CPU cores`,
+  memoryGB: (v) => `${v} GB of memory`,
+  storageGB: (v) => `${v} GB of storage`,
+  networkMbps: (v) => `${v} Mbps of network`,
+};
+
+function CapacityRow({
+  field,
+  icon: Icon,
+  hint,
+  value,
   caps,
-  problems,
+  error,
   onChange,
 }: {
-  offer: OfferInput;
+  field: OfferField;
+  icon: typeof Cpu;
+  hint: string;
+  value: number;
   caps: MachineCaps | null;
-  problems: Partial<Record<OfferField, string>>;
-  onChange: (next: OfferInput) => void;
+  error?: string;
+  onChange: (v: number) => void;
 }) {
+  const stops = SLIDER_STOPS[field];
+  const sliderTop = stops[stops.length - 1];
+  const unit = FIELD_UNIT[field];
   const max = maxOffer(caps);
+  const knownMax = field === "networkMbps" ? caps?.networkMbps != null : !!caps;
+  const beyondSlider = Number.isFinite(value) && value > sliderTop;
+  // The slider never offers more than the machine has, even if it would otherwise go higher.
+  const usableStops = knownMax ? stops.filter((s) => s <= max[field]) : stops;
+  const sliderStops = usableStops.length >= 2 ? usableStops : stops;
   return (
-    <ul className="space-y-5">
-      {OFFER_ROWS.map(({ field, label, unit, icon: Icon, step, hint }) => {
-        const bound = OFFER_BOUNDS[field];
-        const known = field === "networkMbps" ? caps?.networkMbps != null : !!caps;
-        const top = Math.floor(max[field] * 100) / 100;
-        const value = offer[field];
-        const error = problems[field];
-        return (
-          <li key={field}>
-            <Field
-              label={
-                <span className="flex items-center gap-2">
-                  <Icon className="size-3.5 text-muted" aria-hidden />
-                  {label}
-                </span>
-              }
-              hint={
-                known
-                  ? `${hint} This machine has ${field === "networkMbps" ? `a ${top} Mbps link` : `${top} ${unit}${field === "storageGB" ? " free" : ""}`}.`
-                  : hint
-              }
-              error={error}
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  aria-label={`${label} slider`}
-                  min={bound.min}
-                  max={known ? top : Math.min(bound.max, field === "cores" ? 64 : field === "networkMbps" ? 10_000 : 1024)}
-                  step={step}
-                  value={Number.isFinite(value) ? Math.min(value, known ? top : bound.max) : bound.min}
-                  onChange={(e) => onChange({ ...offer, [field]: Number(e.target.value) })}
-                  className="h-1.5 min-w-0 flex-1 cursor-pointer accent-[rgb(var(--accent))]"
-                />
-                <div className="flex w-36 shrink-0 items-center gap-2">
-                  <Input
-                    aria-label={`${label} to lend`}
-                    inputMode="decimal"
-                    type="number"
-                    min={bound.min}
-                    step={step}
-                    value={Number.isFinite(value) ? value : ""}
-                    onChange={(e) => onChange({ ...offer, [field]: e.target.value === "" ? Number.NaN : Number(e.target.value) })}
-                    aria-invalid={!!error}
-                    mono
-                  />
-                  <span className="w-10 shrink-0 text-xs text-muted">{unit}</span>
-                </div>
-              </div>
-            </Field>
-          </li>
-        );
-      })}
-    </ul>
+    <li className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor={`offer-${field}`} className="flex items-center gap-2 text-sm font-medium text-fg">
+          <Icon className="size-4 text-muted" aria-hidden />
+          {FIELD_LABEL[field]}
+        </label>
+        <div className="flex items-center gap-2">
+          <Input
+            id={`offer-${field}`}
+            aria-label={`${FIELD_LABEL[field]} to lend`}
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={String(HARD_LIMITS[field].max).length}
+            value={Number.isFinite(value) ? String(value) : ""}
+            onChange={(e) => onChange(parseWhole(e.target.value, field))}
+            onKeyDown={(e) => {
+              // Whole numbers only: no decimal point, sign or exponent can even be typed.
+              if (["-", "+", ".", ",", "e", "E"].includes(e.key)) e.preventDefault();
+            }}
+            aria-invalid={!!error}
+            aria-describedby={`offer-${field}-note`}
+            className="w-24 text-right"
+            mono
+          />
+          <span className="w-11 text-xs text-muted">{unit}</span>
+        </div>
+      </div>
+      <StopSlider stops={sliderStops} value={value} onChange={onChange} label={`${FIELD_LABEL[field]} slider`} />
+      <p id={`offer-${field}-note`} className={cn("text-xs leading-5", error ? "text-danger" : "text-muted")}>
+        {error ??
+          `${hint}${knownMax ? ` This machine has ${max[field].toLocaleString("en-US")} ${unit}${field === "storageGB" ? " free" : ""}.` : ""}${
+            beyondSlider ? ` That's beyond the slider: fine if the machine has it.` : ""
+          }`}
+      </p>
+    </li>
   );
 }
 
 export function AddMachine() {
   usePageTitle("Add a machine");
   const [result, setResult] = useState<InstallToken | null>(null);
+  const [mintedFor, setMintedFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectedId, setConnectedId] = useState<string | null>(null);
@@ -153,25 +156,27 @@ export function AddMachine() {
   const [offer, setOffer] = useState<OfferInput>(defaultOffer(null));
   const problems = offerProblems(offer, caps);
   const valid = Object.keys(problems).length === 0;
+  const big = valid ? bigOffers(offer, caps) : [];
+  const offerKey = JSON.stringify(offer);
+  // The command was made for the limits as they were; if they changed since, it is out of date.
+  const stale = !!result && mintedFor !== offerKey;
 
-  // Telling us what the machine has pulls the defaults, and anything already typed, down to what it can give.
+  // Telling us what the machine has pulls whatever is already chosen down to what it can give.
   function onCapsChange(text: string) {
     setCapsText(text);
     const next = parseCapacity(text);
     if (!next) return;
     const max = maxOffer(next);
     setOffer((cur) => ({
-      cores: Math.min(cur.cores, Math.floor(max.cores * 100) / 100),
-      memoryGB: Math.min(cur.memoryGB, Math.floor(max.memoryGB * 100) / 100),
-      storageGB: Math.min(cur.storageGB, Math.floor(max.storageGB * 100) / 100),
-      networkMbps: Math.min(cur.networkMbps, Math.floor(max.networkMbps)),
+      cores: Math.min(cur.cores, max.cores),
+      memoryGB: Math.min(cur.memoryGB, max.memoryGB),
+      storageGB: Math.min(cur.storageGB, max.storageGB),
+      networkMbps: Math.min(cur.networkMbps, max.networkMbps),
     }));
   }
 
-  // An agent runs inside a container, where 127.0.0.1 is the container itself,
-  // so a command pointing at a loopback address can never connect from another
-  // machine, or from the agent's own container. It happens when the coordinator
-  // is run locally without LAZYCAKE_PUBLIC_GRPC_ADDR set.
+  // An agent runs inside a container, where 127.0.0.1 is the container itself, so a command pointing at a
+  // loopback address can never connect from another machine, or from the agent's own container.
   const loopback = !!result && /LAZYCAKE_COORDINATOR_ADDR=(127\.|localhost|\[?::1)/.test(result.install_command);
 
   // After a while with no connection, stop saying "wait" and say what to check.
@@ -193,6 +198,7 @@ export function AddMachine() {
     setConnectedId(null);
     try {
       setResult(await apiPost<InstallToken>("/api/portal/provider/nodes/install-token", offerRequest(offer)));
+      setMintedFor(offerKey);
     } catch (err) {
       setError(errorMessage(err, "Couldn't create an install token"));
     } finally {
@@ -202,156 +208,189 @@ export function AddMachine() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Add a machine"
-        description="Register a computer and start earning when customers' tasks run on it. About two minutes."
-      />
+      <PageHeader title="Add a machine" description="Choose what to lend, then run the command it generates. About two minutes." />
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        {/* Section 1: what to lend */}
         <Card>
-          <CardBody className="p-6">
-            <ol>
-              <Step n={1} title="Check the machine is ready" done={!!result}>
-                <p className="text-sm leading-6 text-muted">
-                  Any Linux machine with <span className="font-medium text-fg">rootless Podman</span> and{" "}
-                  <span className="font-medium text-fg">cgroup v2</span> works. Run this on it to check:
-                </p>
-                <CodeBlock
-                  label="Shell"
-                  code={
-                    'podman info --format json | grep -E \'"(cgroupVersion|rootless)"\'\n# expect:  "cgroupVersion": "v2",   "rootless": true,'
-                  }
+          <CardHeader
+            title="1 · What to lend"
+            description="Whole numbers only. Drag to a checkpoint, or type a bigger number in the box if your machine has it."
+          />
+          <CardBody className="space-y-6">
+            <Alert tone="warning" title="Only offer what this machine can really provide">
+              If it can't provide these numbers, the agent shuts down right away and the machine fails to connect. It never shrinks your
+              offer to fit.
+            </Alert>
+
+            <ul className="space-y-6" aria-label="What to lend">
+              {ROWS.map((r) => (
+                <CapacityRow
+                  key={r.field}
+                  {...r}
+                  value={offer[r.field]}
+                  caps={caps}
+                  error={problems[r.field]}
+                  onChange={(v) => setOffer((cur) => ({ ...cur, [r.field]: v }))}
                 />
+              ))}
+            </ul>
+
+            {big.length > 0 && (
+              <Alert tone="danger" title="That's a lot of this machine">
+                The agent will set aside {big.map((f) => BIG_PHRASE[f](offer[f])).join(", ")} for customers' tasks whenever they run. While
+                that happens your own apps may slow down or run out of memory, and you may not have a smooth experience with this device.
+                Offer less if you use it yourself.
+              </Alert>
+            )}
+
+            <div className="space-y-2 rounded-lg border border-border bg-raised/40 p-3">
+              <p className="text-xs font-medium text-fg">See what this machine has (optional, recommended)</p>
+              <p className="text-xs leading-5 text-muted">
+                Run this on the machine and paste its one line of output. The limits above then match the hardware, and the page tells you
+                right away if you offer too much.
+              </p>
+              <CodeBlock label="Shell" code={CAPACITY_COMMAND} wrap />
+              <Textarea
+                aria-label="Output of the capacity command"
+                value={capsText}
+                onChange={(e) => onCapsChange(e.target.value)}
+                placeholder="cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000"
+                className="min-h-[52px]"
+                mono
+              />
+              {capsText.trim() !== "" && !caps && (
+                <p className="text-xs text-danger">That doesn't look like the command's output. It should start with "cores=".</p>
+              )}
+              {caps && (
+                <p className="text-xs text-success">
+                  Got it: {maxOffer(caps).cores} cores, {maxOffer(caps).memoryGB} GB memory, {maxOffer(caps).storageGB} GB free
+                  {caps.networkMbps
+                    ? `, ${maxOffer(caps).networkMbps} Mbps link`
+                    : ", network speed not reported (your limit is still enforced)"}
+                  .
+                </p>
+              )}
+              {!caps && capsText.trim() === "" && (
                 <p className="text-xs leading-5 text-muted">
-                  Also run <span className="font-mono">loginctl enable-linger $USER</span> so the agent keeps running after you log out.
+                  Skip it and the agent does this check itself when it starts, refusing anything above what the machine has.
                 </p>
-              </Step>
-
-              <Step n={2} title="Choose what to lend" done={!!result}>
-                <p className="text-sm leading-6 text-muted">
-                  You decide how much of this machine customers can use. The agent only ever uses what you set here, and it{" "}
-                  <span className="font-medium text-fg">refuses to start</span> if you offer more than the machine really has.
-                </p>
-                <div className="space-y-2 rounded-lg border border-border bg-raised/40 p-3">
-                  <p className="text-xs font-medium text-fg">See what this machine has (optional, recommended)</p>
-                  <p className="text-xs leading-5 text-muted">
-                    Run this on the machine, then paste its one line of output. The limits below will match the hardware.
-                  </p>
-                  <CodeBlock label="Shell" code={CAPACITY_COMMAND} wrap />
-                  <Textarea
-                    aria-label="Output of the capacity command"
-                    value={capsText}
-                    onChange={(e) => onCapsChange(e.target.value)}
-                    placeholder="cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000"
-                    className="min-h-[52px]"
-                    mono
-                  />
-                  {capsText.trim() !== "" && !caps && (
-                    <p className="text-xs text-danger">That doesn't look like the command's output. It should start with "cores=".</p>
-                  )}
-                  {caps && (
-                    <p className="text-xs text-success">
-                      Got it: {caps.cores} cores, {Math.floor((caps.memoryMB / 1024) * 100) / 100} GB memory,{" "}
-                      {Math.floor((caps.diskMB / 1024) * 100) / 100} GB free
-                      {caps.networkMbps ? `, ${caps.networkMbps} Mbps link` : ", network speed not reported (your limit is still enforced)"}
-                      .
-                    </p>
-                  )}
-                </div>
-                <OfferControls offer={offer} caps={caps} problems={problems} onChange={setOffer} />
-                {!caps && (
-                  <p className="text-xs leading-5 text-muted">
-                    Without the check above we can't know the machine's limits here, so the agent does that check itself when it starts.
-                  </p>
-                )}
-              </Step>
-
-              <Step n={3} title="Create an install command" done={!!result}>
-                {error && <Alert tone="danger">{error}</Alert>}
-                {!result ? (
-                  <>
-                    <p className="text-sm leading-6 text-muted">
-                      This mints a token that lets one agent register as yours, and gives you the command to start it with the limits you
-                      chose.
-                    </p>
-                    <Button onClick={generate} loading={busy} disabled={!valid}>
-                      <KeyRound />
-                      Generate install command
-                    </Button>
-                    {!valid && <p className="text-xs text-danger">Fix the highlighted limits above first.</p>}
-                  </>
-                ) : (
-                  <>
-                    <Alert tone="warning" title="Copy this now">
-                      The token is shown once. Anyone with it can register a machine to your account. If it leaks or you lose it, generate a
-                      new one.
-                    </Alert>
-                    {loopback && (
-                      <Alert tone="danger" title="This command points at 127.0.0.1, so it can't connect">
-                        The agent runs in a container, where 127.0.0.1 is the container itself, not the machine running LazyCake. The
-                        coordinator needs to advertise an address your machines can reach: set{" "}
-                        <span className="font-mono">LAZYCAKE_PUBLIC_GRPC_ADDR</span> (for example{" "}
-                        <span className="font-mono">203.0.113.5:7443</span>) and generate a new command.
-                      </Alert>
-                    )}
-                    <CodeBlock label="Run on your machine" code={result.install_command} />
-                    <p className="text-xs leading-5 text-muted">
-                      It offers {offer.cores} CPU cores, {offer.memoryGB} GB of memory, {offer.storageGB} GB of storage and{" "}
-                      {offer.networkMbps} Mbps of network. If a value is more than the machine has, the agent stops with a message saying
-                      which one to lower (see <span className="font-mono">podman logs lazycake-agent</span>).
-                    </p>
-                    <Button variant="ghost" size="sm" onClick={generate} loading={busy} disabled={!valid}>
-                      Generate a new one
-                    </Button>
-                  </>
-                )}
-              </Step>
-
-              <Step n={4} title="Wait for it to connect" done={!!connectedId} last>
-                {connectedId ? (
-                  <>
-                    <Alert tone="success" title="Your machine is connected">
-                      It registered, ran a quick benchmark and is ready for work.
-                    </Alert>
-                    <Button asChild>
-                      <Link to={`/machines/${connectedId}`}>
-                        View machine
-                        <ArrowRight />
-                      </Link>
-                    </Button>
-                  </>
-                ) : result ? (
-                  <>
-                    <p className="flex items-center gap-2.5 text-sm text-muted">
-                      <Loader2 className="size-4 animate-spin text-accent" aria-hidden />
-                      Waiting for the agent to connect. This page updates by itself.
-                    </p>
-                    {waitedLong && (
-                      <Alert tone="warning" title="Still waiting? Check these">
-                        <ol className="mt-1 list-decimal space-y-1.5 pl-4">
-                          <li>
-                            Read why it isn't connecting:
-                            <CodeBlock code="podman logs lazycake-agent" className="mt-1.5" />
-                          </li>
-                          <li>
-                            The machine must reach the coordinator on <span className="font-mono">7443</span> (TCP) to connect, and{" "}
-                            <span className="font-mono">7444</span> (UDP) for gateway tunnels. Check any firewall in between.
-                          </li>
-                          <li>The command's address must be one this machine can reach (not 127.0.0.1 or localhost).</li>
-                          <li>If this machine already runs an agent, running the command again replaces it (same container name).</li>
-                        </ol>
-                      </Alert>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-muted">Once you run the command, this page detects the machine automatically.</p>
-                )}
-              </Step>
-            </ol>
+              )}
+            </div>
           </CardBody>
         </Card>
 
-        <aside className="min-w-0 space-y-4">
+        {/* Section 2: the generated steps */}
+        <div className="min-w-0 space-y-4">
+          <Card>
+            <CardHeader title="2 · Install" description="Generated from your choices on the left." />
+            <CardBody>
+              <ol>
+                <Step n={1} title="Check the machine is ready" done={!!result}>
+                  <p className="text-sm leading-6 text-muted">
+                    Any Linux machine with <span className="font-medium text-fg">rootless Podman</span> and{" "}
+                    <span className="font-medium text-fg">cgroup v2</span> works. Run this on it to check:
+                  </p>
+                  <CodeBlock
+                    label="Shell"
+                    code={
+                      'podman info --format json | grep -E \'"(cgroupVersion|rootless)"\'\n# expect:  "cgroupVersion": "v2",   "rootless": true,'
+                    }
+                  />
+                  <p className="text-xs leading-5 text-muted">
+                    Also run <span className="font-mono">loginctl enable-linger $USER</span> so the agent keeps running after you log out.
+                  </p>
+                </Step>
+
+                <Step n={2} title="Create the install command" done={!!result && !stale}>
+                  {error && <Alert tone="danger">{error}</Alert>}
+                  <p className="text-sm leading-6 text-muted">
+                    You're lending <span className="font-medium text-fg">{valid ? summary(offer) : "…"}</span>. This mints a token that lets
+                    one agent register as yours.
+                  </p>
+                  {!result || stale ? (
+                    <>
+                      {stale && (
+                        <Alert tone="warning" title="You changed the numbers">
+                          The command below no longer matches. Generate a new one.
+                        </Alert>
+                      )}
+                      <Button onClick={generate} loading={busy} disabled={!valid}>
+                        <KeyRound />
+                        Generate install command
+                      </Button>
+                      {!valid && <p className="text-xs text-danger">Fix the highlighted numbers on the left first.</p>}
+                    </>
+                  ) : null}
+                  {result && (
+                    <>
+                      {!stale && (
+                        <Alert tone="warning" title="Copy this now">
+                          The token is shown once. Anyone with it can register a machine to your account. If it leaks or you lose it,
+                          generate a new one.
+                        </Alert>
+                      )}
+                      {loopback && (
+                        <Alert tone="danger" title="This command points at 127.0.0.1, so it can't connect">
+                          The agent runs in a container, where 127.0.0.1 is the container itself, not the machine running LazyCake. The
+                          coordinator needs to advertise an address your machines can reach: set{" "}
+                          <span className="font-mono">LAZYCAKE_PUBLIC_GRPC_ADDR</span> (for example{" "}
+                          <span className="font-mono">203.0.113.5:7443</span>) and generate a new command.
+                        </Alert>
+                      )}
+                      <CodeBlock label="Run on your machine" code={result.install_command} className={cn(stale && "opacity-50")} />
+                      <p className="text-xs leading-5 text-muted">
+                        If a number is more than the machine has, the agent stops and says which one to lower (see{" "}
+                        <span className="font-mono">podman logs lazycake-agent</span>).
+                      </p>
+                    </>
+                  )}
+                </Step>
+
+                <Step n={3} title="Wait for it to connect" done={!!connectedId} last>
+                  {connectedId ? (
+                    <>
+                      <Alert tone="success" title="Your machine is connected">
+                        It registered, ran a quick benchmark and is ready for work.
+                      </Alert>
+                      <Button asChild>
+                        <Link to={`/machines/${connectedId}`}>
+                          View machine
+                          <ArrowRight />
+                        </Link>
+                      </Button>
+                    </>
+                  ) : result ? (
+                    <>
+                      <p className="flex items-center gap-2.5 text-sm text-muted">
+                        <Loader2 className="size-4 animate-spin text-accent" aria-hidden />
+                        Waiting for the agent to connect. This page updates by itself.
+                      </p>
+                      {waitedLong && (
+                        <Alert tone="warning" title="Still waiting? Check these">
+                          <ol className="mt-1 list-decimal space-y-1.5 pl-4">
+                            <li>
+                              Read why it isn't connecting:
+                              <CodeBlock code="podman logs lazycake-agent" className="mt-1.5" />
+                            </li>
+                            <li>
+                              The machine must reach the coordinator on <span className="font-mono">7443</span> (TCP) to connect, and{" "}
+                              <span className="font-mono">7444</span> (UDP) for gateway tunnels. Check any firewall in between.
+                            </li>
+                            <li>The command's address must be one this machine can reach (not 127.0.0.1 or localhost).</li>
+                            <li>If this machine already runs an agent, running the command again replaces it (same container name).</li>
+                          </ol>
+                        </Alert>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted">Once you run the command, this page detects the machine automatically.</p>
+                  )}
+                </Step>
+              </ol>
+            </CardBody>
+          </Card>
+
           <Card>
             <CardBody className="space-y-4">
               <div className="flex items-center gap-2.5">
@@ -372,14 +411,21 @@ export function AddMachine() {
                   You can remove the machine and revoke its token at any time.
                 </li>
               </ul>
+              <p className="text-xs leading-5 text-muted">
+                You can read what runs on your own hardware; that's inherent to renting it out. Only rent out a machine you're comfortable
+                running other people's code on.
+              </p>
             </CardBody>
           </Card>
-          <p className="px-1 text-xs leading-5 text-muted">
-            You can read what runs on your own hardware; that's inherent to renting it out. Only rent out a machine you're comfortable
-            running other people's code on.
-          </p>
-        </aside>
+        </div>
       </div>
     </div>
   );
+}
+
+function summary(o: OfferInput): string {
+  return OFFER_FIELDS.map(
+    (f) =>
+      `${o[f]} ${FIELD_UNIT[f] === "cores" ? (o[f] === 1 ? "core" : "cores") : FIELD_UNIT[f]} ${f === "cores" ? "CPU" : FIELD_LABEL[f].toLowerCase()}`
+  ).join(" · ");
 }

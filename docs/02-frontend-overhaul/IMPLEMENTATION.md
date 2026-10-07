@@ -402,3 +402,10 @@ must enforce it by rejecting any value bigger than the actual system.
 - **Verified:** the real agent binary refuses an oversize offer immediately with the message above (exit 1) and `agent capacity` prints this PC's numbers; unit tests for the validation, link-speed detection,
   config and the limiter; portal tests for the endpoint; 16 browser checks (`web/e2e/addmachine.mjs`).
 - **Not done:** the dashboard can't read a machine's hardware before an agent runs on it, hence the optional paste step; a monthly data allowance (the unused `Offer.bandwidth_mb_month` field) is not implemented.
+
+**Follow-up, same day: a redesigned Add machine page.** Whole numbers only (the server rejects fractions and sizes that aren't whole GB; the field strips everything but digits, clamps to a hard ceiling that can't
+overflow a 32-bit megabyte field, and can't even be typed a decimal point, sign or exponent into). A slider with checkpoints that snaps (`ui/StopSlider`): CPU 1/2/4/8/16/24, memory 1-64 GB, storage 5-100 GB, network
+10-1000 Mbps; the **number field can go past the slider** (up to the machine's real limit once known, or the hard ceiling). Layout: **What to lend** is the left section at the top of the page, and the generated
+**Install** steps are beside it on the right; changing a number after generating marks the command out of date. Two warnings: always, that if the machine can't provide the numbers the agent shuts down and the machine
+fails to connect; and when the offer is big (8+ cores, 16+ GB, 50+ GB or 500+ Mbps, or half the machine or more once its capacity is known) that this much will be set aside for customers' tasks and the provider's own
+use of the device may suffer. Browser checks: `web/e2e/addmachine.mjs` (33).

@@ -3,6 +3,12 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.3 — 2026-10-07
+
+### Changed
+- **A redesigned "Add a machine" page**: what to lend on the left, the generated install steps beside it. Whole numbers only, a slider that snaps to checkpoints (CPU up to 24 cores, memory 64 GB, storage 100 GB)
+  with a number field that can go past the slider, overflow-safe input, a warning that a machine that can't provide the numbers will fail, and a warning when you offer a lot of your own machine.
+
 ## v0.3.2 — 2026-10-07
 
 ### Added
