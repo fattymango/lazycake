@@ -101,8 +101,17 @@ func (s *PostgresStore) RecordNodeUsage(ctx context.Context, u NodeUsageSample) 
 		}
 	}
 
+	type rawTask struct {
+		ID  string  `json:"id"`
+		CPU float64 `json:"cpu"`
+		Mem int64   `json:"mem"`
+		Out int64   `json:"out"`
+		In  int64   `json:"in"`
+	}
+	raw := make([]rawTask, 0, len(tasks))
 	for _, t := range tasks {
 		dOut, dIn := counterDelta(t.TunnelToGateway, prevOut[t.TaskID]), counterDelta(t.TunnelToTask, prevIn[t.TaskID])
+		raw = append(raw, rawTask{ID: t.TaskID, CPU: t.CPUCores, Mem: t.MemoryBytes, Out: dOut, In: dIn})
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO node_task_usage (node_id, task_id, bucket, cpu_sum, mem_sum, tunnel_out, tunnel_in)
 			VALUES ($1, $3, `+usageBucketSQL+`, $4, $5, $6, $7)
@@ -134,6 +143,19 @@ func (s *PostgresStore) RecordNodeUsage(ctx context.Context, u NodeUsageSample) 
 			t.TaskID, u.NodeID, t.CPUCores*float64(u.IntervalMS)/1000, t.MemoryBytes, t.TunnelToGateway, t.TunnelToTask); err != nil {
 			return fmt.Errorf("updating task usage summary: %w", err)
 		}
+	}
+
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("encoding raw usage sample: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO node_usage_samples (node_id, at, host_cpu_busy, cpu_count, mem_used, mem_total, disk_used, disk_total, tasks_cpu, tasks_mem, tasks)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (node_id, at) DO NOTHING`,
+		u.NodeID, at, u.HostCPUBusy, u.HostCPUCount, u.HostMemUsed, u.HostMemTotal, u.DiskUsed, u.DiskTotal,
+		tasksCPU, int64(tasksMem), rawJSON); err != nil {
+		return fmt.Errorf("recording raw usage sample: %w", err)
 	}
 
 	latest := u
@@ -192,6 +214,9 @@ func usagePeriodSQL(step string) (string, error) {
 }
 
 func (s *PostgresStore) NodeUsageSeries(ctx context.Context, nodeID string, since time.Time, step string) ([]NodeUsagePoint, error) {
+	if step == "30s" {
+		return s.nodeUsageSeriesRaw(ctx, nodeID, since)
+	}
 	period, err := usagePeriodSQL(step)
 	if err != nil {
 		return nil, err
@@ -238,6 +263,9 @@ func deref(f *float64) float64 {
 }
 
 func (s *PostgresStore) NodeTaskSeries(ctx context.Context, nodeID string, since time.Time, step string) ([]NodeTaskPoint, error) {
+	if step == "30s" {
+		return s.nodeTaskSeriesRaw(ctx, nodeID, since)
+	}
 	period, err := usagePeriodSQL(step)
 	if err != nil {
 		return nil, err
@@ -307,7 +335,12 @@ func (s *PostgresStore) PruneNodeUsage(ctx context.Context, before time.Time) (i
 	if err != nil {
 		return 0, fmt.Errorf("pruning task samples: %w", err)
 	}
-	return a.RowsAffected() + b.RowsAffected() + c.RowsAffected(), nil
+	// The heartbeat-resolution table is only kept for two days, whatever the bucket retention.
+	d, err := s.pool.Exec(ctx, `DELETE FROM node_usage_samples WHERE at < now() - interval '48 hours' OR at < $1`, before)
+	if err != nil {
+		return 0, fmt.Errorf("pruning raw usage: %w", err)
+	}
+	return a.RowsAffected() + b.RowsAffected() + c.RowsAffected() + d.RowsAffected(), nil
 }
 
 func (s *PostgresStore) TaskUsageSeries(ctx context.Context, taskID string) ([]TaskUsageReading, error) {
@@ -330,9 +363,19 @@ func (s *PostgresStore) TaskUsageSeries(ctx context.Context, taskID string) ([]T
 }
 
 func (s *PostgresStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]TrafficPoint, error) {
-	rows, err := s.pool.Query(ctx, `
+	// Fine-grained (10 s) when we have it; older traffic only exists in 5-minute buckets.
+	fine, err := s.taskGatewaySeriesFrom(ctx, `
+		SELECT at, bytes_to_local, bytes_to_task FROM task_gateway_samples WHERE task_id = $1 ORDER BY at`, taskID)
+	if err != nil || len(fine) > 0 {
+		return fine, err
+	}
+	return s.taskGatewaySeriesFrom(ctx, `
 		SELECT bucket, SUM(bytes_to_local), SUM(bytes_to_task)
 		FROM gateway_traffic WHERE task_id = $1 GROUP BY bucket ORDER BY bucket`, taskID)
+}
+
+func (s *PostgresStore) taskGatewaySeriesFrom(ctx context.Context, query, taskID string) ([]TrafficPoint, error) {
+	rows, err := s.pool.Query(ctx, query, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("reading task gateway series: %w", err)
 	}
@@ -343,6 +386,63 @@ func (s *PostgresStore) TaskGatewaySeries(ctx context.Context, taskID string) ([
 		if err := rows.Scan(&p.At, &p.BytesToLocal, &p.BytesToTask); err != nil {
 			return nil, fmt.Errorf("scanning task gateway series: %w", err)
 		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// rawBinSQL groups heartbeat readings into 30-second bins: wide enough that heartbeat jitter
+// never leaves a bin empty between two real readings.
+const rawBinSQL = `date_bin('30 seconds', %s, TIMESTAMPTZ '2000-01-01')`
+
+func (s *PostgresStore) nodeUsageSeriesRaw(ctx context.Context, nodeID string, since time.Time) ([]NodeUsagePoint, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+fmt.Sprintf(rawBinSQL, "at")+` AS p, COUNT(*), AVG(host_cpu_busy), MAX(cpu_count), AVG(mem_used), MAX(mem_total),
+		       AVG(disk_used), MAX(disk_total), AVG(tasks_cpu), AVG(tasks_mem)
+		FROM node_usage_samples WHERE node_id = $1 AND at >= $2 GROUP BY p ORDER BY p`, nodeID, since)
+	if err != nil {
+		return nil, fmt.Errorf("reading raw usage series: %w", err)
+	}
+	defer rows.Close()
+	var out []NodeUsagePoint
+	for rows.Next() {
+		var p NodeUsagePoint
+		var cpuBusy, memUsed, diskUsed, tasksCPU, tasksMem *float64
+		if err := rows.Scan(&p.At, &p.Samples, &cpuBusy, &p.HostCPUCount, &memUsed, &p.HostMemTotal, &diskUsed, &p.DiskTotal, &tasksCPU, &tasksMem); err != nil {
+			return nil, fmt.Errorf("scanning raw usage series: %w", err)
+		}
+		p.HostCPUBusy, p.HostMemUsed, p.DiskUsed = deref(cpuBusy), int64(deref(memUsed)), int64(deref(diskUsed))
+		p.TasksCPU, p.TasksMem = deref(tasksCPU), int64(deref(tasksMem))
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) nodeTaskSeriesRaw(ctx context.Context, nodeID string, since time.Time) ([]NodeTaskPoint, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH n AS (
+			SELECT `+fmt.Sprintf(rawBinSQL, "at")+` AS p, COUNT(*) AS c FROM node_usage_samples
+			WHERE node_id = $1 AND at >= $2 GROUP BY p
+		), t AS (
+			SELECT `+fmt.Sprintf(rawBinSQL, "s.at")+` AS p, e->>'id' AS task,
+			       SUM((e->>'cpu')::float8) AS cpu, SUM((e->>'mem')::float8) AS mem,
+			       SUM((e->>'out')::bigint) AS tout, SUM((e->>'in')::bigint) AS tin
+			FROM node_usage_samples s, jsonb_array_elements(s.tasks) e
+			WHERE s.node_id = $1 AND s.at >= $2 GROUP BY p, task
+		)
+		SELECT t.p, t.task, t.cpu / n.c, t.mem / n.c, t.tout, t.tin FROM t JOIN n USING (p) ORDER BY t.p, t.task`, nodeID, since)
+	if err != nil {
+		return nil, fmt.Errorf("reading raw task usage series: %w", err)
+	}
+	defer rows.Close()
+	var out []NodeTaskPoint
+	for rows.Next() {
+		var p NodeTaskPoint
+		var cpu, mem float64
+		if err := rows.Scan(&p.At, &p.TaskID, &cpu, &mem, &p.TunnelOut, &p.TunnelIn); err != nil {
+			return nil, fmt.Errorf("scanning raw task usage series: %w", err)
+		}
+		p.CPUCores, p.MemoryBytes = cpu, int64(mem)
 		out = append(out, p)
 	}
 	return out, rows.Err()

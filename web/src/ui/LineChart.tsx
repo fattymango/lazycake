@@ -11,7 +11,9 @@ export interface ChartSeries {
   dashed?: boolean;
 }
 
-const PAD = { left: 52, right: 10, top: 12, bottom: 6 };
+const PAD = { right: 10, top: 12, bottom: 6 };
+/** Room the y-axis labels need, so a long one ("0.0025") is never clipped at the edge. */
+const labelWidth = (labels: string[]) => Math.max(36, Math.ceil(Math.max(...labels.map((l) => l.length)) * 6.4) + 14);
 
 /**
  * One line chart for every time series in the app: a line per series, a faint fill when there is
@@ -23,6 +25,8 @@ export function LineChart({
   points,
   series,
   format,
+  axisFormat,
+  axisUnit,
   formatTime,
   axisLabel,
   summary,
@@ -37,6 +41,10 @@ export function LineChart({
   points: StackPoint[];
   series: ChartSeries[];
   format: (value: number) => string;
+  /** The y-axis tick labels (default: `format`). Leave the unit out here and name it once with axisUnit. */
+  axisFormat?: (value: number) => string;
+  /** The unit of the y axis, named once above the chart ("cores"). */
+  axisUnit?: string;
   formatTime: (at: number) => string;
   /** The short label under the axis (default: the date part of formatTime). */
   axisLabel?: (at: number) => string;
@@ -75,9 +83,11 @@ export function LineChart({
   const dataTop = niceMax(max);
   const limitOnScale = !!limit && limit.value > 0 && limit.value <= dataTop * 4;
   const top = limitOnScale && limit ? niceMax(Math.max(max, limit.value)) : dataTop;
-  const plotW = width - PAD.left - PAD.right;
+  const tick = axisFormat ?? format;
+  const left = labelWidth([0, 0.5, 1].map((f) => tick(top * f)));
+  const plotW = width - left - PAD.right;
   const plotH = height - PAD.top - PAD.bottom;
-  const x = (i: number) => PAD.left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const x = (i: number) => left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
   const y = (v: number) => PAD.top + plotH - (Math.min(v, top) / top) * plotH;
   const hasGaps = points.some((p) => p.gap);
   const fill = series.length === 1;
@@ -110,7 +120,7 @@ export function LineChart({
 
   const pick = (e: MouseEvent<SVGRectElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const f = (e.clientX - rect.left - (PAD.left - (e.currentTarget.x.baseVal.value || 0))) / plotW;
+    const f = (e.clientX - rect.left - (left - (e.currentTarget.x.baseVal.value || 0))) / plotW;
     setActive(n <= 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(f * (n - 1)))));
   };
   const onKey = (e: KeyboardEvent) => {
@@ -126,6 +136,7 @@ export function LineChart({
 
   return (
     <div className={cn("min-w-0", className)}>
+      {axisUnit && <p className="mb-1 text-2xs text-subtle">{axisUnit}</p>}
       <div
         ref={wrap}
         role="img"
@@ -148,15 +159,15 @@ export function LineChart({
           {[0, 0.5, 1].map((f) => (
             <g key={f}>
               <line
-                x1={PAD.left}
+                x1={left}
                 x2={width - PAD.right}
                 y1={y(top * f)}
                 y2={y(top * f)}
                 stroke="rgb(var(--border))"
                 strokeOpacity={f === 0 ? 1 : 0.7}
               />
-              <text x={PAD.left - 8} y={y(top * f)} textAnchor="end" dominantBaseline="middle" className="fill-subtle text-2xs" data-tnum>
-                {format(top * f)}
+              <text x={left - 8} y={y(top * f)} textAnchor="end" dominantBaseline="middle" className="fill-subtle text-2xs" data-tnum>
+                {tick(top * f)}
               </text>
             </g>
           ))}
@@ -181,7 +192,7 @@ export function LineChart({
           {limit && limitOnScale && (
             <g>
               <line
-                x1={PAD.left}
+                x1={left}
                 x2={width - PAD.right}
                 y1={y(limit.value)}
                 y2={y(limit.value)}
@@ -243,7 +254,7 @@ export function LineChart({
             </g>
           )}
 
-          <rect x={PAD.left} y={PAD.top} width={plotW} height={plotH} fill="transparent" onMouseMove={pick} onMouseEnter={pick} />
+          <rect x={left} y={PAD.top} width={plotW} height={plotH} fill="transparent" onMouseMove={pick} onMouseEnter={pick} />
         </svg>
 
         {max === 0 && !hasGaps && n > 0 && (
@@ -256,7 +267,7 @@ export function LineChart({
             data-chart-tip
             className={cn(
               "pointer-events-none absolute top-4 z-20 w-56 max-w-[70%] rounded-lg border border-border bg-overlay px-3 py-2 text-xs shadow-pop",
-              rightHalf ? "left-14" : "right-3"
+              rightHalf ? "left-16" : "right-3"
             )}
           >
             <p className="mb-1 font-medium text-fg">{formatTime(activePoint.at)}</p>
@@ -287,7 +298,7 @@ export function LineChart({
         )}
       </div>
 
-      <div className="relative mt-1 h-4" style={{ marginLeft: PAD.left, marginRight: PAD.right }} aria-hidden>
+      <div className="relative mt-1 h-4" style={{ marginLeft: left, marginRight: PAD.right }} aria-hidden>
         {points.map((p, i) =>
           i % labelEvery === 0 ? (
             <span

@@ -25,7 +25,7 @@ func testStore(t *testing.T) *PostgresStore {
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
 
-	_, err = s.pool.Exec(ctx, `TRUNCATE task_usage_samples, node_usage, node_task_usage, node_usage_latest, task_usage_totals, gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
+	_, err = s.pool.Exec(ctx, `TRUNCATE task_gateway_samples, node_usage_samples, task_usage_samples, node_usage, node_task_usage, node_usage_latest, task_usage_totals, gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }
@@ -497,7 +497,7 @@ func TestPruningGatewayTrafficKeepsTheTotals(t *testing.T) {
 
 	deleted, err := s.PruneGatewayTraffic(ctx, time.Now().Add(-90*24*time.Hour))
 	require.NoError(t, err)
-	require.Equal(t, int64(1), deleted)
+	require.Equal(t, int64(2), deleted, "the old 5-minute bucket and the old 10-second sample")
 
 	series, _ := s.GatewayTrafficSeries(ctx, "gw_a", time.Now().Add(-200*24*time.Hour), "day")
 	require.Len(t, series, 1, "the old bucket is gone from the chart data")
@@ -618,7 +618,7 @@ func TestPruningNodeUsageKeepsTheTaskSummary(t *testing.T) {
 
 	n, err := s.PruneNodeUsage(ctx, time.Now().Add(-30*24*time.Hour))
 	require.NoError(t, err)
-	require.EqualValues(t, 3, n, "the old machine bucket, the old task bucket and the task's old reading")
+	require.EqualValues(t, 4, n, "the old machine bucket, the old task bucket, the task's old reading and the old heartbeat row")
 	series, err := s.NodeUsageSeries(ctx, "nod_1", old.Add(-time.Hour), "hour")
 	require.NoError(t, err)
 	require.Len(t, series, 1, "only the recent bucket is left")
@@ -698,4 +698,76 @@ func TestTunnelTrafficBecomesDeltasPerPeriod(t *testing.T) {
 	readings, err = s.TaskUsageSeries(ctx, "tsk_a")
 	require.NoError(t, err)
 	require.Empty(t, readings)
+}
+
+// Fine-grained series (migration 020): a two-minute task and a fresh machine get real lines, not dots.
+func TestFineGrainedSeriesForShortTasksAndFreshMachines(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustNode(t, s, "nod_1", "act_1")
+	mustGateway(t, s, "gw_1", "act_1")
+	mustRunningTask(t, s, "tsk_a", "act_1", "nod_1")
+	mustRunningTask(t, s, "tsk_b", "act_1", "nod_1")
+
+	base := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Minute)
+	// Gateway reports every 10 s for two minutes: twelve points, not one 5-minute bucket.
+	for i := 0; i < 12; i++ {
+		require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{
+			GatewayID: "gw_1", TaskID: "tsk_a", Service: "db", BytesToLocal: 10, BytesToTask: 100, At: base.Add(time.Duration(i) * 10 * time.Second), RecordTask: true,
+		}))
+	}
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_1", TaskID: "tsk_b", Service: "db", BytesToLocal: 999, At: base, RecordTask: true}))
+	gw, err := s.TaskGatewaySeries(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.Len(t, gw, 12)
+	var sent int64
+	for _, p := range gw {
+		sent += p.BytesToTask
+	}
+	require.EqualValues(t, 1200, sent, "nothing lost or leaked from tsk_b")
+
+	// A machine's heartbeats for ten minutes: the 30-second view has ~20 points, with the tasks attributed.
+	for i := 0; i < 40; i++ {
+		require.NoError(t, s.RecordNodeUsage(ctx, NodeUsageSample{
+			NodeID: "nod_1", At: base.Add(time.Duration(i) * 15 * time.Second), IntervalMS: 15000, HostCPUBusy: 0.3, HostCPUCount: 4,
+			Tasks: []TaskUsageSample{
+				{TaskID: "tsk_a", CPUCores: 1, MemoryBytes: 100, TunnelToGateway: int64(i) * 50},
+				{TaskID: "tsk_b", CPUCores: 0.5, MemoryBytes: 50},
+			},
+		}))
+	}
+	pts, err := s.NodeUsageSeries(ctx, "nod_1", base.Add(-time.Minute), "30s")
+	require.NoError(t, err)
+	require.Len(t, pts, 20, "40 heartbeats over ten minutes in 30-second bins")
+	for _, p := range pts {
+		require.Equal(t, 2, p.Samples, "heartbeat jitter must never leave a bin empty or crowded")
+		require.InDelta(t, 0.3, p.HostCPUBusy, 1e-9)
+		require.InDelta(t, 1.5, p.TasksCPU, 1e-9)
+	}
+	tasks, err := s.NodeTaskSeries(ctx, "nod_1", base.Add(-time.Minute), "30s")
+	require.NoError(t, err)
+	var cpuA, cpuB float64
+	var outA int64
+	for _, p := range tasks {
+		switch p.TaskID {
+		case "tsk_a":
+			cpuA += p.CPUCores
+			outA += p.TunnelOut
+		case "tsk_b":
+			cpuB += p.CPUCores
+		}
+	}
+	require.InDelta(t, 20*1.0, cpuA, 1e-9, "each of the 20 bins shows task a at 1 core")
+	require.InDelta(t, 20*0.5, cpuB, 1e-9)
+	require.EqualValues(t, 39*50, outA, "tunnel bytes are deltas of the cumulative counter, summed")
+
+	// Pruning: the heartbeat-resolution rows go after 48 hours even when buckets are kept longer.
+	old := time.Now().Add(-72 * time.Hour)
+	require.NoError(t, s.RecordNodeUsage(ctx, NodeUsageSample{NodeID: "nod_1", At: old, IntervalMS: 15000, HostCPUCount: 4}))
+	_, err = s.PruneNodeUsage(ctx, time.Now().Add(-90*24*time.Hour))
+	require.NoError(t, err)
+	var n int
+	require.NoError(t, s.pool.QueryRow(ctx, `SELECT count(*) FROM node_usage_samples WHERE at < now() - interval '48 hours'`).Scan(&n))
+	require.Zero(t, n)
 }

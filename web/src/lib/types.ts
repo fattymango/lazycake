@@ -229,8 +229,8 @@ export interface UsageLatest {
 export interface NodeUsage {
   /** False until the machine's agent has reported usage at least once. */
   supported: boolean;
-  range: "24h" | "7d";
-  step: "5m" | "hour";
+  range: "1h" | "24h" | "7d";
+  step: "30s" | "5m" | "hour";
   latest?: UsageLatest;
   /** Tasks that have their own band, biggest first; the rest are under OTHERS_KEY. */
   tasks: string[];

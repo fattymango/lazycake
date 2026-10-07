@@ -16,7 +16,7 @@ import { Skeleton } from "@/ui/Skeleton";
 import { LineChart, type ChartSeries } from "@/ui/LineChart";
 import type { Tone } from "@/ui/tone";
 
-type Range = "24h" | "7d";
+type Range = "1h" | "24h" | "7d";
 
 const GAUGE_STALE_MS = 90_000;
 
@@ -64,7 +64,7 @@ function toneFor(fraction: number): Tone {
  * for the provider's eyes only and never affects billing or trust.
  */
 export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: string) => string }) {
-  const [range, setRange] = useState<Range>("24h");
+  const [range, setRange] = useState<Range>("1h");
   const [metric, setMetric] = useState<UsageMetric>("cpu");
   const usage = useAsync(
     (s) => apiGet<NodeUsage>(`/api/portal/provider/nodes/${encodeURIComponent(node.id)}/usage?range=${range}`, s),
@@ -107,7 +107,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
   const fresh = !!l && Date.now() - l.at_ms < GAUGE_STALE_MS;
   const offeredMem = node.offer_memory_mb * 1024 * 1024;
   const offeredDisk = node.offer_disk_mb * 1024 * 1024;
-  const periodLabel = range === "24h" ? "last 24 hours" : "last 7 days";
+  const periodLabel = range === "1h" ? "last hour" : range === "24h" ? "last 24 hours" : "last 7 days";
 
   const limit =
     metric === "cpu"
@@ -194,6 +194,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
                 value={range}
                 onChange={setRange}
                 options={[
+                  { value: "1h", label: "1 hour" },
                   { value: "24h", label: "24 hours" },
                   { value: "7d", label: "7 days" },
                 ]}
@@ -204,13 +205,15 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
             points={points}
             series={series}
             format={format}
+            axisFormat={metric === "cpu" ? cores : undefined}
+            axisUnit={metric === "cpu" ? "cores" : undefined}
             formatTime={(at) => shortDateTime(at)}
             axisLabel={(at) =>
-              range === "24h"
+              range !== "7d"
                 ? new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                 : new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
             }
-            summary={`${metricName} ${metric === "network" ? "moved by" : "used by"} this machine's tasks over the ${periodLabel}, per ${u.step === "hour" ? "hour" : "five minutes"}.`}
+            summary={`${metricName} ${metric === "network" ? "moved by" : "used by"} this machine's tasks over the ${periodLabel}, per ${u.step === "hour" ? "hour" : u.step === "30s" ? "30 seconds" : "five minutes"}.`}
             limit={limit}
             emptyLabel={
               metric === "disk"

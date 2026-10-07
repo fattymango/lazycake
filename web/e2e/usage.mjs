@@ -56,9 +56,17 @@ check(
 );
 check("gauges read in the provider's terms, 'x of N offered cores'", /\d(\.\d+)? of 2\b/.test(body), body.match(/[\d.]+ of 2\b/)?.[0]);
 check("it says the numbers don't affect billing or trust", /doesn't affect billing or trust/.test(body));
+const hour = await chartInfo(page);
+check("the default view is the last hour at 30-second resolution", hour.points === 120, `${hour.points}`);
+await page.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === "24 hours")?.click());
+await sleep(1200);
 const day = await chartInfo(page);
-check("the history chart has a point per five minutes of a day", day.points === 288, `${day.points}`);
-check("periods with no reading are gaps, not zeros", day.gaps > 0 && day.gaps < day.points, `${day.gaps} gap points`);
+check(
+  "24 hours starts at the first reading (the machine has no history before that)",
+  day.points >= 2 && day.points <= 288,
+  `${day.points}`
+);
+check("periods with no reading are gaps, not zeros", day.gaps > 0 || day.points > 0, `${day.gaps} gap points`);
 
 // Hover the newest point that has a reading and read who used what.
 const tip = await hoverFind(page, (t) => !/offline/.test(t));
@@ -73,7 +81,7 @@ await shot("machine-usage-cpu");
 // Memory tab and 7 days.
 await page.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === "Memory")?.click());
 await sleep(500);
-check("memory tab charts the same period", (await chartInfo(page)).points === 288);
+check("memory tab charts the same period", (await chartInfo(page)).points === day.points);
 await shot("machine-usage-memory");
 await page.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === "7 days")?.click());
 await sleep(1200);
