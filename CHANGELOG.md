@@ -3,7 +3,11 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
-## Unreleased
+## v0.3.0 — 2026-10-07
+
+Gateway traffic, machine usage, and a Resource use chart on every task. **Update your agents and gateways**: usage, per-task network and the trust fix only work with the new binaries.
+
+Upgrade notes: the coordinator needs migrations 017, 018 and 019; the agent image is `docker.io/fattymango/lazycake-agent:v0.3.0` (also `:latest`).
 
 ### Fixed
 - **Trust no longer drops for machines that run tunnel tasks**: the agent didn't report its byte counts at task end, so every task that used a gateway looked like a 100% byte
