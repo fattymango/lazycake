@@ -332,6 +332,13 @@ func (s *Server) handleHeartbeat(ctx context.Context, nodeID string, hb *lazycak
 	if err := s.Store.RecordHeartbeat(ctx, nodeID, now); err != nil {
 		return fmt.Errorf("recording heartbeat: %w", err)
 	}
+	// Usage is display only and best effort: a failure to store it must never fail the
+	// heartbeat, which is what keeps the node's lease alive.
+	if u := hb.GetUsage(); u != nil {
+		if err := s.Store.RecordNodeUsage(ctx, usageFromProto(nodeID, now, u)); err != nil {
+			s.Log.Warn("recording machine usage", "node_id", nodeID, "error", err)
+		}
+	}
 	newRequeueAfter := now.Add(time.Duration(s.LeaseS)*time.Second + s.leaseMargin())
 	if err := s.Store.ExtendNodeRequeue(ctx, nodeID, newRequeueAfter); err != nil {
 		return fmt.Errorf("extending node requeue: %w", err)
@@ -393,4 +400,47 @@ func (s *Server) handleLogs(ctx context.Context, batch *lazycakev1.LogBatch) err
 		return fmt.Errorf("appending logs: %w", err)
 	}
 	return nil
+}
+
+// maxUsageTasks bounds how many per-task entries one heartbeat may carry into storage,
+// whatever an agent sends.
+const maxUsageTasks = 32
+
+// usageFromProto turns an agent's reading into what is stored, keeping it sane: a
+// fraction stays in 0..1 and nothing is negative, so a buggy or hostile agent can't
+// store nonsense that breaks a chart. (It is display only either way.)
+func usageFromProto(nodeID string, at time.Time, u *lazycakev1.UsageSample) store.NodeUsageSample {
+	nonNeg := func(n int64) int64 {
+		if n < 0 {
+			return 0
+		}
+		return n
+	}
+	busy := u.GetHostCpuBusy()
+	if !(busy > 0) { // also catches NaN
+		busy = 0
+	}
+	if busy > 1 {
+		busy = 1
+	}
+	out := store.NodeUsageSample{
+		NodeID: nodeID, At: at, IntervalMS: nonNeg(u.GetIntervalMs()),
+		HostCPUBusy: busy, HostCPUCount: int(max(u.GetHostCpuCount(), 0)),
+		HostMemTotal: nonNeg(u.GetHostMemTotalBytes()), HostMemUsed: nonNeg(u.GetHostMemUsedBytes()),
+		DiskTotal: nonNeg(u.GetDiskTotalBytes()), DiskUsed: nonNeg(u.GetDiskUsedBytes()),
+	}
+	for i, t := range u.GetTasks() {
+		if i >= maxUsageTasks {
+			break
+		}
+		cores := t.GetCpuCores()
+		if !(cores > 0) {
+			cores = 0
+		}
+		out.Tasks = append(out.Tasks, store.TaskUsageSample{
+			TaskID: t.GetTaskId(), CPUCores: cores, MemoryBytes: nonNeg(t.GetMemoryBytes()),
+			TunnelToGateway: nonNeg(t.GetTunnelBytesToGateway()), TunnelToTask: nonNeg(t.GetTunnelBytesToTask()),
+		})
+	}
+	return out
 }

@@ -43,7 +43,7 @@ func testStore(t *testing.T) *store.PostgresStore {
 	t.Cleanup(s.Close)
 
 	_, err = s.Pool().Exec(ctx, `TRUNCATE task_logs, node_images, sessions, portal_credentials,
-		ledger_entries, task_holds, task_meters, gateway_traffic, gateway_totals, task_gateway_totals, gateways, tasks, nodes, api_tokens, accounts CASCADE`)
+		ledger_entries, task_holds, task_meters, node_usage, node_task_usage, node_usage_latest, task_usage_totals, gateway_traffic, gateway_totals, task_gateway_totals, gateways, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }
@@ -953,4 +953,70 @@ func TestGatewayAndTaskTrafficAreReportedAndScoped(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/customer/gateways/"+gw+"/traffic", nil).StatusCode)
 	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/traffic", nil).StatusCode)
 	require.Empty(t, decodeBody[[]gatewayView](t, other.do(http.MethodGet, "/api/portal/customer/gateways", nil)))
+}
+
+// Machine usage (task 8.15): not supported until the agent reports, then a series with the
+// biggest tasks named and the rest folded into "others"; task rows carry their totals; all of
+// it scoped to the machine's own provider.
+func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	me := signUpProvider(t, c, "uma")
+	mustNode(t, st, "nod_u", me.AccountID)
+	customer := signUpCustomer(t, &testClient{t: t, base: c.base, hc: mustJarClient(t)}, "cy")
+	ctx := context.Background()
+
+	// An agent that never reported usage.
+	before := decodeBody[nodeUsageResponse](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage", nil))
+	require.False(t, before.Supported)
+	require.Empty(t, before.Series)
+
+	// More tasks than get their own band.
+	var sample []store.TaskUsageSample
+	for i := 0; i < usageTopTasks+2; i++ {
+		id := "tsk_u" + string(rune('a'+i))
+		require.NoError(t, st.CreateTask(ctx, store.Task{
+			ID: id, AccountID: customer.AccountID, State: store.TaskQueued, Image: "alpine@sha256:a",
+			Limits:       store.Limits{CPUCores: 1, MemoryMB: 128, DiskMB: 128, WallTimeoutS: 60},
+			Requirements: store.Requirements{Arch: "amd64", Isolation: "podman"}, Delivery: store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+		}))
+		_, err := st.(*store.PostgresStore).Pool().Exec(ctx, `UPDATE tasks SET node_id = 'nod_u' WHERE id = $1`, id)
+		require.NoError(t, err)
+		sample = append(sample, store.TaskUsageSample{TaskID: id, CPUCores: float64(i+1) / 10, MemoryBytes: int64(i+1) << 20, TunnelToGateway: 100, TunnelToTask: 200})
+	}
+	require.NoError(t, st.RecordNodeUsage(ctx, store.NodeUsageSample{
+		NodeID: "nod_u", At: time.Now().Add(-10 * time.Minute), IntervalMS: 15000, HostCPUBusy: 0.5, HostCPUCount: 4,
+		HostMemTotal: 8 << 30, HostMemUsed: 2 << 30, DiskTotal: 100 << 30, DiskUsed: 30 << 30, Tasks: sample,
+	}))
+
+	got := decodeBody[nodeUsageResponse](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=24h", nil))
+	require.True(t, got.Supported)
+	require.Equal(t, "5m", got.Step)
+	require.NotNil(t, got.Latest)
+	require.Len(t, got.Latest.Tasks, usageTopTasks+2)
+	require.Len(t, got.Tasks, usageTopTasks, "only the biggest get their own band")
+	require.Equal(t, "tsk_u"+string(rune('a'+usageTopTasks+1)), got.Tasks[0], "biggest consumer first")
+	require.Len(t, got.Series, 1)
+	pt := got.Series[0]
+	require.InDelta(t, 0.5, pt.HostCPUBusy, 1e-9)
+	var shares float64
+	for _, sh := range pt.PerTask {
+		shares += sh.CPUCores
+	}
+	require.InDelta(t, pt.TasksCPU, shares, 1e-9, "the bands (including others) add up to the machine's task total")
+	require.Contains(t, pt.PerTask, usageOthersKey)
+	require.Equal(t, "hour", decodeBody[nodeUsageResponse](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=7d", nil)).Step)
+	require.Equal(t, http.StatusBadRequest, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=1y", nil).StatusCode)
+
+	// The machine's task list carries each task's totals; a task never reported has none.
+	tasks := decodeBody[[]nodeTaskView](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/tasks", nil))
+	require.Len(t, tasks, usageTopTasks+2)
+	for _, tv := range tasks {
+		require.NotNil(t, tv.Usage, tv.ID)
+		require.EqualValues(t, 200, tv.Usage.TunnelToTask)
+	}
+
+	// Another provider can't see it.
+	other := &testClient{t: t, base: c.base, hc: mustJarClient(t)}
+	signUpProvider(t, other, "otto")
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage", nil).StatusCode)
 }

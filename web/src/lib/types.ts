@@ -188,3 +188,54 @@ export interface GatewayTestResult {
   services: GatewayServiceTest[];
   tested_at_ms: number;
 }
+
+/** Machine usage as reported by its agent (display only; the host controls the agent). */
+export interface TaskShare {
+  cpu_cores: number;
+  memory_bytes: number;
+}
+
+export interface UsagePoint {
+  at_ms: number;
+  samples: number;
+  host_cpu_busy: number;
+  host_mem_used_bytes: number;
+  disk_used_bytes: number;
+  tasks_cpu_cores: number;
+  tasks_memory_bytes: number;
+  per_task: Record<string, TaskShare>;
+}
+
+export interface UsageLatest {
+  at_ms: number;
+  host_cpu_busy: number;
+  host_cpu_count: number;
+  host_mem_total_bytes: number;
+  host_mem_used_bytes: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  tasks_cpu_cores: number;
+  tasks_memory_bytes: number;
+  tasks: { task_id: string; cpu_cores: number; memory_bytes: number }[];
+}
+
+export interface NodeUsage {
+  /** False until the machine's agent has reported usage at least once. */
+  supported: boolean;
+  range: "24h" | "7d";
+  step: "5m" | "hour";
+  latest?: UsageLatest;
+  /** Tasks that have their own band, biggest first; the rest are under OTHERS_KEY. */
+  tasks: string[];
+  series: UsagePoint[];
+}
+
+export interface TaskUsageTotals {
+  core_seconds: number;
+  peak_memory_bytes: number;
+  tunnel_bytes_to_gateway: number;
+  tunnel_bytes_to_task: number;
+}
+
+/** A task as listed on a machine page, with what it used (when its agent reported it). */
+export type NodeTask = Task & { usage?: TaskUsageTotals };

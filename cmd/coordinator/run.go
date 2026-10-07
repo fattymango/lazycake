@@ -251,6 +251,17 @@ func run() error {
 			if n > 0 {
 				log.Info("pruned old gateway traffic", "rows", n)
 			}
+			// Machine usage keeps 5-minute detail for 30 days; each task's summary stays.
+			m, err := st.PruneNodeUsage(ctx, time.Now().Add(-30*24*time.Hour))
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Warn("pruning machine usage", "error", err)
+				}
+				return
+			}
+			if m > 0 {
+				log.Info("pruned old machine usage", "rows", m)
+			}
 		}
 		prune()
 		t := time.NewTicker(time.Hour)

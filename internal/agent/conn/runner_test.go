@@ -100,3 +100,52 @@ func TestRunnerReconnectsOnStreamError(t *testing.T) {
 		t.Fatalf("expected at least 2 Connect calls, got %d", client.connectCount())
 	}
 }
+
+// A heartbeat carries the usage reading (task 8.15), and a Usage that blocks
+// forever can't hold the heartbeat up: it runs under a short deadline.
+func TestHeartbeatCarriesUsageAndAStuckReaderCannotStallIt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		usage   func(ctx context.Context) *lazycakev1.UsageSample
+		wantMem int64
+	}{
+		{"carries the reading", func(context.Context) *lazycakev1.UsageSample {
+			return &lazycakev1.UsageSample{HostMemUsedBytes: 42}
+		}, 42},
+		{"a reader that never returns on its own", func(ctx context.Context) *lazycakev1.UsageSample {
+			<-ctx.Done()
+			return nil
+		}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			streams := make(chan *fakeStream, 4)
+			client := &fakeClient{next: func(ctx context.Context) *fakeStream {
+				s := newFakeStream(ctx)
+				streams <- s
+				return s
+			}}
+			r := &Runner{
+				Client:   client,
+				Identity: Identity{Token: "tok", Hostname: "h1", Arch: "amd64"},
+				Handlers: Handlers{Usage: tc.usage},
+				Log:      discardLogger(),
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go r.Run(ctx)
+
+			s := waitFor(t, streams, time.Second, "first connect")
+			waitFor(t, s.out, time.Second, "register message")
+			s.in <- &lazycakev1.CoordinatorMessage{Body: &lazycakev1.CoordinatorMessage_RegisterAck{
+				RegisterAck: &lazycakev1.RegisterAck{NodeId: "nod_1", HeartbeatS: 1, LeaseS: 5},
+			}}
+			hb := waitFor(t, s.out, 3*time.Second, "heartbeat message")
+			if hb.GetHeartbeat() == nil {
+				t.Fatalf("expected Heartbeat, got %+v", hb)
+			}
+			if got := hb.GetHeartbeat().GetUsage().GetHostMemUsedBytes(); got != tc.wantMem {
+				t.Fatalf("usage mem = %d, want %d", got, tc.wantMem)
+			}
+		})
+	}
+}

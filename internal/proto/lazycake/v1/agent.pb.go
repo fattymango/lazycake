@@ -828,8 +828,12 @@ type Heartbeat struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Seq            int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
 	RunningTaskIds []string               `protobuf:"bytes,2,rep,name=running_task_ids,json=runningTaskIds,proto3" json:"running_task_ids,omitempty"` // re-announce for adoption
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// What this machine and its tasks are using right now. Display only: it never
+	// feeds billing or trust (the host controls the agent, so it could be faked).
+	// Absent from an agent built before usage was reported.
+	Usage         *UsageSample `protobuf:"bytes,3,opt,name=usage,proto3" json:"usage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Heartbeat) Reset() {
@@ -876,6 +880,191 @@ func (x *Heartbeat) GetRunningTaskIds() []string {
 	return nil
 }
 
+func (x *Heartbeat) GetUsage() *UsageSample {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
+// UsageSample is one reading, taken when the heartbeat is sent. Machine figures are
+// totals only: nothing about the host's own processes is reported.
+type UsageSample struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	IntervalMs        int64                  `protobuf:"varint,1,opt,name=interval_ms,json=intervalMs,proto3" json:"interval_ms,omitempty"`       // time since the previous sample (0 for the first)
+	HostCpuBusy       float64                `protobuf:"fixed64,2,opt,name=host_cpu_busy,json=hostCpuBusy,proto3" json:"host_cpu_busy,omitempty"` // fraction of all the host's CPU time in use, 0..1
+	HostCpuCount      int32                  `protobuf:"varint,3,opt,name=host_cpu_count,json=hostCpuCount,proto3" json:"host_cpu_count,omitempty"`
+	HostMemTotalBytes int64                  `protobuf:"varint,4,opt,name=host_mem_total_bytes,json=hostMemTotalBytes,proto3" json:"host_mem_total_bytes,omitempty"`
+	HostMemUsedBytes  int64                  `protobuf:"varint,5,opt,name=host_mem_used_bytes,json=hostMemUsedBytes,proto3" json:"host_mem_used_bytes,omitempty"` // total minus what the kernel counts as available
+	DiskTotalBytes    int64                  `protobuf:"varint,6,opt,name=disk_total_bytes,json=diskTotalBytes,proto3" json:"disk_total_bytes,omitempty"`         // the filesystem holding the agent's data directory
+	DiskUsedBytes     int64                  `protobuf:"varint,7,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
+	Tasks             []*TaskUsage           `protobuf:"bytes,8,rep,name=tasks,proto3" json:"tasks,omitempty"` // one per running task, capped
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *UsageSample) Reset() {
+	*x = UsageSample{}
+	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageSample) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageSample) ProtoMessage() {}
+
+func (x *UsageSample) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageSample.ProtoReflect.Descriptor instead.
+func (*UsageSample) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UsageSample) GetIntervalMs() int64 {
+	if x != nil {
+		return x.IntervalMs
+	}
+	return 0
+}
+
+func (x *UsageSample) GetHostCpuBusy() float64 {
+	if x != nil {
+		return x.HostCpuBusy
+	}
+	return 0
+}
+
+func (x *UsageSample) GetHostCpuCount() int32 {
+	if x != nil {
+		return x.HostCpuCount
+	}
+	return 0
+}
+
+func (x *UsageSample) GetHostMemTotalBytes() int64 {
+	if x != nil {
+		return x.HostMemTotalBytes
+	}
+	return 0
+}
+
+func (x *UsageSample) GetHostMemUsedBytes() int64 {
+	if x != nil {
+		return x.HostMemUsedBytes
+	}
+	return 0
+}
+
+func (x *UsageSample) GetDiskTotalBytes() int64 {
+	if x != nil {
+		return x.DiskTotalBytes
+	}
+	return 0
+}
+
+func (x *UsageSample) GetDiskUsedBytes() int64 {
+	if x != nil {
+		return x.DiskUsedBytes
+	}
+	return 0
+}
+
+func (x *UsageSample) GetTasks() []*TaskUsage {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+type TaskUsage struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	TaskId               string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	CpuCores             float64                `protobuf:"fixed64,2,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"` // average cores in use over the interval
+	MemoryBytes          int64                  `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	TunnelBytesToGateway int64                  `protobuf:"varint,4,opt,name=tunnel_bytes_to_gateway,json=tunnelBytesToGateway,proto3" json:"tunnel_bytes_to_gateway,omitempty"` // cumulative since the task started
+	TunnelBytesToTask    int64                  `protobuf:"varint,5,opt,name=tunnel_bytes_to_task,json=tunnelBytesToTask,proto3" json:"tunnel_bytes_to_task,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *TaskUsage) Reset() {
+	*x = TaskUsage{}
+	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskUsage) ProtoMessage() {}
+
+func (x *TaskUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskUsage.ProtoReflect.Descriptor instead.
+func (*TaskUsage) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *TaskUsage) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskUsage) GetCpuCores() float64 {
+	if x != nil {
+		return x.CpuCores
+	}
+	return 0
+}
+
+func (x *TaskUsage) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *TaskUsage) GetTunnelBytesToGateway() int64 {
+	if x != nil {
+		return x.TunnelBytesToGateway
+	}
+	return 0
+}
+
+func (x *TaskUsage) GetTunnelBytesToTask() int64 {
+	if x != nil {
+		return x.TunnelBytesToTask
+	}
+	return 0
+}
+
 type HeartbeatAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Seq           int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
@@ -885,7 +1074,7 @@ type HeartbeatAck struct {
 
 func (x *HeartbeatAck) Reset() {
 	*x = HeartbeatAck{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -897,7 +1086,7 @@ func (x *HeartbeatAck) String() string {
 func (*HeartbeatAck) ProtoMessage() {}
 
 func (x *HeartbeatAck) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[9]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -910,7 +1099,7 @@ func (x *HeartbeatAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatAck.ProtoReflect.Descriptor instead.
 func (*HeartbeatAck) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *HeartbeatAck) GetSeq() int64 {
@@ -934,7 +1123,7 @@ type CapacityReport struct {
 
 func (x *CapacityReport) Reset() {
 	*x = CapacityReport{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +1135,7 @@ func (x *CapacityReport) String() string {
 func (*CapacityReport) ProtoMessage() {}
 
 func (x *CapacityReport) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[10]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +1148,7 @@ func (x *CapacityReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapacityReport.ProtoReflect.Descriptor instead.
 func (*CapacityReport) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CapacityReport) GetOffer() *Offer {
@@ -1014,7 +1203,7 @@ type CachedImage struct {
 
 func (x *CachedImage) Reset() {
 	*x = CachedImage{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1026,7 +1215,7 @@ func (x *CachedImage) String() string {
 func (*CachedImage) ProtoMessage() {}
 
 func (x *CachedImage) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[11]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1039,7 +1228,7 @@ func (x *CachedImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CachedImage.ProtoReflect.Descriptor instead.
 func (*CachedImage) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CachedImage) GetDigest() string {
@@ -1066,7 +1255,7 @@ type CacheDelta struct {
 
 func (x *CacheDelta) Reset() {
 	*x = CacheDelta{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1267,7 @@ func (x *CacheDelta) String() string {
 func (*CacheDelta) ProtoMessage() {}
 
 func (x *CacheDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[12]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1280,7 @@ func (x *CacheDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheDelta.ProtoReflect.Descriptor instead.
 func (*CacheDelta) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CacheDelta) GetPulled() []*CachedImage {
@@ -1133,7 +1322,7 @@ type Dispatch struct {
 
 func (x *Dispatch) Reset() {
 	*x = Dispatch{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1145,7 +1334,7 @@ func (x *Dispatch) String() string {
 func (*Dispatch) ProtoMessage() {}
 
 func (x *Dispatch) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[13]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1158,7 +1347,7 @@ func (x *Dispatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Dispatch.ProtoReflect.Descriptor instead.
 func (*Dispatch) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Dispatch) GetTaskId() string {
@@ -1254,7 +1443,7 @@ type Limits struct {
 
 func (x *Limits) Reset() {
 	*x = Limits{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1266,7 +1455,7 @@ func (x *Limits) String() string {
 func (*Limits) ProtoMessage() {}
 
 func (x *Limits) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[14]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1279,7 +1468,7 @@ func (x *Limits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Limits.ProtoReflect.Descriptor instead.
 func (*Limits) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Limits) GetCpuCores() float64 {
@@ -1350,7 +1539,7 @@ type TunnelTarget struct {
 
 func (x *TunnelTarget) Reset() {
 	*x = TunnelTarget{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1362,7 +1551,7 @@ func (x *TunnelTarget) String() string {
 func (*TunnelTarget) ProtoMessage() {}
 
 func (x *TunnelTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[15]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1375,7 +1564,7 @@ func (x *TunnelTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelTarget.ProtoReflect.Descriptor instead.
 func (*TunnelTarget) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TunnelTarget) GetGatewayId() string {
@@ -1415,7 +1604,7 @@ type TaskAccepted struct {
 
 func (x *TaskAccepted) Reset() {
 	*x = TaskAccepted{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1427,7 +1616,7 @@ func (x *TaskAccepted) String() string {
 func (*TaskAccepted) ProtoMessage() {}
 
 func (x *TaskAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[16]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1440,7 +1629,7 @@ func (x *TaskAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskAccepted.ProtoReflect.Descriptor instead.
 func (*TaskAccepted) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TaskAccepted) GetTaskId() string {
@@ -1460,7 +1649,7 @@ type TaskRejected struct {
 
 func (x *TaskRejected) Reset() {
 	*x = TaskRejected{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1472,7 +1661,7 @@ func (x *TaskRejected) String() string {
 func (*TaskRejected) ProtoMessage() {}
 
 func (x *TaskRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[17]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1485,7 +1674,7 @@ func (x *TaskRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskRejected.ProtoReflect.Descriptor instead.
 func (*TaskRejected) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TaskRejected) GetTaskId() string {
@@ -1512,7 +1701,7 @@ type TaskStarted struct {
 
 func (x *TaskStarted) Reset() {
 	*x = TaskStarted{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1524,7 +1713,7 @@ func (x *TaskStarted) String() string {
 func (*TaskStarted) ProtoMessage() {}
 
 func (x *TaskStarted) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[18]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1537,7 +1726,7 @@ func (x *TaskStarted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskStarted.ProtoReflect.Descriptor instead.
 func (*TaskStarted) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TaskStarted) GetTaskId() string {
@@ -1569,7 +1758,7 @@ type TaskFinished struct {
 
 func (x *TaskFinished) Reset() {
 	*x = TaskFinished{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1581,7 +1770,7 @@ func (x *TaskFinished) String() string {
 func (*TaskFinished) ProtoMessage() {}
 
 func (x *TaskFinished) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[19]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1594,7 +1783,7 @@ func (x *TaskFinished) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskFinished.ProtoReflect.Descriptor instead.
 func (*TaskFinished) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TaskFinished) GetTaskId() string {
@@ -1656,7 +1845,7 @@ type Cancel struct {
 
 func (x *Cancel) Reset() {
 	*x = Cancel{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1857,7 @@ func (x *Cancel) String() string {
 func (*Cancel) ProtoMessage() {}
 
 func (x *Cancel) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[20]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1870,7 @@ func (x *Cancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cancel.ProtoReflect.Descriptor instead.
 func (*Cancel) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Cancel) GetTaskId() string {
@@ -1708,7 +1897,7 @@ type LogBatch struct {
 
 func (x *LogBatch) Reset() {
 	*x = LogBatch{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1720,7 +1909,7 @@ func (x *LogBatch) String() string {
 func (*LogBatch) ProtoMessage() {}
 
 func (x *LogBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[21]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1733,7 +1922,7 @@ func (x *LogBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogBatch.ProtoReflect.Descriptor instead.
 func (*LogBatch) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *LogBatch) GetTaskId() string {
@@ -1762,7 +1951,7 @@ type LogLine struct {
 
 func (x *LogLine) Reset() {
 	*x = LogLine{}
-	mi := &file_lazycake_v1_agent_proto_msgTypes[22]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1774,7 +1963,7 @@ func (x *LogLine) String() string {
 func (*LogLine) ProtoMessage() {}
 
 func (x *LogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_agent_proto_msgTypes[22]
+	mi := &file_lazycake_v1_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1787,7 +1976,7 @@ func (x *LogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLine.ProtoReflect.Descriptor instead.
 func (*LogLine) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_lazycake_v1_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *LogLine) GetSeq() int64 {
@@ -1883,10 +2072,27 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\vheartbeat_s\x18\x02 \x01(\x05R\n" +
 	"heartbeatS\x12\x17\n" +
 	"\alease_s\x18\x03 \x01(\x05R\x06leaseS\x12#\n" +
-	"\rbenchmark_now\x18\x04 \x01(\bR\fbenchmarkNow\"G\n" +
+	"\rbenchmark_now\x18\x04 \x01(\bR\fbenchmarkNow\"w\n" +
 	"\tHeartbeat\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12(\n" +
-	"\x10running_task_ids\x18\x02 \x03(\tR\x0erunningTaskIds\" \n" +
+	"\x10running_task_ids\x18\x02 \x03(\tR\x0erunningTaskIds\x12.\n" +
+	"\x05usage\x18\x03 \x01(\v2\x18.lazycake.v1.UsageSampleR\x05usage\"\xd8\x02\n" +
+	"\vUsageSample\x12\x1f\n" +
+	"\vinterval_ms\x18\x01 \x01(\x03R\n" +
+	"intervalMs\x12\"\n" +
+	"\rhost_cpu_busy\x18\x02 \x01(\x01R\vhostCpuBusy\x12$\n" +
+	"\x0ehost_cpu_count\x18\x03 \x01(\x05R\fhostCpuCount\x12/\n" +
+	"\x14host_mem_total_bytes\x18\x04 \x01(\x03R\x11hostMemTotalBytes\x12-\n" +
+	"\x13host_mem_used_bytes\x18\x05 \x01(\x03R\x10hostMemUsedBytes\x12(\n" +
+	"\x10disk_total_bytes\x18\x06 \x01(\x03R\x0ediskTotalBytes\x12&\n" +
+	"\x0fdisk_used_bytes\x18\a \x01(\x03R\rdiskUsedBytes\x12,\n" +
+	"\x05tasks\x18\b \x03(\v2\x16.lazycake.v1.TaskUsageR\x05tasks\"\xcc\x01\n" +
+	"\tTaskUsage\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
+	"\tcpu_cores\x18\x02 \x01(\x01R\bcpuCores\x12!\n" +
+	"\fmemory_bytes\x18\x03 \x01(\x03R\vmemoryBytes\x125\n" +
+	"\x17tunnel_bytes_to_gateway\x18\x04 \x01(\x03R\x14tunnelBytesToGateway\x12/\n" +
+	"\x14tunnel_bytes_to_task\x18\x05 \x01(\x03R\x11tunnelBytesToTask\" \n" +
 	"\fHeartbeatAck\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\"\xdf\x01\n" +
 	"\x0eCapacityReport\x12(\n" +
@@ -1987,7 +2193,7 @@ func file_lazycake_v1_agent_proto_rawDescGZIP() []byte {
 	return file_lazycake_v1_agent_proto_rawDescData
 }
 
-var file_lazycake_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_lazycake_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_lazycake_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),       // 0: lazycake.v1.AgentMessage
 	(*BenchReport)(nil),        // 1: lazycake.v1.BenchReport
@@ -1998,54 +2204,58 @@ var file_lazycake_v1_agent_proto_goTypes = []any{
 	(*Offer)(nil),              // 6: lazycake.v1.Offer
 	(*RegisterAck)(nil),        // 7: lazycake.v1.RegisterAck
 	(*Heartbeat)(nil),          // 8: lazycake.v1.Heartbeat
-	(*HeartbeatAck)(nil),       // 9: lazycake.v1.HeartbeatAck
-	(*CapacityReport)(nil),     // 10: lazycake.v1.CapacityReport
-	(*CachedImage)(nil),        // 11: lazycake.v1.CachedImage
-	(*CacheDelta)(nil),         // 12: lazycake.v1.CacheDelta
-	(*Dispatch)(nil),           // 13: lazycake.v1.Dispatch
-	(*Limits)(nil),             // 14: lazycake.v1.Limits
-	(*TunnelTarget)(nil),       // 15: lazycake.v1.TunnelTarget
-	(*TaskAccepted)(nil),       // 16: lazycake.v1.TaskAccepted
-	(*TaskRejected)(nil),       // 17: lazycake.v1.TaskRejected
-	(*TaskStarted)(nil),        // 18: lazycake.v1.TaskStarted
-	(*TaskFinished)(nil),       // 19: lazycake.v1.TaskFinished
-	(*Cancel)(nil),             // 20: lazycake.v1.Cancel
-	(*LogBatch)(nil),           // 21: lazycake.v1.LogBatch
-	(*LogLine)(nil),            // 22: lazycake.v1.LogLine
-	nil,                        // 23: lazycake.v1.Dispatch.EnvEntry
+	(*UsageSample)(nil),        // 9: lazycake.v1.UsageSample
+	(*TaskUsage)(nil),          // 10: lazycake.v1.TaskUsage
+	(*HeartbeatAck)(nil),       // 11: lazycake.v1.HeartbeatAck
+	(*CapacityReport)(nil),     // 12: lazycake.v1.CapacityReport
+	(*CachedImage)(nil),        // 13: lazycake.v1.CachedImage
+	(*CacheDelta)(nil),         // 14: lazycake.v1.CacheDelta
+	(*Dispatch)(nil),           // 15: lazycake.v1.Dispatch
+	(*Limits)(nil),             // 16: lazycake.v1.Limits
+	(*TunnelTarget)(nil),       // 17: lazycake.v1.TunnelTarget
+	(*TaskAccepted)(nil),       // 18: lazycake.v1.TaskAccepted
+	(*TaskRejected)(nil),       // 19: lazycake.v1.TaskRejected
+	(*TaskStarted)(nil),        // 20: lazycake.v1.TaskStarted
+	(*TaskFinished)(nil),       // 21: lazycake.v1.TaskFinished
+	(*Cancel)(nil),             // 22: lazycake.v1.Cancel
+	(*LogBatch)(nil),           // 23: lazycake.v1.LogBatch
+	(*LogLine)(nil),            // 24: lazycake.v1.LogLine
+	nil,                        // 25: lazycake.v1.Dispatch.EnvEntry
 }
 var file_lazycake_v1_agent_proto_depIdxs = []int32{
 	4,  // 0: lazycake.v1.AgentMessage.register:type_name -> lazycake.v1.Register
 	8,  // 1: lazycake.v1.AgentMessage.heartbeat:type_name -> lazycake.v1.Heartbeat
-	10, // 2: lazycake.v1.AgentMessage.capacity:type_name -> lazycake.v1.CapacityReport
-	12, // 3: lazycake.v1.AgentMessage.cache_delta:type_name -> lazycake.v1.CacheDelta
-	16, // 4: lazycake.v1.AgentMessage.accepted:type_name -> lazycake.v1.TaskAccepted
-	17, // 5: lazycake.v1.AgentMessage.rejected:type_name -> lazycake.v1.TaskRejected
-	18, // 6: lazycake.v1.AgentMessage.started:type_name -> lazycake.v1.TaskStarted
-	19, // 7: lazycake.v1.AgentMessage.finished:type_name -> lazycake.v1.TaskFinished
-	21, // 8: lazycake.v1.AgentMessage.logs:type_name -> lazycake.v1.LogBatch
+	12, // 2: lazycake.v1.AgentMessage.capacity:type_name -> lazycake.v1.CapacityReport
+	14, // 3: lazycake.v1.AgentMessage.cache_delta:type_name -> lazycake.v1.CacheDelta
+	18, // 4: lazycake.v1.AgentMessage.accepted:type_name -> lazycake.v1.TaskAccepted
+	19, // 5: lazycake.v1.AgentMessage.rejected:type_name -> lazycake.v1.TaskRejected
+	20, // 6: lazycake.v1.AgentMessage.started:type_name -> lazycake.v1.TaskStarted
+	21, // 7: lazycake.v1.AgentMessage.finished:type_name -> lazycake.v1.TaskFinished
+	23, // 8: lazycake.v1.AgentMessage.logs:type_name -> lazycake.v1.LogBatch
 	1,  // 9: lazycake.v1.AgentMessage.bench_report:type_name -> lazycake.v1.BenchReport
 	7,  // 10: lazycake.v1.CoordinatorMessage.register_ack:type_name -> lazycake.v1.RegisterAck
-	9,  // 11: lazycake.v1.CoordinatorMessage.heartbeat_ack:type_name -> lazycake.v1.HeartbeatAck
-	13, // 12: lazycake.v1.CoordinatorMessage.dispatch:type_name -> lazycake.v1.Dispatch
-	20, // 13: lazycake.v1.CoordinatorMessage.cancel:type_name -> lazycake.v1.Cancel
+	11, // 11: lazycake.v1.CoordinatorMessage.heartbeat_ack:type_name -> lazycake.v1.HeartbeatAck
+	15, // 12: lazycake.v1.CoordinatorMessage.dispatch:type_name -> lazycake.v1.Dispatch
+	22, // 13: lazycake.v1.CoordinatorMessage.cancel:type_name -> lazycake.v1.Cancel
 	3,  // 14: lazycake.v1.CoordinatorMessage.shutdown:type_name -> lazycake.v1.Shutdown
 	5,  // 15: lazycake.v1.Register.caps:type_name -> lazycake.v1.Capabilities
 	6,  // 16: lazycake.v1.Register.offer:type_name -> lazycake.v1.Offer
-	11, // 17: lazycake.v1.Register.images:type_name -> lazycake.v1.CachedImage
-	6,  // 18: lazycake.v1.CapacityReport.offer:type_name -> lazycake.v1.Offer
-	11, // 19: lazycake.v1.CacheDelta.pulled:type_name -> lazycake.v1.CachedImage
-	23, // 20: lazycake.v1.Dispatch.env:type_name -> lazycake.v1.Dispatch.EnvEntry
-	14, // 21: lazycake.v1.Dispatch.limits:type_name -> lazycake.v1.Limits
-	15, // 22: lazycake.v1.Dispatch.targets:type_name -> lazycake.v1.TunnelTarget
-	22, // 23: lazycake.v1.LogBatch.lines:type_name -> lazycake.v1.LogLine
-	0,  // 24: lazycake.v1.AgentService.Connect:input_type -> lazycake.v1.AgentMessage
-	2,  // 25: lazycake.v1.AgentService.Connect:output_type -> lazycake.v1.CoordinatorMessage
-	25, // [25:26] is the sub-list for method output_type
-	24, // [24:25] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	13, // 17: lazycake.v1.Register.images:type_name -> lazycake.v1.CachedImage
+	9,  // 18: lazycake.v1.Heartbeat.usage:type_name -> lazycake.v1.UsageSample
+	10, // 19: lazycake.v1.UsageSample.tasks:type_name -> lazycake.v1.TaskUsage
+	6,  // 20: lazycake.v1.CapacityReport.offer:type_name -> lazycake.v1.Offer
+	13, // 21: lazycake.v1.CacheDelta.pulled:type_name -> lazycake.v1.CachedImage
+	25, // 22: lazycake.v1.Dispatch.env:type_name -> lazycake.v1.Dispatch.EnvEntry
+	16, // 23: lazycake.v1.Dispatch.limits:type_name -> lazycake.v1.Limits
+	17, // 24: lazycake.v1.Dispatch.targets:type_name -> lazycake.v1.TunnelTarget
+	24, // 25: lazycake.v1.LogBatch.lines:type_name -> lazycake.v1.LogLine
+	0,  // 26: lazycake.v1.AgentService.Connect:input_type -> lazycake.v1.AgentMessage
+	2,  // 27: lazycake.v1.AgentService.Connect:output_type -> lazycake.v1.CoordinatorMessage
+	27, // [27:28] is the sub-list for method output_type
+	26, // [26:27] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_lazycake_v1_agent_proto_init() }
@@ -2078,7 +2288,7 @@ func file_lazycake_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lazycake_v1_agent_proto_rawDesc), len(file_lazycake_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

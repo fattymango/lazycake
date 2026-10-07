@@ -179,9 +179,22 @@ func (s *Server) handleNodeTasks(w http.ResponseWriter, r *http.Request) {
 	if len(tasks) > providerNodeTasksLimit {
 		tasks = tasks[:providerNodeTasksLimit]
 	}
-	out := make([]taskView, len(tasks))
+	ids := make([]string, len(tasks))
 	for i, t := range tasks {
-		out[i] = toTaskView(t)
+		ids[i] = t.ID
+	}
+	summaries, err := s.Store.TaskUsageSummaries(r.Context(), ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading task usage")
+		return
+	}
+	out := make([]nodeTaskView, len(tasks))
+	for i, t := range tasks {
+		out[i] = nodeTaskView{taskView: toTaskView(t)}
+		if u, ok := summaries[t.ID]; ok {
+			out[i].Usage = &taskUsageView{CoreSeconds: u.CoreSeconds, PeakMemoryBytes: u.PeakMemoryBytes,
+				TunnelToGateway: u.TunnelToGateway, TunnelToTask: u.TunnelToTask}
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

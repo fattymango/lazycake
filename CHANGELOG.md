@@ -16,6 +16,9 @@ coordinator logs it at startup.
   30-day chart and its busiest tasks, and a task's Network card shows what it moved through each service. A gateway reports every 10 seconds while a connection
   is open, so a long database session shows up as it happens. Needs migration 017; update the gateway for the over-time numbers (older gateways still count,
   once per connection).
+- **Machine usage** (task 8.15): the machine page shows what the machine's tasks are using right now (CPU, memory, disk against what's on offer) and a 24-hour or 7-day
+  history; hovering the chart lists which task used what, offline periods show as gaps, and hovering a task row shows its CPU time, peak memory and tunnel traffic. Machine cards
+  get a CPU trend. Display only: it never affects billing or trust. Needs migration 018 and an updated agent.
 
 ## v0.2.0 — 2026-10-07
 

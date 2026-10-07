@@ -25,6 +25,21 @@ describe("fillBuckets", () => {
     expect(out.find((p) => p.at === 99 * H)?.values).toEqual({ a: 5, b: 2 });
   });
 
+  it("flags buckets with no data as gaps only when asked, and never flags real data", () => {
+    const real = { at: 98 * H, values: { a: 0 } }; // a real reading of zero is data, not a gap
+    const plain = fillBuckets([real], "hour", 3 * H, now);
+    expect(plain.some((p) => p.gap)).toBe(false);
+    const marked = fillBuckets([real], "hour", 3 * H, now, true);
+    expect(marked.find((p) => p.at === 98 * H)?.gap).toBeUndefined();
+    expect(marked.filter((p) => p.gap)).toHaveLength(marked.length - 1);
+  });
+
+  it("buckets by five minutes", () => {
+    const out = fillBuckets([], "5m", 20 * 60_000, 1_000_000_000);
+    expect(out).toHaveLength(4);
+    expect(out[1].at - out[0].at).toBe(300_000);
+  });
+
   it("ignores points outside the window", () => {
     const out = fillBuckets([{ at: 10 * H, values: { a: 9 } }], "hour", 3 * H, now);
     expect(out.reduce((n, p) => n + stackTotal(p), 0)).toBe(0);

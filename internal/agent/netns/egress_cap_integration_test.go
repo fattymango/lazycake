@@ -113,7 +113,7 @@ func TestEgressCap(t *testing.T) {
 		case exceeded <- struct{}{}:
 		default:
 		}
-	}, log)
+	}, &TunnelCounters{}, log)
 
 	conn, err := net.Dial("tcp", taskLn.Addr().String())
 	if err != nil {

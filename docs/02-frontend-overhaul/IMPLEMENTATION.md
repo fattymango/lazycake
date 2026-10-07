@@ -281,7 +281,7 @@ per-task numbers against a task whose traffic is known exactly (e.g. fetch a fil
 
 ### Task 8.15 — Machine usage: CPU, memory, disk and network over time, with per-task breakdown
 
-**Status: backlog, not started.** Suggested 2026-10-07 (the per-task hover added the same day). Order of the queued work: 8.12, 8.13,
+**Status: DONE 2026-10-07** (see "As built" at the end of this task). Suggested 2026-10-07 (the per-task hover added the same day). Order of the queued work: 8.12, 8.13,
 8.14, 8.15. 8.14 and 8.15 share their groundwork (time-bucketed tables, a rollup and pruning job, the chart components): build that once.
 
 **What to measure.**
@@ -318,6 +318,29 @@ e.g. 32). No new connection. Old agents keep working and the machine page says "
 **Verify:** a known workload (the benchmark task at 0.5 cores / 128 MB) shows ~0.5 cores and a memory curve that levels off; per-task attribution with
 two tasks on one machine (no leakage); an offline gap renders as a gap, not zeros; rollups match the raw averages; pruning keeps the per-task summary;
 an old agent shows the "update" message; heartbeat size with the cap hit; migration up/down.
+
+**As built (differences from the plan above, and why):**
+- **Transport as planned:** additive `UsageSample` (machine totals) and `TaskUsage` (one per running task, capped at 32) on the 15 s `Heartbeat`. The agent samples `/proc/stat`
+  and `/proc/meminfo` for the machine, `statfs` of its data directory for disk, and the container engine's stats (`Runtime.Stats`, memory net of reclaimable cache) per task.
+  Tunnel bytes per task are exact counters in the netns proxy (`TunnelCounters`). A usage read runs under a deadline of a third of the heartbeat interval so it can never delay
+  the heartbeat that keeps the lease alive. An old agent sends none and the page says to update it.
+- **Storage: no raw table and no hourly-for-a-year rollup.** Samples are folded straight into 5-minute buckets (sums plus a sample count; an average is sum / samples), kept
+  30 days by an hourly prune job (migration 018: `node_usage`, `node_task_usage`, `node_usage_latest`, `task_usage_totals`). The 7-day view aggregates those buckets by hour at
+  query time. This is the same trick as 8.14, needs no rollup job, and the data is small. The plan's "raw 48 h / hourly 1 y" can be added later if long history is wanted.
+- **Per-task shares are averaged over the machine's samples**, so a task that ran for a third of an hour counts for a third of it, and the bands add up to the machine's task total
+  (tested). A task is only recorded against a node that the tasks table says is running it, so an agent can't write usage for someone else's task.
+- **Permanent per-task summary:** core-seconds, peak memory, last tunnel counters. Core-seconds is CPU time summed at 15 s resolution, so it undercounts a little at the start and
+  end of a task (the first reading has no previous one to difference against).
+- **UI:** a Usage card on the machine page (live gauges "1.25 of 2 cores", then a stacked history, CPU / Memory / Disk, 24 h or 7 d, a dashed line at the capacity on offer, hover lists
+  each task and "Tasks 0.5 of 2 cores · machine 17% busy"); the biggest 8 tasks get a band and the rest are "Other tasks". **Offline periods are hatched gaps, not zeros.** Hovering a
+  row in the machine's task table shows that task's CPU time, peak memory and tunnel traffic. Each machine card on the overview has a 24 h CPU sparkline (it skips offline
+  periods rather than drawing zeros).
+- **Not done:** a separate tunnel-traffic-over-time chart per machine (tunnel bytes are shown per task in the row hover instead); per-task disk use; the customer-facing "usage
+  against your limits" chart.
+- **Verified:** a real agent in a container ran `lcbench` at 0.5 cores / 128 MB and the page showed 0.5 cores and ~119 MB, levelling off; three concurrent tasks (0.25 / 0.5 / 1 core)
+  attributed correctly with no leakage; the tunnel counters read exactly 273 B out / 15,000,615 B in for the 3 x 5 MB download; an offline period rendered as a gap. Browser checks
+  in `web/e2e/usage.mjs`.
+- **Needs an agent release:** a machine only reports usage once its agent is updated.
 
 ### Task 8.16 — Gateway (and agent) version indicator with a guided update
 

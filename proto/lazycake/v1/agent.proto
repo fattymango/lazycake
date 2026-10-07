@@ -93,6 +93,31 @@ message RegisterAck {
 message Heartbeat {
   int64 seq = 1;
   repeated string running_task_ids = 2;  // re-announce for adoption
+  // What this machine and its tasks are using right now. Display only: it never
+  // feeds billing or trust (the host controls the agent, so it could be faked).
+  // Absent from an agent built before usage was reported.
+  UsageSample usage = 3;
+}
+
+// UsageSample is one reading, taken when the heartbeat is sent. Machine figures are
+// totals only: nothing about the host's own processes is reported.
+message UsageSample {
+  int64  interval_ms          = 1;  // time since the previous sample (0 for the first)
+  double host_cpu_busy        = 2;  // fraction of all the host's CPU time in use, 0..1
+  int32  host_cpu_count       = 3;
+  int64  host_mem_total_bytes = 4;
+  int64  host_mem_used_bytes  = 5;  // total minus what the kernel counts as available
+  int64  disk_total_bytes     = 6;  // the filesystem holding the agent's data directory
+  int64  disk_used_bytes      = 7;
+  repeated TaskUsage tasks    = 8;  // one per running task, capped
+}
+
+message TaskUsage {
+  string task_id                = 1;
+  double cpu_cores              = 2;  // average cores in use over the interval
+  int64  memory_bytes           = 3;
+  int64  tunnel_bytes_to_gateway = 4; // cumulative since the task started
+  int64  tunnel_bytes_to_task    = 5;
 }
 
 message HeartbeatAck { int64 seq = 1; }

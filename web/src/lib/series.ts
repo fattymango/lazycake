@@ -5,17 +5,21 @@ export interface StackPoint {
   at: number;
   /** Value per series key; a key that is absent means zero. */
   values: Record<string, number>;
+  /** No data was received for this period (e.g. the machine was offline): drawn as a gap, not as zero. */
+  gap?: boolean;
 }
 
-const STEP_MS = { hour: 3_600_000, day: 86_400_000 } as const;
+const STEP_MS = { "5m": 300_000, hour: 3_600_000, day: 86_400_000 } as const;
 export type Step = keyof typeof STEP_MS;
 
 /**
  * The server only returns buckets that had traffic. A chart that drew just those
  * would squash a quiet week into a few bars, so fill every bucket of the window
- * (oldest first, ending with the bucket that contains `now`) with zeros.
+ * (oldest first, ending with the bucket that contains `now`) with zeros. With `markGaps`
+ * the filled buckets are flagged as having no data, for charts where "nothing reported"
+ * (the machine was offline) differs from "zero".
  */
-export function fillBuckets(points: StackPoint[], step: Step, windowMs: number, now = Date.now()): StackPoint[] {
+export function fillBuckets(points: StackPoint[], step: Step, windowMs: number, now = Date.now(), markGaps = false): StackPoint[] {
   const ms = STEP_MS[step];
   const last = Math.floor(now / ms) * ms;
   const first = Math.floor((now - windowMs) / ms) * ms + ms;
@@ -30,7 +34,7 @@ export function fillBuckets(points: StackPoint[], step: Step, windowMs: number, 
     }
   }
   const out: StackPoint[] = [];
-  for (let t = first; t <= last; t += ms) out.push(byBucket.get(t) ?? { at: t, values: {} });
+  for (let t = first; t <= last; t += ms) out.push(byBucket.get(t) ?? { at: t, values: {}, ...(markGaps ? { gap: true } : {}) });
   return out;
 }
 
