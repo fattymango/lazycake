@@ -1,8 +1,32 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle2, KeyRound, Loader2, ServerCog, ShieldCheck, Terminal } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Cpu,
+  Gauge,
+  HardDrive,
+  KeyRound,
+  Loader2,
+  MemoryStick,
+  ServerCog,
+  ShieldCheck,
+  Terminal,
+} from "lucide-react";
 import { apiPost, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import {
+  CAPACITY_COMMAND,
+  OFFER_BOUNDS,
+  defaultOffer,
+  maxOffer,
+  offerProblems,
+  offerRequest,
+  parseCapacity,
+  type MachineCaps,
+  type OfferField,
+  type OfferInput,
+} from "@/lib/offer";
 import { useLiveEvents } from "@/lib/live";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import type { InstallToken } from "@/lib/types";
@@ -10,6 +34,7 @@ import { Alert } from "@/ui/Alert";
 import { Button } from "@/ui/Button";
 import { Card, CardBody } from "@/ui/Card";
 import { CodeBlock } from "@/ui/CodeBlock";
+import { Field, Input, Textarea } from "@/ui/Input";
 import { PageHeader } from "@/ui/PageHeader";
 
 function Step({ n, title, done, last, children }: { n: number; title: string; done?: boolean; last?: boolean; children: React.ReactNode }) {
@@ -32,6 +57,90 @@ function Step({ n, title, done, last, children }: { n: number; title: string; do
   );
 }
 
+const OFFER_ROWS: { field: OfferField; label: string; unit: string; icon: typeof Cpu; step: number; hint: string }[] = [
+  { field: "cores", label: "CPU", unit: "cores", icon: Cpu, step: 0.25, hint: "CPU cores customers' tasks can use at the same time." },
+  { field: "memoryGB", label: "Memory", unit: "GB", icon: MemoryStick, step: 0.25, hint: "RAM shared by all tasks running here." },
+  { field: "storageGB", label: "Storage", unit: "GB", icon: HardDrive, step: 1, hint: "Disk for task scratch space and cached images." },
+  {
+    field: "networkMbps",
+    label: "Network",
+    unit: "Mbps",
+    icon: Gauge,
+    step: 10,
+    hint: "Bandwidth for task traffic through gateways, all tasks together.",
+  },
+];
+
+function OfferControls({
+  offer,
+  caps,
+  problems,
+  onChange,
+}: {
+  offer: OfferInput;
+  caps: MachineCaps | null;
+  problems: Partial<Record<OfferField, string>>;
+  onChange: (next: OfferInput) => void;
+}) {
+  const max = maxOffer(caps);
+  return (
+    <ul className="space-y-5">
+      {OFFER_ROWS.map(({ field, label, unit, icon: Icon, step, hint }) => {
+        const bound = OFFER_BOUNDS[field];
+        const known = field === "networkMbps" ? caps?.networkMbps != null : !!caps;
+        const top = Math.floor(max[field] * 100) / 100;
+        const value = offer[field];
+        const error = problems[field];
+        return (
+          <li key={field}>
+            <Field
+              label={
+                <span className="flex items-center gap-2">
+                  <Icon className="size-3.5 text-muted" aria-hidden />
+                  {label}
+                </span>
+              }
+              hint={
+                known
+                  ? `${hint} This machine has ${field === "networkMbps" ? `a ${top} Mbps link` : `${top} ${unit}${field === "storageGB" ? " free" : ""}`}.`
+                  : hint
+              }
+              error={error}
+            >
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  aria-label={`${label} slider`}
+                  min={bound.min}
+                  max={known ? top : Math.min(bound.max, field === "cores" ? 64 : field === "networkMbps" ? 10_000 : 1024)}
+                  step={step}
+                  value={Number.isFinite(value) ? Math.min(value, known ? top : bound.max) : bound.min}
+                  onChange={(e) => onChange({ ...offer, [field]: Number(e.target.value) })}
+                  className="h-1.5 min-w-0 flex-1 cursor-pointer accent-[rgb(var(--accent))]"
+                />
+                <div className="flex w-36 shrink-0 items-center gap-2">
+                  <Input
+                    aria-label={`${label} to lend`}
+                    inputMode="decimal"
+                    type="number"
+                    min={bound.min}
+                    step={step}
+                    value={Number.isFinite(value) ? value : ""}
+                    onChange={(e) => onChange({ ...offer, [field]: e.target.value === "" ? Number.NaN : Number(e.target.value) })}
+                    aria-invalid={!!error}
+                    mono
+                  />
+                  <span className="w-10 shrink-0 text-xs text-muted">{unit}</span>
+                </div>
+              </div>
+            </Field>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function AddMachine() {
   usePageTitle("Add a machine");
   const [result, setResult] = useState<InstallToken | null>(null);
@@ -39,6 +148,25 @@ export function AddMachine() {
   const [error, setError] = useState<string | null>(null);
   const [connectedId, setConnectedId] = useState<string | null>(null);
   const [waitedLong, setWaitedLong] = useState(false);
+  const [capsText, setCapsText] = useState("");
+  const caps = parseCapacity(capsText);
+  const [offer, setOffer] = useState<OfferInput>(defaultOffer(null));
+  const problems = offerProblems(offer, caps);
+  const valid = Object.keys(problems).length === 0;
+
+  // Telling us what the machine has pulls the defaults, and anything already typed, down to what it can give.
+  function onCapsChange(text: string) {
+    setCapsText(text);
+    const next = parseCapacity(text);
+    if (!next) return;
+    const max = maxOffer(next);
+    setOffer((cur) => ({
+      cores: Math.min(cur.cores, Math.floor(max.cores * 100) / 100),
+      memoryGB: Math.min(cur.memoryGB, Math.floor(max.memoryGB * 100) / 100),
+      storageGB: Math.min(cur.storageGB, Math.floor(max.storageGB * 100) / 100),
+      networkMbps: Math.min(cur.networkMbps, Math.floor(max.networkMbps)),
+    }));
+  }
 
   // An agent runs inside a container, where 127.0.0.1 is the container itself,
   // so a command pointing at a loopback address can never connect from another
@@ -64,7 +192,7 @@ export function AddMachine() {
     setError(null);
     setConnectedId(null);
     try {
-      setResult(await apiPost<InstallToken>("/api/portal/provider/nodes/install-token"));
+      setResult(await apiPost<InstallToken>("/api/portal/provider/nodes/install-token", offerRequest(offer)));
     } catch (err) {
       setError(errorMessage(err, "Couldn't create an install token"));
     } finally {
@@ -99,17 +227,58 @@ export function AddMachine() {
                 </p>
               </Step>
 
-              <Step n={2} title="Create an install command" done={!!result}>
+              <Step n={2} title="Choose what to lend" done={!!result}>
+                <p className="text-sm leading-6 text-muted">
+                  You decide how much of this machine customers can use. The agent only ever uses what you set here, and it{" "}
+                  <span className="font-medium text-fg">refuses to start</span> if you offer more than the machine really has.
+                </p>
+                <div className="space-y-2 rounded-lg border border-border bg-raised/40 p-3">
+                  <p className="text-xs font-medium text-fg">See what this machine has (optional, recommended)</p>
+                  <p className="text-xs leading-5 text-muted">
+                    Run this on the machine, then paste its one line of output. The limits below will match the hardware.
+                  </p>
+                  <CodeBlock label="Shell" code={CAPACITY_COMMAND} wrap />
+                  <Textarea
+                    aria-label="Output of the capacity command"
+                    value={capsText}
+                    onChange={(e) => onCapsChange(e.target.value)}
+                    placeholder="cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000"
+                    className="min-h-[52px]"
+                    mono
+                  />
+                  {capsText.trim() !== "" && !caps && (
+                    <p className="text-xs text-danger">That doesn't look like the command's output. It should start with "cores=".</p>
+                  )}
+                  {caps && (
+                    <p className="text-xs text-success">
+                      Got it: {caps.cores} cores, {Math.floor((caps.memoryMB / 1024) * 100) / 100} GB memory,{" "}
+                      {Math.floor((caps.diskMB / 1024) * 100) / 100} GB free
+                      {caps.networkMbps ? `, ${caps.networkMbps} Mbps link` : ", network speed not reported (your limit is still enforced)"}
+                      .
+                    </p>
+                  )}
+                </div>
+                <OfferControls offer={offer} caps={caps} problems={problems} onChange={setOffer} />
+                {!caps && (
+                  <p className="text-xs leading-5 text-muted">
+                    Without the check above we can't know the machine's limits here, so the agent does that check itself when it starts.
+                  </p>
+                )}
+              </Step>
+
+              <Step n={3} title="Create an install command" done={!!result}>
                 {error && <Alert tone="danger">{error}</Alert>}
                 {!result ? (
                   <>
                     <p className="text-sm leading-6 text-muted">
-                      This mints a token that lets one agent register as yours, and gives you the command to start it.
+                      This mints a token that lets one agent register as yours, and gives you the command to start it with the limits you
+                      chose.
                     </p>
-                    <Button onClick={generate} loading={busy}>
+                    <Button onClick={generate} loading={busy} disabled={!valid}>
                       <KeyRound />
                       Generate install command
                     </Button>
+                    {!valid && <p className="text-xs text-danger">Fix the highlighted limits above first.</p>}
                   </>
                 ) : (
                   <>
@@ -127,17 +296,18 @@ export function AddMachine() {
                     )}
                     <CodeBlock label="Run on your machine" code={result.install_command} />
                     <p className="text-xs leading-5 text-muted">
-                      By default it offers 2 CPU cores, 2 GB of RAM and 8 GB of disk. Change the three{" "}
-                      <span className="font-mono">LAZYCAKE_OFFER_*</span> values in the command to offer more or less.
+                      It offers {offer.cores} CPU cores, {offer.memoryGB} GB of memory, {offer.storageGB} GB of storage and{" "}
+                      {offer.networkMbps} Mbps of network. If a value is more than the machine has, the agent stops with a message saying
+                      which one to lower (see <span className="font-mono">podman logs lazycake-agent</span>).
                     </p>
-                    <Button variant="ghost" size="sm" onClick={generate} loading={busy}>
+                    <Button variant="ghost" size="sm" onClick={generate} loading={busy} disabled={!valid}>
                       Generate a new one
                     </Button>
                   </>
                 )}
               </Step>
 
-              <Step n={3} title="Wait for it to connect" done={!!connectedId} last>
+              <Step n={4} title="Wait for it to connect" done={!!connectedId} last>
                 {connectedId ? (
                   <>
                     <Alert tone="success" title="Your machine is connected">

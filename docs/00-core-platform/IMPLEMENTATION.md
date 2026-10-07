@@ -596,7 +596,7 @@ Implement once against `docker/docker/client`, pointed at whichever socket is av
 
 ### Task 1.7 — Capacity ledger and admission control
 
-`internal/agent/capacity`. Tracks offer, allocated and free. `Admit(spec) error` returns an error if the task does not fit. Clamp the offer: never more than 75% of physical cores, never leave less than 2GB RAM or 10GB disk free for the OS. Report capacity to the coordinator on every change and at least every 30s.
+`internal/agent/capacity`. Tracks offer, allocated and free. `Admit(spec) error` returns an error if the task does not fit. Clamp the offer: never more than 75% of physical cores, never leave less than 2GB RAM or 10GB disk free for the OS. *(Superseded 2026-10-07 by task 8.17 of phase 8: an offer bigger than the machine is rejected, not clamped.)* Report capacity to the coordinator on every change and at least every 30s.
 
 **Done when:** dispatching two tasks that individually fit but jointly exceed memory causes the second to be rejected with `TaskRejected`.
 

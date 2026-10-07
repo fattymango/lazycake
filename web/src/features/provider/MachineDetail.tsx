@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Cpu, HardDrive, MemoryStick, Server, Trash2 } from "lucide-react";
+import { Cpu, Gauge, HardDrive, MemoryStick, Server, Trash2 } from "lucide-react";
 import { apiDelete, apiGet, errorMessage } from "@/lib/api";
 import { bytes, cpu, dateTime, duration, memory, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
@@ -182,6 +182,7 @@ export function MachineDetail() {
                 { icon: Cpu, label: "CPU", value: cpu(n.offer_cores) },
                 { icon: MemoryStick, label: "Memory", value: memory(n.offer_memory_mb) },
                 { icon: HardDrive, label: "Disk", value: memory(n.offer_disk_mb) },
+                { icon: Gauge, label: "Network", value: n.offer_network_mbps > 0 ? `${n.offer_network_mbps} Mbps` : "No limit set" },
                 { icon: Server, label: "Architecture", value: <span className="font-mono text-[0.8125rem]">{n.arch}</span> },
               ].map((r) => (
                 <li key={r.label} className="flex items-center justify-between gap-3">

@@ -25,6 +25,8 @@ type Config struct {
 	OfferMemoryMB int
 	// OfferDiskMB is the amount of disk to rent out. Required, > 0.
 	OfferDiskMB int
+	// OfferNetworkMbps is the tunnel bandwidth to rent out, in Mbit/s. Optional: 0 means no limit.
+	OfferNetworkMbps int
 	// DataDir holds per-task scratch directories and the image cache.
 	DataDir string
 	// LcinitPath is the host path to the lcinit binary (cmd/lcinit, task
@@ -44,6 +46,9 @@ type Config struct {
 	Dev bool
 }
 
+// DefaultDataDir is where the agent keeps scratch directories and its image cache unless told otherwise.
+const DefaultDataDir = "/var/lib/lazycake-agent"
+
 // Load reads configuration from the environment and validates it.
 func Load(getenv func(string) string) (Config, error) {
 	if getenv == nil {
@@ -54,7 +59,7 @@ func Load(getenv func(string) string) (Config, error) {
 		CoordinatorAddr: getenv("LAZYCAKE_COORDINATOR_ADDR"),
 		RelayAddr:       getenv("LAZYCAKE_RELAY_ADDR"),
 		Token:           getenv("LAZYCAKE_TOKEN"),
-		DataDir:         orDefault(getenv("LAZYCAKE_DATA_DIR"), "/var/lib/lazycake-agent"),
+		DataDir:         orDefault(getenv("LAZYCAKE_DATA_DIR"), DefaultDataDir),
 		LcinitPath:      getenv("LAZYCAKE_LCINIT_PATH"),
 		LcinitHostDir:   getenv("LAZYCAKE_LCINIT_HOST_DIR"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
@@ -69,6 +74,13 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.OfferDiskMB, err = atoi(getenv("LAZYCAKE_OFFER_DISK_MB"), 0); err != nil {
 		return Config{}, fmt.Errorf("LAZYCAKE_OFFER_DISK_MB: %w", err)
+	}
+
+	if cfg.OfferNetworkMbps, err = atoi(getenv("LAZYCAKE_OFFER_NETWORK_MBPS"), 0); err != nil {
+		return Config{}, fmt.Errorf("LAZYCAKE_OFFER_NETWORK_MBPS: %w", err)
+	}
+	if cfg.OfferNetworkMbps < 0 {
+		return Config{}, fmt.Errorf("LAZYCAKE_OFFER_NETWORK_MBPS must be >= 0")
 	}
 
 	if cfg.CoordinatorAddr == "" {
@@ -139,6 +151,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Float64("offer_cores", c.OfferCores),
 		slog.Int("offer_memory_mb", c.OfferMemoryMB),
 		slog.Int("offer_disk_mb", c.OfferDiskMB),
+		slog.Int("offer_network_mbps", c.OfferNetworkMbps),
 		slog.String("data_dir", c.DataDir),
 		slog.String("lcinit_path", c.LcinitPath),
 		slog.String("lcinit_host_dir", c.LcinitHostDir),

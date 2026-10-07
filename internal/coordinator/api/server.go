@@ -247,9 +247,10 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 			Runtime:       caps.GetRuntime(),
 			CgroupVersion: caps.GetCgroupVersion(),
 		},
-		OfferCores:    offer.GetCores(),
-		OfferMemoryMB: int(offer.GetMemoryMb()),
-		OfferDiskMB:   int(offer.GetDiskMb()),
+		OfferCores:       offer.GetCores(),
+		OfferMemoryMB:    int(offer.GetMemoryMb()),
+		OfferDiskMB:      int(offer.GetDiskMb()),
+		OfferNetworkMbps: int(offer.GetNetworkMbps()),
 	}
 	if err := s.Store.UpsertNode(ctx, n); err != nil {
 		return "", "", false, fmt.Errorf("upserting node: %w", err)
@@ -352,7 +353,7 @@ func (s *Server) handleHeartbeat(ctx context.Context, nodeID string, hb *lazycak
 
 func (s *Server) handleCapacity(ctx context.Context, nodeID, accountID string, cap *lazycakev1.CapacityReport) error {
 	if offer := cap.GetOffer(); offer != nil {
-		if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb())); err != nil {
+		if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb()), int(offer.GetNetworkMbps())); err != nil {
 			return fmt.Errorf("setting node offer: %w", err)
 		}
 	}

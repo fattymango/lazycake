@@ -124,8 +124,8 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO nodes (id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
-			offer_cores, offer_memory_mb, offer_disk_mb, connected)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+			offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, connected)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
 		ON CONFLICT (id) DO UPDATE SET
 			instance_id = EXCLUDED.instance_id,
 			hostname = EXCLUDED.hostname,
@@ -135,9 +135,10 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 			offer_cores = EXCLUDED.offer_cores,
 			offer_memory_mb = EXCLUDED.offer_memory_mb,
 			offer_disk_mb = EXCLUDED.offer_disk_mb,
+			offer_network_mbps = EXCLUDED.offer_network_mbps,
 			connected = true`,
 		n.ID, n.AccountID, nullIfEmpty(n.InstanceID), n.Hostname, n.Arch, orEmpty(n.CPUFlags), caps,
-		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB)
+		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB, n.OfferNetworkMbps)
 	if err != nil {
 		return fmt.Errorf("upserting node: %w", err)
 	}
@@ -145,7 +146,7 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 }
 
 const nodeColumns = `id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
-	offer_cores, offer_memory_mb, offer_disk_mb, bench_score, trust_score,
+	offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, bench_score, trust_score,
 	connected, last_heartbeat_at, created_at`
 
 func (s *PostgresStore) GetNode(ctx context.Context, id string) (Node, error) {
@@ -219,7 +220,7 @@ func scanNode(row rowScanner) (Node, error) {
 	var capsRaw []byte
 	var instanceID *string
 	err := row.Scan(&n.ID, &n.AccountID, &instanceID, &n.Hostname, &n.Arch, &n.CPUFlags, &capsRaw,
-		&n.OfferCores, &n.OfferMemoryMB, &n.OfferDiskMB, &n.BenchScore, &n.TrustScore,
+		&n.OfferCores, &n.OfferMemoryMB, &n.OfferDiskMB, &n.OfferNetworkMbps, &n.BenchScore, &n.TrustScore,
 		&n.Connected, &n.LastHeartbeatAt, &n.CreatedAt)
 	if err != nil {
 		return Node{}, err
@@ -272,10 +273,10 @@ func (s *PostgresStore) RecordHeartbeat(ctx context.Context, id string, at time.
 	return nil
 }
 
-func (s *PostgresStore) SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB int) error {
+func (s *PostgresStore) SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB, networkMbps int) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE nodes SET offer_cores = $2, offer_memory_mb = $3, offer_disk_mb = $4 WHERE id = $1`,
-		id, cores, memoryMB, diskMB)
+		`UPDATE nodes SET offer_cores = $2, offer_memory_mb = $3, offer_disk_mb = $4, offer_network_mbps = $5 WHERE id = $1`,
+		id, cores, memoryMB, diskMB, networkMbps)
 	if err != nil {
 		return fmt.Errorf("setting node offer: %w", err)
 	}

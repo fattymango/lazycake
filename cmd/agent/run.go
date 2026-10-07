@@ -21,6 +21,7 @@ import (
 	"github.com/mkassab215/lazycake/internal/agent/conn"
 	lcexec "github.com/mkassab215/lazycake/internal/agent/exec"
 	"github.com/mkassab215/lazycake/internal/agent/lease"
+	"github.com/mkassab215/lazycake/internal/agent/netns"
 	"github.com/mkassab215/lazycake/internal/agent/probe"
 	"github.com/mkassab215/lazycake/internal/agent/reconcile"
 	lcruntime "github.com/mkassab215/lazycake/internal/agent/runtime"
@@ -47,6 +48,18 @@ func run() error {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
+	// Refuse an offer bigger than this machine before doing anything else. It is never shrunk to fit:
+	// the provider asked for more than exists, so they get an error and the agent does not start.
+	physical, err := capacity.Physical(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("reading physical host capacity: %w", err)
+	}
+	offer := capacity.Resources{Cores: cfg.OfferCores, MemoryMB: cfg.OfferMemoryMB, DiskMB: cfg.OfferDiskMB, NetworkMbps: float64(cfg.OfferNetworkMbps)}
+	if err := capacity.ValidateOffer(physical, offer); err != nil {
+		return err
+	}
+	log.Info("offer accepted", "this_machine", physical, "offer", offer)
+
 	probeCtx, cancelProbe := context.WithTimeout(ctx, 30*time.Second)
 	report, err := probe.Run(probeCtx, probe.DefaultOptions())
 	cancelProbe()
@@ -68,14 +81,6 @@ func run() error {
 	}
 	defer rt.Close()
 
-	physical, err := capacity.Physical(cfg.DataDir)
-	if err != nil {
-		return fmt.Errorf("reading physical host capacity: %w", err)
-	}
-	offer := capacity.ClampOffer(physical, capacity.Resources{
-		Cores: cfg.OfferCores, MemoryMB: cfg.OfferMemoryMB, DiskMB: cfg.OfferDiskMB,
-	})
-	log.Info("offer clamped against physical capacity", "physical", physical, "requested", cfg.OfferCores, "clamped", offer)
 	ledger := capacity.NewLedger(offer)
 
 	clientConn, err := grpc.NewClient(cfg.CoordinatorAddr,
@@ -107,9 +112,10 @@ func run() error {
 			BootID:     bootID,
 			Caps:       report.Capabilities("podman"),
 			Offer: &lazycakev1.Offer{
-				Cores:    offer.Cores,
-				MemoryMb: int32(offer.MemoryMB),
-				DiskMb:   int32(offer.DiskMB),
+				NetworkMbps: int32(offer.NetworkMbps),
+				Cores:       offer.Cores,
+				MemoryMb:    int32(offer.MemoryMB),
+				DiskMb:      int32(offer.DiskMB),
 			},
 		},
 		Log: log,
@@ -143,6 +149,8 @@ func run() error {
 		Token:        cfg.Token,
 		AgentKeypair: tunnelKeypair,
 		LcinitPath:   lcinitPath,
+		// The offered network bandwidth, enforced on every task's tunnel traffic together.
+		Bandwidth: netns.NewBandwidthLimiter(cfg.OfferNetworkMbps),
 	}
 	benchTrigger := make(chan struct{}, 1)
 	usageSampler := &usage.Sampler{

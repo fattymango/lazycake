@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/mkassab215/lazycake/internal/agent/capacity"
 	"github.com/mkassab215/lazycake/internal/agent/netns"
 	"github.com/mkassab215/lazycake/internal/agent/runtime"
@@ -59,6 +61,9 @@ type Executor struct {
 	// (internal/agent/exec's own runCtx deadline) and task 3.5's
 	// systemd-slice cleanup.
 	LcinitPath string
+
+	// Bandwidth limits all tunnel traffic on this agent to the offered network bandwidth; nil is no limit.
+	Bandwidth *rate.Limiter
 
 	mu      sync.Mutex
 	active  map[string]*activeTask              // task_id -> running container
@@ -392,7 +397,7 @@ func (e *Executor) startTunnel(ctx context.Context, containerID string, d *lazyc
 		Targets: targets, AgentKeypair: e.AgentKeypair,
 		RelayAddr: e.RelayAddr, Token: e.Token,
 		EgressCapBytes: int64(d.GetLimits().GetEgressMb()) << 20,
-		Runtime:        e.Runtime, Log: e.Log,
+		Runtime:        e.Runtime, Log: e.Log, Bandwidth: e.Bandwidth,
 		OnEgressExceeded: func() {
 			e.Log.Warn("egress cap exceeded, stopping task", "task_id", d.GetTaskId())
 			_ = e.Runtime.Stop(context.Background(), containerID, 5*time.Second)

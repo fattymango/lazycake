@@ -150,6 +150,8 @@ export interface Node {
   offer_cores: number;
   offer_memory_mb: number;
   offer_disk_mb: number;
+  /** Tunnel bandwidth on offer in Mbit/s; 0 when no limit was set. */
+  offer_network_mbps: number;
   trust_score: number;
   last_heartbeat_at_ms?: number;
   created_at_ms: number;

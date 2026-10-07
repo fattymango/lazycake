@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/mkassab215/lazycake/internal/agent/runtime"
 	"github.com/mkassab215/lazycake/internal/tunnel/noise"
 	"github.com/mkassab215/lazycake/internal/tunnel/quic"
@@ -71,6 +73,10 @@ type Proxy struct {
 	// binary - which does not understand SubcommandName - point this at a
 	// freshly built agent binary instead.
 	ExecutablePath string
+
+	// Bandwidth, if set, limits all tunnel traffic (both directions) to the machine's offered network
+	// bandwidth. It is shared by every task's proxy on the agent, so the limit is on the machine, not per task.
+	Bandwidth *rate.Limiter
 
 	// Counters is filled in while the proxy serves; read it with Traffic.
 	Counters TunnelCounters
@@ -201,7 +207,7 @@ func (p *Proxy) Setup(ctx context.Context) error {
 
 	serveCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
-	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, &p.Counters, p.Log)
+	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, &p.Counters, p.Bandwidth, p.Log)
 
 	// Best-effort: lcinit polls for this file (--wait-file, wired up by
 	// executor.go's wrapWithLcinit) before starting the task's actual

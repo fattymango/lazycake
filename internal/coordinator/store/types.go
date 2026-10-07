@@ -80,20 +80,21 @@ type Node struct {
 	// how a reconnecting agent is recognised as the same node rather than
 	// getting a brand new node_id - and with it a fresh, empty set of
 	// assigned tasks - every time (IMPLEMENTATION.md task 3.3).
-	InstanceID      string
-	AccountID       string
-	Hostname        string
-	Arch            string
-	CPUFlags        []string
-	Capabilities    Capabilities
-	OfferCores      float64
-	OfferMemoryMB   int
-	OfferDiskMB     int
-	BenchScore      *float64
-	TrustScore      float64
-	Connected       bool
-	LastHeartbeatAt *time.Time
-	CreatedAt       time.Time
+	InstanceID       string
+	AccountID        string
+	Hostname         string
+	Arch             string
+	CPUFlags         []string
+	Capabilities     Capabilities
+	OfferCores       float64
+	OfferMemoryMB    int
+	OfferDiskMB      int
+	OfferNetworkMbps int
+	BenchScore       *float64
+	TrustScore       float64
+	Connected        bool
+	LastHeartbeatAt  *time.Time
+	CreatedAt        time.Time
 }
 
 // Limits mirrors the task descriptor's "limits" object in PLAN.md.

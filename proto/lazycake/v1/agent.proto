@@ -81,6 +81,9 @@ message Offer {
   int32 disk_mb   = 3;
   int64 bandwidth_mb_month = 4;
   int32 image_cache_mb = 5;
+  // Tunnel bandwidth on offer in Mbit/s, enforced by the agent as a rate limit on all its tunnel
+  // traffic; 0 means no limit was set.
+  int32 network_mbps = 6;
 }
 
 message RegisterAck {

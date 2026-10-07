@@ -3,6 +3,16 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.2 — 2026-10-07
+
+### Added
+- **Choose what to lend when adding a machine**: CPU, memory, storage and network, with the limits following what the machine really has (run `agent capacity` on it and paste the line). The install
+  command carries your choice. Network is a new offer and is enforced: all task traffic through the machine shares the bandwidth you set.
+
+### Changed
+- **The agent rejects an offer bigger than the machine instead of silently shrinking it.** It refuses to start and says which setting to lower. The old built-in headroom (75% of cores, 2 GB RAM, 10 GB disk)
+  is gone: leaving some for yourself is now your choice. Needs migration 022 and the updated agent.
+
 ## v0.3.1 — 2026-10-07
 
 ### Changed

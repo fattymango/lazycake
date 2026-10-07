@@ -2,7 +2,11 @@ package portalapi
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/mkassab215/lazycake/internal/coordinator/auth"
 	"github.com/mkassab215/lazycake/internal/coordinator/store"
@@ -67,6 +71,7 @@ type nodeView struct {
 	OfferCores        float64 `json:"offer_cores"`
 	OfferMemoryMB     int     `json:"offer_memory_mb"`
 	OfferDiskMB       int     `json:"offer_disk_mb"`
+	OfferNetworkMbps  int     `json:"offer_network_mbps"`
 	TrustScore        float64 `json:"trust_score"`
 	LastHeartbeatAtMS int64   `json:"last_heartbeat_at_ms,omitempty"`
 	CreatedAtMS       int64   `json:"created_at_ms"`
@@ -75,7 +80,7 @@ type nodeView struct {
 func toNodeView(n store.Node) nodeView {
 	nv := nodeView{
 		ID: n.ID, Hostname: n.Hostname, Arch: n.Arch, Connected: n.Connected,
-		OfferCores: n.OfferCores, OfferMemoryMB: n.OfferMemoryMB, OfferDiskMB: n.OfferDiskMB,
+		OfferCores: n.OfferCores, OfferMemoryMB: n.OfferMemoryMB, OfferDiskMB: n.OfferDiskMB, OfferNetworkMbps: n.OfferNetworkMbps,
 		TrustScore: n.TrustScore, CreatedAtMS: n.CreatedAt.UnixMilli(),
 	}
 	if n.LastHeartbeatAt != nil {
@@ -199,6 +204,42 @@ func (s *Server) handleNodeTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// machineOffer is what a provider chooses to lend. The coordinator can't see the machine yet, so it only
+// rejects nonsense; the agent itself refuses anything bigger than the machine really has.
+type machineOffer struct {
+	Cores       float64 `json:"cores"`
+	MemoryMB    int     `json:"memory_mb"`
+	DiskMB      int     `json:"disk_mb"`
+	NetworkMbps int     `json:"network_mbps"`
+}
+
+// Bounds for what a provider may type: generous enough for a real server, small enough to catch a typo.
+const (
+	minOfferCores, maxOfferCores     = 0.25, 1024
+	minOfferMemoryMB, maxOfferMemory = 256, 16 * 1024 * 1024
+	minOfferDiskMB, maxOfferDisk     = 1024, 1024 * 1024 * 1024
+	minOfferMbps, maxOfferMbps       = 1, 100_000
+)
+
+func defaultMachineOffer() machineOffer {
+	return machineOffer{Cores: 2, MemoryMB: 2048, DiskMB: 8192, NetworkMbps: 100}
+}
+
+// validate returns a sentence for the first value that is out of range, or "".
+func (o machineOffer) validate() string {
+	switch {
+	case !(o.Cores >= minOfferCores && o.Cores <= maxOfferCores):
+		return fmt.Sprintf("cores must be between %g and %g", minOfferCores, float64(maxOfferCores))
+	case o.MemoryMB < minOfferMemoryMB || o.MemoryMB > maxOfferMemory:
+		return fmt.Sprintf("memory must be between %d MB and %d MB", minOfferMemoryMB, maxOfferMemory)
+	case o.DiskMB < minOfferDiskMB || o.DiskMB > maxOfferDisk:
+		return fmt.Sprintf("storage must be between %d MB and %d MB", minOfferDiskMB, maxOfferDisk)
+	case o.NetworkMbps < minOfferMbps || o.NetworkMbps > maxOfferMbps:
+		return fmt.Sprintf("network must be between %d and %d Mbps", minOfferMbps, maxOfferMbps)
+	}
+	return ""
+}
+
 type installTokenResponse struct {
 	Token          string `json:"token"`
 	InstallCommand string `json:"install_command"`
@@ -209,6 +250,18 @@ type installTokenResponse struct {
 // token, shown once, same contract as CreateGateway's install_token.
 func (s *Server) handleInstallToken(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromContext(r.Context())
+	// An optional body chooses what to lend; without one the defaults apply (older clients send none).
+	offer := defaultMachineOffer()
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&offer); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, "the offer must be JSON with cores, memory_mb, disk_mb and network_mbps")
+			return
+		}
+	}
+	if msg := offer.validate(); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	token, err := newSessionID() // 32 random bytes, hex-encoded - same shape as api.randomToken, no need for a second generator
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "generating install token")
@@ -222,22 +275,9 @@ func (s *Server) handleInstallToken(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, installTokenResponse{
 		Token:          token,
-		InstallCommand: s.installCommand(token),
+		InstallCommand: s.installCommand(token, offer),
 	})
 }
-
-// defaultOfferCores/MemoryMB/DiskMB match deploy/docker-compose.yml's own
-// agent1 example values - real numbers, not placeholders, so the command
-// installCommand returns is actually runnable as-is (a bare "<cores>" is
-// valid JSON but not valid shell: bash parses "<" as redirection, so a
-// literal placeholder there breaks copy-paste instead of just being a
-// no-op reminder to edit it). The doc comment below is where "adjust
-// these" belongs, not the command itself.
-const (
-	defaultOfferCores    = "2"
-	defaultOfferMemoryMB = "2048"
-	defaultOfferDiskMB   = "8192"
-)
 
 // installCommand builds a real, runnable, copy-pasteable podman command
 // against this repo's own agent image (deploy/Dockerfile's "agent"
@@ -280,7 +320,7 @@ const agentImage = "docker.io/fattymango/lazycake-agent:latest"
 // it resolves to the provider's own home directory.
 const lcinitHostDir = "$HOME/.local/share/lazycake/bin"
 
-func (s *Server) installCommand(token string) string {
+func (s *Server) installCommand(token string, offer machineOffer) string {
 	coordinatorAddr := s.CoordinatorAddr
 	if coordinatorAddr == "" {
 		coordinatorAddr = "COORDINATOR_HOST:7443"
@@ -298,11 +338,15 @@ func (s *Server) installCommand(token string) string {
 		// these, any task with tunnel_targets fails outright - caught
 		// live installing an agent by hand from this exact command.
 		" --pid=host --cap-add=SYS_ADMIN" +
+		// --network=host: the agent reads this machine's real network link speed to check the network
+		// offer against it, and a container only sees its own interfaces without it.
+		" --network=host" +
 		" -e LAZYCAKE_COORDINATOR_ADDR=" + coordinatorAddr +
 		" -e LAZYCAKE_TOKEN=" + token +
-		" -e LAZYCAKE_OFFER_CORES=" + defaultOfferCores +
-		" -e LAZYCAKE_OFFER_MEMORY_MB=" + defaultOfferMemoryMB +
-		" -e LAZYCAKE_OFFER_DISK_MB=" + defaultOfferDiskMB +
+		" -e LAZYCAKE_OFFER_CORES=" + strconv.FormatFloat(offer.Cores, 'g', -1, 64) +
+		" -e LAZYCAKE_OFFER_MEMORY_MB=" + strconv.Itoa(offer.MemoryMB) +
+		" -e LAZYCAKE_OFFER_DISK_MB=" + strconv.Itoa(offer.DiskMB) +
+		" -e LAZYCAKE_OFFER_NETWORK_MBPS=" + strconv.Itoa(offer.NetworkMbps) +
 		// The agent copies its bundled lcinit into this directory and
 		// mounts that copy into tasks. The same path is mounted on both
 		// sides because the engine resolves bind sources on the host,

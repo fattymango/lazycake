@@ -1081,3 +1081,24 @@ func TestCustomerTaskUsageIsScopedAndCarriesLimits(t *testing.T) {
 	signUpCustomer(t, other, "nosy")
 	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/usage", nil).StatusCode)
 }
+
+// The install endpoint takes the offer a provider chose, refuses nonsense, and still works with no body.
+func TestInstallTokenTakesTheChosenOffer(t *testing.T) {
+	c, _, _ := newTestServer(t)
+	signUpProvider(t, c, "ofelia")
+
+	chosen := decodeBody[installTokenResponse](t, c.do(http.MethodPost, "/api/portal/provider/nodes/install-token",
+		machineOffer{Cores: 4, MemoryMB: 8192, DiskMB: 50000, NetworkMbps: 250}))
+	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_CORES=4 ")
+	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_MEMORY_MB=8192")
+	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_DISK_MB=50000")
+	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_NETWORK_MBPS=250")
+
+	// No body at all (an older client): the defaults.
+	plain := decodeBody[installTokenResponse](t, c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", nil))
+	require.Contains(t, plain.InstallCommand, "LAZYCAKE_OFFER_NETWORK_MBPS=100")
+
+	// Nonsense never mints a token.
+	bad := c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", machineOffer{Cores: 0, MemoryMB: 2048, DiskMB: 8192, NetworkMbps: 100})
+	require.Equal(t, http.StatusBadRequest, bad.StatusCode)
+}

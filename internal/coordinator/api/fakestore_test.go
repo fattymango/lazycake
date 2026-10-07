@@ -125,11 +125,11 @@ func (f *fakeStore) RecordHeartbeat(ctx context.Context, id string, at time.Time
 	return nil
 }
 
-func (f *fakeStore) SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB int) error {
+func (f *fakeStore) SetNodeOffer(ctx context.Context, id string, cores float64, memoryMB, diskMB, networkMbps int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := f.nodes[id]
-	n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB = cores, memoryMB, diskMB
+	n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB, n.OfferNetworkMbps = cores, memoryMB, diskMB, networkMbps
 	f.nodes[id] = n
 	return nil
 }
