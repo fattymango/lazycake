@@ -1,6 +1,14 @@
 package scheduler
 
-import "sync"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"sort"
+	"sync"
+
+	"github.com/mkassab215/lazycake/internal/coordinator/store"
+)
 
 // specDriftCalibrationSamples is how many of a node's own early
 // observations establish its baseline normalised_s before drift detection
@@ -21,15 +29,24 @@ const specDriftRatioThreshold = 1.8
 // slow task doesn't flag or clear a node on its own.
 const specDriftEWMAAlpha = 0.3
 
+// specDriftMaxWorkloads bounds the memory spent per node: a node's drift is tracked for up to this many
+// distinct workloads, and workloads seen after that are ignored.
+const specDriftMaxWorkloads = 256
+
 // SpecDriftTracker implements task 5.1: compare a node's measured task
 // durations (normalised_s, already adjusted for its own claimed
 // bench_score - see task 4.2) against its own established baseline, and
 // flag it once the two diverge enough to suggest sandbagging (lying about
 // speed) or oversubscription (real contention the node isn't accounting
 // for), not just ordinary task-to-task variance.
+//
+// "Its own established baseline" is per WORKLOAD: how long this node takes for tasks of the same image,
+// command, environment and size. Comparing a task against a baseline built from different tasks (a 0.3 s
+// "hello" against a 90 s benchmark) is meaningless, and flagged every honest machine that ran a mix of work:
+// found by the production load test, which banned both test machines within three minutes.
 type SpecDriftTracker struct {
 	mu    sync.Mutex
-	nodes map[string]*nodeSpecStats
+	nodes map[string]map[string]*nodeSpecStats // node -> workload -> stats
 }
 
 type nodeSpecStats struct {
@@ -41,21 +58,29 @@ type nodeSpecStats struct {
 
 // NewSpecDriftTracker returns an empty tracker.
 func NewSpecDriftTracker() *SpecDriftTracker {
-	return &SpecDriftTracker{nodes: make(map[string]*nodeSpecStats)}
+	return &SpecDriftTracker{nodes: make(map[string]map[string]*nodeSpecStats)}
 }
 
-// Observe records one task's normalised_s for nodeID and returns the
-// node's current rolling ratio and whether this observation flags it.
-// Ratio is meaningless (returns 1, false) until the node has completed
-// specDriftCalibrationSamples tasks to establish a baseline.
-func (t *SpecDriftTracker) Observe(nodeID string, normalisedS float64) (ratio float64, flagged bool) {
+// Observe records one task's normalised_s for nodeID running the given workload (see WorkloadKey) and
+// returns the node's current rolling ratio for that workload and whether this observation flags it.
+// Ratio is meaningless (returns 1, false) until the node has completed specDriftCalibrationSamples
+// tasks of that same workload to establish a baseline.
+func (t *SpecDriftTracker) Observe(nodeID, workload string, normalisedS float64) (ratio float64, flagged bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	s, ok := t.nodes[nodeID]
+	byWorkload, ok := t.nodes[nodeID]
 	if !ok {
+		byWorkload = make(map[string]*nodeSpecStats)
+		t.nodes[nodeID] = byWorkload
+	}
+	s, ok := byWorkload[workload]
+	if !ok {
+		if len(byWorkload) >= specDriftMaxWorkloads {
+			return 1, false
+		}
 		s = &nodeSpecStats{}
-		t.nodes[nodeID] = s
+		byWorkload[workload] = s
 	}
 	s.samples++
 
@@ -79,4 +104,20 @@ func (t *SpecDriftTracker) Observe(nodeID string, normalisedS float64) (ratio fl
 	}
 	s.ratioEWMA = specDriftEWMAAlpha*r + (1-specDriftEWMAAlpha)*s.ratioEWMA
 	return s.ratioEWMA, s.ratioEWMA > specDriftRatioThreshold
+}
+
+// WorkloadKey identifies "the same kind of task" for drift purposes: the same image, command, environment
+// and resource limits. Two tasks with the same key should take about the same time on the same machine.
+func WorkloadKey(t store.Task) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%q\x00%q\x00%g\x00%d\x00", t.Image, t.Entrypoint, t.Args, t.Limits.CPUCores, t.Limits.MemoryMB)
+	keys := make([]string, 0, len(t.Env))
+	for k := range t.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(h, "%s=%s\x00", k, t.Env[k])
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }

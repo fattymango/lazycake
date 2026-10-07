@@ -3,6 +3,18 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.8 — 2026-10-07
+
+Found by a production load test: two connected machines were banned within three minutes of ordinary work, and nothing was dispatched to them afterwards.
+
+### Fixed
+- **Honest machines are no longer banned for running a mix of tasks.** Spec drift compared each task with the average of the machine's first five tasks, so a 90-second benchmark after a few instant tasks looked
+  like a machine lying about its speed. It now compares a task only with the same workload (same image, command, environment and size) on the same machine, and only for tasks that exited normally.
+- **The relay's encryption overhead is no longer blamed on the agent.** A task making hundreds of tiny connections showed a relay byte count 34% above the real traffic and was flagged as byte fraud. Only the agent and the
+  gateway are held to agree (and only past 16 KiB); the relay can now only prove a claim too high.
+- **A ban is no longer forever.** A banned machine got no tasks, so it could never earn trust back. Trust now heals with time (0.2 per hour) back to the starting 0.5, never above it.
+- **A ban is no longer silent.** The scheduler logs when it stops and when it resumes dispatching to a machine. Before, 600 queued tasks and an empty log looked like a broken scheduler.
+
 ## v0.3.7 — 2026-10-07
 
 ### Changed

@@ -10,6 +10,11 @@ import (
 // divergenceThreshold is task 4.3's own number: flag anything above 2%.
 const divergenceThreshold = 0.02
 
+// divergenceSlackBytes is how far apart two counts may be, in absolute terms, before a percentage
+// difference means anything: a few bytes of connection-close timing on a tiny task is not fraud, and
+// inflating a count by less than this gains nothing worth billing.
+const divergenceSlackBytes = 16 * 1024
+
 // finalizeGrace is how long Reconciler waits after a task finishes before
 // computing its divergence, giving the relay's and gateway's own reports -
 // which land slightly after the agent's TaskFinished, since they depend on
@@ -37,25 +42,57 @@ type Reconciliation struct {
 // live accumulation and logging (an agent reporting inflated counts should
 // be flagged, an honest one should not) lives in Reconciler below.
 func Reconcile(taskID, nodeID string, bytesAgent, bytesRelay, bytesGateway int64) Reconciliation {
-	max := bytesAgent
-	min := bytesAgent
-	for _, v := range [...]int64{bytesRelay, bytesGateway} {
-		if v > max {
-			max = v
+	// The agent and the gateway both count the plaintext the task really moved, so an honest pair agree.
+	// The relay counts encrypted bytes on the wire, which always include framing and handshake overhead that
+	// is large for a task making many tiny connections (measured: 34% for a few hundred bytes per connection).
+	// So the relay is not held to "equal": it can only prove a claim too HIGH (it saw fewer bytes than the
+	// endpoints say moved), never too low.
+	pct := func(hi, lo int64) float64 {
+		if hi <= 0 {
+			return 0
 		}
-		if v < min {
-			min = v
-		}
+		return float64(hi-lo) / float64(hi)
 	}
-	var pct float64
-	if max > 0 {
-		pct = float64(max-min) / float64(max)
+	endpoints := pct(maxInt64(bytesAgent, bytesGateway), minInt64(bytesAgent, bytesGateway))
+	endpointsFlag := endpoints > divergenceThreshold && abs64(bytesAgent-bytesGateway) > divergenceSlackBytes
+
+	low := minInt64(bytesAgent, bytesGateway)
+	relayShort := pct(low, bytesRelay) // the relay saw less than the endpoints claim
+	if bytesRelay >= low {
+		relayShort = 0
+	}
+	relayFlag := relayShort > divergenceThreshold && low-bytesRelay > divergenceSlackBytes
+
+	dp := endpoints
+	if relayShort > dp {
+		dp = relayShort
 	}
 	return Reconciliation{
 		TaskID: taskID, NodeID: nodeID,
 		BytesAgent: bytesAgent, BytesRelay: bytesRelay, BytesGateway: bytesGateway,
-		DivergencePct: pct, Flagged: pct > divergenceThreshold,
+		DivergencePct: dp, Flagged: endpointsFlag || relayFlag,
 	}
+}
+
+func minInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func abs64(a int64) int64 {
+	if a < 0 {
+		return -a
+	}
+	return a
 }
 
 type partialCounts struct {

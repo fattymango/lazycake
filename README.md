@@ -199,6 +199,12 @@ sampling rate and dispatch eligibility (see below).
 
 ### Trust score
 
+> **Changed in v0.3.8.** A production load test banned both test machines within three minutes: spec drift compared
+> every task against the average of a node's first five tasks, so any mix of short and long work looked like a machine
+> lying about its speed; byte divergence blamed the relay's encryption overhead on the agent; and a ban was forever,
+> because a banned node gets no tasks and canaries are off by default. Drift is now per workload, the relay can only
+> prove a claim too high, a ban is logged when it starts, and trust heals with time back to the starting score.
+
 Every node has a trust score in `[0, 1]`, starting at `0.5`
 (`internal/coordinator/scheduler/trust.go`, `TrustTracker`) — the single
 number every fraud signal above feeds into, and the number placement and the
@@ -212,8 +218,9 @@ following happens, then clamped to `[0, 1]`:
 | Clean completion (the host ran the task and reported honestly — any exit code) | `+0.01` | every `TaskSucceeded`/`TaskFailed` |
 | Canary passed (verified by the platform's own gateway, not the agent) | `+0.02` | canary tasks |
 | Canary failed (expected canary never showed up) | `-0.30` | canary tasks |
-| Byte divergence (agent/relay/gateway counts disagree by >2%) | `-0.20` | byte reconciliation |
-| Spec drift (measured durations diverge from the node's own baseline) | `-0.15` | spec verification |
+| Byte divergence (agent and gateway counts disagree by >2% and >16 KiB, or the relay saw >2% *less* than they claim; the relay's own wire overhead is not held against the node) | `-0.20` | byte reconciliation |
+| Spec drift (a task's measured duration diverges from this node's own baseline **for the same workload**, normal exits only) | `-0.15` | spec verification |
+| Time connected (heals toward `0.5` only, never above) | `+0.2` per hour | placement loop |
 | Abandonment (the node vanished mid-task) | `-0.25` | lease reclaim |
 
 Positive events are small and additive — trust is earned slowly, one clean

@@ -70,6 +70,8 @@ type harness struct {
 	// customer is the coordinator's customer-facing API (same code the portal
 	// calls), wired to the same registry as the agent's stream.
 	customer *api.CustomerServer
+	// sched is the scheduler driving placement, so a test can reach its trust tracker.
+	sched *scheduler.Scheduler
 }
 
 func startHarness(t *testing.T) (*harness, context.Context) {
@@ -163,7 +165,7 @@ func startHarnessOpts(t *testing.T, withBilling bool) (*harness, context.Context
 		return err == nil && len(nodes) == 1 && nodes[0].Connected
 	}, 10*time.Second, 100*time.Millisecond, "agent never registered")
 
-	return &harness{st: st, token: agentToken, customer: &api.CustomerServer{Store: st, Registry: registry}}, ctx
+	return &harness{st: st, token: agentToken, customer: &api.CustomerServer{Store: st, Registry: registry}, sched: sched}, ctx
 }
 
 func TestDispatchEndToEnd(t *testing.T) {
