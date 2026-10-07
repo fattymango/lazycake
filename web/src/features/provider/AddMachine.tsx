@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Cpu,
   Gauge,
   HardDrive,
@@ -31,6 +32,7 @@ import {
   offerRequest,
   parseCapacity,
   parseWhole,
+  stopsFor,
   type MachineCaps,
   type OfferField,
   type OfferInput,
@@ -101,19 +103,24 @@ function CapacityRow({
   const max = maxOffer(caps);
   const knownMax = field === "networkMbps" ? caps?.networkMbps != null : !!caps;
   const beyondSlider = Number.isFinite(value) && value > sliderTop;
-  // The slider never offers more than the machine has, even if it would otherwise go higher.
-  const usableStops = knownMax ? stops.filter((s) => s <= max[field]) : stops;
-  const sliderStops = usableStops.length >= 2 ? usableStops : stops;
+  // The slider never offers more than the machine has, and ends exactly at what it has.
+  const sliderStops = stopsFor(field, knownMax ? max[field] : null);
+  const note = error
+    ? error
+    : `${hint}${knownMax ? ` Machine: ${max[field].toLocaleString("en-US")} ${unit}${field === "storageGB" ? " free" : ""}.` : ""}${beyondSlider ? " Past the slider." : ""}`;
   return (
-    <li className="space-y-3 rounded-xl border border-border bg-raised/30 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor={`offer-${field}`} className="flex items-center gap-2 text-sm font-semibold text-fg">
-          <span className="flex size-7 items-center justify-center rounded-lg border border-border bg-surface text-muted">
-            <Icon className="size-3.5" aria-hidden />
-          </span>
-          {FIELD_LABEL[field]}
-        </label>
-        <div className="flex items-center gap-1.5">
+    <li className="space-y-2 rounded-xl border border-border bg-raised/30 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <label htmlFor={`offer-${field}`} className="flex items-center gap-2 text-sm font-semibold text-fg">
+            <Icon className="size-4 text-muted" aria-hidden />
+            {FIELD_LABEL[field]}
+          </label>
+          <p id={`offer-${field}-note`} className={cn("mt-1 text-xs leading-4", error ? "text-danger" : "text-muted")}>
+            {note}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
           <Input
             id={`offer-${field}`}
             aria-label={`${FIELD_LABEL[field]} to lend`}
@@ -131,16 +138,10 @@ function CapacityRow({
             className="h-9 w-20 text-right text-base font-semibold"
             mono
           />
-          <span className="w-10 text-xs text-muted">{unit}</span>
+          <span className="w-9 text-xs text-muted">{unit}</span>
         </div>
       </div>
       <StopSlider stops={sliderStops} value={value} onChange={onChange} label={`${FIELD_LABEL[field]} slider`} />
-      <p id={`offer-${field}-note`} className={cn("text-xs leading-5", error ? "text-danger" : "text-muted")}>
-        {error ??
-          `${hint}${knownMax ? ` This machine has ${max[field].toLocaleString("en-US")} ${unit}${field === "storageGB" ? " free" : ""}.` : ""}${
-            beyondSlider ? " Beyond the slider: fine if the machine has it." : ""
-          }`}
-      </p>
     </li>
   );
 }
@@ -154,6 +155,7 @@ export function AddMachine() {
   const [connectedId, setConnectedId] = useState<string | null>(null);
   const [waitedLong, setWaitedLong] = useState(false);
   const [capsText, setCapsText] = useState("");
+  const [capsOpen, setCapsOpen] = useState(false);
   const caps = parseCapacity(capsText);
   const [offer, setOffer] = useState<OfferInput>(defaultOffer(null));
   const problems = offerProblems(offer, caps);
@@ -246,37 +248,48 @@ export function AddMachine() {
               </Alert>
             )}
 
-            <div className="space-y-2 rounded-lg border border-border bg-raised/40 p-3">
-              <p className="text-xs font-medium text-fg">See what this machine has (optional, recommended)</p>
-              <p className="text-xs leading-5 text-muted">
-                Run this on the machine and paste its one line of output. The limits above then match the hardware, and the page tells you
-                right away if you offer too much.
-              </p>
-              <CodeBlock label="Shell" code={CAPACITY_COMMAND} wrap />
-              <Textarea
-                aria-label="Output of the capacity command"
-                value={capsText}
-                onChange={(e) => onCapsChange(e.target.value)}
-                placeholder="cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000"
-                className="min-h-[52px]"
-                mono
-              />
-              {capsText.trim() !== "" && !caps && (
-                <p className="text-xs text-danger">That doesn't look like the command's output. It should start with "cores=".</p>
-              )}
-              {caps && (
-                <p className="text-xs text-success">
-                  Got it: {maxOffer(caps).cores} cores, {maxOffer(caps).memoryGB} GB memory, {maxOffer(caps).storageGB} GB free
-                  {caps.networkMbps
-                    ? `, ${maxOffer(caps).networkMbps} Mbps link`
-                    : ", network speed not reported (your limit is still enforced)"}
-                  .
-                </p>
-              )}
-              {!caps && capsText.trim() === "" && (
-                <p className="text-xs leading-5 text-muted">
-                  Skip it and the agent does this check itself when it starts, refusing anything above what the machine has.
-                </p>
+            <div className="rounded-lg border border-border bg-raised/40">
+              <button
+                type="button"
+                onClick={() => setCapsOpen((o) => !o)}
+                aria-expanded={capsOpen}
+                className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left"
+              >
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium text-fg">Check against this machine's hardware (optional, recommended)</span>
+                  <span className={cn("block truncate text-xs", caps ? "text-success" : "text-muted")}>
+                    {caps
+                      ? `${maxOffer(caps).cores} cores · ${maxOffer(caps).memoryGB} GB memory · ${maxOffer(caps).storageGB} GB free${caps.networkMbps ? ` · ${maxOffer(caps).networkMbps} Mbps` : ""}`
+                      : "Limits above then match the real hardware. Skip it and the agent checks when it starts."}
+                  </span>
+                </span>
+                <ChevronDown className={cn("size-4 shrink-0 text-muted transition-transform", capsOpen && "rotate-180")} aria-hidden />
+              </button>
+              {capsOpen && (
+                <div className="space-y-2 border-t border-border p-3">
+                  <p className="text-xs leading-5 text-muted">Run this on the machine and paste its one line of output:</p>
+                  <CodeBlock label="Shell" code={CAPACITY_COMMAND} wrap />
+                  <Textarea
+                    aria-label="Output of the capacity command"
+                    value={capsText}
+                    onChange={(e) => onCapsChange(e.target.value)}
+                    placeholder="cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000"
+                    className="min-h-[52px]"
+                    mono
+                  />
+                  {capsText.trim() !== "" && !caps && (
+                    <p className="text-xs text-danger">That doesn't look like the command's output. It should start with "cores=".</p>
+                  )}
+                  {caps && (
+                    <p className="text-xs text-success">
+                      Got it: {maxOffer(caps).cores} cores, {maxOffer(caps).memoryGB} GB memory, {maxOffer(caps).storageGB} GB free
+                      {caps.networkMbps
+                        ? `, ${maxOffer(caps).networkMbps} Mbps link`
+                        : ", network speed not reported (your limit is still enforced)"}
+                      .
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </CardBody>
@@ -392,35 +405,30 @@ export function AddMachine() {
               </ol>
             </CardBody>
           </Card>
-
-          <Card>
-            <CardBody className="space-y-4">
-              <div className="flex items-center gap-2.5">
-                <ShieldCheck className="size-5 text-accent" aria-hidden />
-                <h2 className="text-sm font-semibold text-fg">How your machine is protected</h2>
-              </div>
-              <ul className="space-y-3 text-sm leading-6 text-muted">
-                <li className="flex gap-2.5">
-                  <Terminal className="mt-1 size-4 shrink-0" aria-hidden />
-                  Tasks run in rootless containers with no network of their own.
-                </li>
-                <li className="flex gap-2.5">
-                  <ServerCog className="mt-1 size-4 shrink-0" aria-hidden />
-                  Hard CPU, memory and process limits are enforced by your kernel.
-                </li>
-                <li className="flex gap-2.5">
-                  <KeyRound className="mt-1 size-4 shrink-0" aria-hidden />
-                  You can remove the machine and revoke its token at any time.
-                </li>
-              </ul>
-              <p className="text-xs leading-5 text-muted">
-                You can read what runs on your own hardware; that's inherent to renting it out. Only rent out a machine you're comfortable
-                running other people's code on.
-              </p>
-            </CardBody>
-          </Card>
         </div>
       </div>
+
+      <Card>
+        <CardBody className="grid gap-4 py-4 md:grid-cols-[auto_1fr_1fr_1fr] md:items-center">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck className="size-5 text-accent" aria-hidden />
+            <h2 className="text-sm font-semibold text-fg">How your machine is protected</h2>
+          </div>
+          <p className="flex gap-2.5 text-xs leading-5 text-muted">
+            <Terminal className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Tasks run in rootless containers with no network of their own.
+          </p>
+          <p className="flex gap-2.5 text-xs leading-5 text-muted">
+            <ServerCog className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Hard CPU, memory and process limits are enforced by your kernel.
+          </p>
+          <p className="flex gap-2.5 text-xs leading-5 text-muted">
+            <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
+            You can remove the machine and revoke its token at any time. Only rent out a machine you're comfortable running other people's
+            code on.
+          </p>
+        </CardBody>
+      </Card>
     </div>
   );
 }
