@@ -238,6 +238,33 @@ func run() error {
 	}()
 	log.Info("dashboard/portal API listening", "addr", cfg.HTTPAddr)
 
+	// Gateway traffic keeps 5-minute detail for 90 days; the lifetime and per-task totals stay.
+	go func() {
+		prune := func() {
+			n, err := st.PruneGatewayTraffic(ctx, time.Now().Add(-90*24*time.Hour))
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Warn("pruning gateway traffic", "error", err)
+				}
+				return
+			}
+			if n > 0 {
+				log.Info("pruned old gateway traffic", "rows", n)
+			}
+		}
+		prune()
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				prune()
+			}
+		}
+	}()
+
 	select {
 	case <-ctx.Done():
 		log.Info("coordinator shutting down")

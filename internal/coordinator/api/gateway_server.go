@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -61,6 +63,33 @@ func (s *GatewayServer) ReportBytes(ctx context.Context, req *lazycakev1.ByteRep
 		return nil, status.Error(codes.PermissionDenied, "gateway does not belong to this token's account")
 	}
 
-	s.events().RecordGatewayBytes(req.GetTaskId(), req.GetBytesToLocal()+req.GetBytesToTask())
+	toLocal, toTask := req.GetBytesToLocal(), req.GetBytesToTask()
+	if toLocal < 0 || toTask < 0 {
+		return nil, status.Error(codes.InvalidArgument, "byte counts can't be negative")
+	}
+
+	// Billing reconciliation keeps summing: a connection's reports are deltas that
+	// add up to what one report at close used to carry.
+	s.events().RecordGatewayBytes(req.GetTaskId(), toLocal+toTask)
+
+	// Keep what the gateway moved, per task and over time (task 8.14). The per-task
+	// numbers are only recorded for a task that exists and belongs to the gateway's
+	// own account, so a gateway can't attribute traffic to someone else's task. A
+	// gateway built before these fields sends one report at close with no service:
+	// that is the whole connection.
+	legacy := req.GetService() == ""
+	recordTask := false
+	if t, err := s.Store.GetTask(ctx, req.GetTaskId()); err == nil && t.AccountID == gw.AccountID {
+		recordTask = true
+	}
+	if err := s.Store.RecordGatewayTraffic(ctx, store.GatewayTrafficReport{
+		GatewayID: gw.ID, TaskID: req.GetTaskId(), Service: req.GetService(),
+		BytesToLocal: toLocal, BytesToTask: toTask,
+		Final: req.GetFinal() || legacy, At: time.Now(), RecordTask: recordTask,
+	}); err != nil {
+		// The report was accepted for billing; failing the RPC would only make the
+		// gateway resend what was already counted there.
+		slog.Warn("recording gateway traffic", "gateway_id", gw.ID, "task_id", req.GetTaskId(), "error", err)
+	}
 	return &lazycakev1.ByteReportAck{}, nil
 }

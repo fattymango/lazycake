@@ -99,6 +99,28 @@ export interface Gateway {
   connected: boolean;
   services: GatewayService[];
   created_at_ms: number;
+  /** Lifetime traffic through this gateway. */
+  traffic: TrafficTotals;
+}
+
+/** Named from the customer's side: what tasks sent to their service, and what came back. */
+export interface TrafficTotals {
+  received_from_tasks_bytes: number;
+  sent_to_tasks_bytes: number;
+  connections: number;
+}
+
+export interface GatewayTraffic {
+  range: "7d" | "30d";
+  step: "hour" | "day";
+  totals: TrafficTotals;
+  series: { at_ms: number; received_from_tasks_bytes: number; sent_to_tasks_bytes: number }[];
+  busiest_tasks: ({ task_id: string } & TrafficTotals)[];
+}
+
+export interface TaskTraffic {
+  totals: TrafficTotals;
+  rows: ({ gateway_id: string; service: string } & TrafficTotals)[];
 }
 
 export interface CreateGatewayRequest {

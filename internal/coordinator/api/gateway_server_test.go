@@ -126,3 +126,65 @@ func TestGatewayReportBytesRejectsNonGatewayToken(t *testing.T) {
 		t.Fatal("expected an error reporting bytes with a non-gateway token")
 	}
 }
+
+// Traffic statistics (task 8.14): what a gateway reports is kept per task and per
+// gateway, deltas add up, and a gateway can't attribute traffic to someone else's task.
+func TestGatewayReportBytesKeepsTrafficStatistics(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("gw-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenGateway})
+	if err := fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_1", AccountID: "act_1"}); err != nil {
+		t.Fatal(err)
+	}
+	// One task of the gateway's own account, one belonging to a stranger.
+	fs.tasks["tsk_mine"] = store.Task{ID: "tsk_mine", AccountID: "act_1"}
+	fs.tasks["tsk_theirs"] = store.Task{ID: "tsk_theirs", AccountID: "act_other"}
+	client := startGatewayTestServer(t, fs, &fakeGatewayEvents{})
+	report := func(task string, toLocal, toTask int64, svc string, final bool) {
+		t.Helper()
+		if _, err := client.ReportBytes(authedCtx("gw-token"), &lazycakev1.ByteReport{GatewayId: "gw_1", TaskId: task, BytesToLocal: toLocal, BytesToTask: toTask, Service: svc, Final: final}); err != nil {
+			t.Fatalf("ReportBytes: %v", err)
+		}
+	}
+
+	report("tsk_mine", 10, 100, "db", false) // progress
+	report("tsk_mine", 5, 50, "db", false)   // progress
+	report("tsk_mine", 1, 1, "db", true)     // close
+	report("tsk_theirs", 999, 999, "db", true)
+	report("tsk_mine", 7, 7, "", false) // a gateway built before these fields: no service
+
+	totals, _ := fs.GatewayTotals(context.Background(), []string{"gw_1"})
+	if got := totals["gw_1"]; got.BytesToLocal != 10+5+1+999+7 || got.BytesToTask != 100+50+1+999+7 {
+		t.Fatalf("gateway totals wrong (every report counts toward the gateway): %+v", got)
+	}
+	if totals["gw_1"].Connections != 3 {
+		t.Fatalf("want 3 connections (the closed one, the stranger's, and the legacy report counts as a whole connection), got %d", totals["gw_1"].Connections)
+	}
+
+	mine, _ := fs.TaskGatewayUsage(context.Background(), "tsk_mine")
+	var sum int64
+	for _, r := range mine {
+		sum += r.BytesToLocal
+	}
+	if sum != 10+5+1+7 {
+		t.Fatalf("the task's own usage should be its deltas summed, got %d (%+v)", sum, mine)
+	}
+	theirs, _ := fs.TaskGatewayUsage(context.Background(), "tsk_theirs")
+	if len(theirs) != 0 {
+		t.Fatalf("a gateway must not be able to attribute traffic to another account's task: %+v", theirs)
+	}
+}
+
+func TestGatewayReportBytesRejectsNegativeCounts(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("gw-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenGateway})
+	_ = fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_1", AccountID: "act_1"})
+	events := &fakeGatewayEvents{}
+	client := startGatewayTestServer(t, fs, events)
+
+	if _, err := client.ReportBytes(authedCtx("gw-token"), &lazycakev1.ByteReport{GatewayId: "gw_1", TaskId: "tsk_1", BytesToLocal: -5, BytesToTask: 10}); err == nil {
+		t.Fatal("a negative byte count must be rejected, or it could subtract from the totals")
+	}
+	if len(events.calls) != 0 {
+		t.Fatal("a rejected report must not reach billing either")
+	}
+}

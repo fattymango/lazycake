@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -29,6 +30,36 @@ type ForwardStats struct {
 	BytesToTask  int64
 }
 
+// ForwardReport is what one forwarded connection moved since its previous
+// report: a delta, not a running total. A long-lived connection reports every
+// progressEvery while it is open (so its traffic shows up over time rather than
+// as one spike when it finally closes), and once more, with Final set, when it
+// closes. Summing a connection's reports gives its totals.
+type ForwardReport struct {
+	TaskID  string
+	Service string
+	ToLocal int64 // gateway -> local service
+	ToTask  int64 // local service -> gateway -> task
+	Final   bool
+}
+
+// progressEvery is how often an open connection reports. A variable so tests
+// don't have to wait ten seconds.
+var progressEvery = 10 * time.Second
+
+// countingWriter counts bytes as they pass, so a copy that is still running
+// can be reported on.
+type countingWriter struct {
+	w io.Writer
+	n *atomic.Int64
+}
+
+func (c countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n.Add(int64(n))
+	return n, err
+}
+
 // Listener accepts relayed streams from one QUIC connection to the relay
 // and forwards each to a published local service.
 type Listener struct {
@@ -44,6 +75,10 @@ type Listener struct {
 	// OnForward, if set, is called once per forwarded connection after it
 	// closes, with final byte counts.
 	OnForward func(ForwardStats)
+
+	// OnReport, if set, receives each connection's byte-count deltas while it
+	// is open and a final one when it closes (see ForwardReport).
+	OnReport func(ForwardReport)
 }
 
 func (l *Listener) dial(network, addr string) (net.Conn, error) {
@@ -154,9 +189,10 @@ func (l *Listener) handleStream(taskID string, stream *quicgo.Stream) {
 	}
 
 	stats := ForwardStats{TaskID: taskID, Service: service}
+	var toLocal, toTask atomic.Int64
 	done := make(chan struct{}, 2)
 	go func() {
-		stats.BytesToLocal, _ = io.Copy(local, session)
+		io.Copy(countingWriter{w: local, n: &toLocal}, session)
 		// Unblock the reverse copy: once the task side has nothing more
 		// to send, closing the local connection makes its next Read
 		// return so the other goroutine below can finish too.
@@ -164,12 +200,46 @@ func (l *Listener) handleStream(taskID string, stream *quicgo.Stream) {
 		done <- struct{}{}
 	}()
 	go func() {
-		stats.BytesToTask, _ = io.Copy(session, local)
+		io.Copy(countingWriter{w: session, n: &toTask}, local)
 		stream.Close()
 		done <- struct{}{}
 	}()
+
+	// Report what has moved so far every progressEvery while the connection is
+	// open, so a connection that stays up for hours isn't invisible until it ends.
+	var reportedLocal, reportedTask int64
+	report := func(final bool) {
+		cl, ct := toLocal.Load(), toTask.Load()
+		dl, dt := cl-reportedLocal, ct-reportedTask
+		if !final && dl == 0 && dt == 0 {
+			return
+		}
+		reportedLocal, reportedTask = cl, ct
+		if l.OnReport != nil {
+			l.OnReport(ForwardReport{TaskID: taskID, Service: service, ToLocal: dl, ToTask: dt, Final: final})
+		}
+	}
+	stopProgress := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		tick := time.NewTicker(progressEvery)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				report(false)
+			case <-stopProgress:
+				return
+			}
+		}
+	}()
 	<-done
 	<-done
+	close(stopProgress)
+	<-progressDone
+	report(true)
+	stats.BytesToLocal, stats.BytesToTask = toLocal.Load(), toTask.Load()
 
 	l.Log.Info("forwarded connection closed", "task_id", taskID, "service", service,
 		"bytes_to_local", stats.BytesToLocal, "bytes_to_task", stats.BytesToTask)

@@ -5,3 +5,6 @@
 .idea/
 .vscode/
 *.log
+
+# gateway/agent private keys written next to the binary when run from the repo
+*.key

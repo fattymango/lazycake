@@ -53,7 +53,7 @@ func run() error {
 // serveOnce holds one relay connection: dials, then accepts tunnelled
 // streams until the connection or ctx ends.
 func serveOnce(ctx context.Context, cfg config.Config, keypair noise.Keypair, services map[string]string,
-	log *slog.Logger, reportBytes func(listener.ForwardStats)) error {
+	log *slog.Logger, reportBytes func(listener.ForwardReport)) error {
 	conn, err := quic.DialGateway(ctx, cfg.CoordinatorAddr, cfg.Token, cfg.GatewayID, keypair.Public)
 	if err != nil {
 		return fmt.Errorf("connecting to relay: %w", err)
@@ -66,8 +66,8 @@ func serveOnce(ctx context.Context, cfg config.Config, keypair noise.Keypair, se
 		OnForward: func(s listener.ForwardStats) {
 			log.Info("forward closed", "task_id", s.TaskID, "service", s.Service,
 				"bytes_to_local", s.BytesToLocal, "bytes_to_task", s.BytesToTask)
-			reportBytes(s)
 		},
+		OnReport: reportBytes,
 	}
 	return l.Run(ctx)
 }
@@ -145,36 +145,31 @@ func loadOrCreateKeypair(path string) (noise.Keypair, error) {
 	return kp, nil
 }
 
-// newByteReporter returns a function that reports one forwarded
-// connection's byte counts to the coordinator's GatewayService (task
-// 4.3's third reconciliation point), or a no-op if cfg.GRPCAddr wasn't
-// set - reporting is defense in depth for billing, not something the
-// gateway's actual job depends on, so it degrades gracefully rather than
-// failing startup.
-func newByteReporter(cfg config.Config, log *slog.Logger) func(listener.ForwardStats) {
+// newByteReporter returns a function that reports one forwarded connection's
+// byte-count deltas to the coordinator's GatewayService (billing's third
+// reconciliation point, and the per-gateway/per-task traffic statistics), or a
+// no-op if cfg.GRPCAddr wasn't set - reporting is defense in depth, not
+// something the gateway's actual job depends on, so it degrades gracefully
+// rather than failing startup.
+func newByteReporter(cfg config.Config, log *slog.Logger) func(listener.ForwardReport) {
 	if cfg.GRPCAddr == "" {
 		log.Warn("LAZYCAKE_GRPC_ADDR not set, byte reconciliation reports disabled")
-		return func(listener.ForwardStats) {}
+		return func(listener.ForwardReport) {}
 	}
 
 	conn, err := grpc.NewClient(cfg.GRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Warn("dialing coordinator gRPC for byte reports, disabling them", "addr", cfg.GRPCAddr, "error", err)
-		return func(listener.ForwardStats) {}
+		return func(listener.ForwardReport) {}
 	}
 	client := lazycakev1.NewGatewayServiceClient(conn)
 
-	return func(s listener.ForwardStats) {
+	return newReporter(cfg.GatewayID, log, func(r *lazycakev1.ByteReport) error {
 		ctx, cancel := context.WithTimeout(
 			metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+cfg.Token)),
 			10*time.Second)
 		defer cancel()
-		_, err := client.ReportBytes(ctx, &lazycakev1.ByteReport{
-			GatewayId: cfg.GatewayID, TaskId: s.TaskID,
-			BytesToLocal: s.BytesToLocal, BytesToTask: s.BytesToTask,
-		})
-		if err != nil {
-			log.Warn("reporting byte counts", "task_id", s.TaskID, "error", err)
-		}
-	}
+		_, err := client.ReportBytes(ctx, r)
+		return err
+	}).Report
 }

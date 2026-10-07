@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cpu, duration, memory, money, parseImage, relativeTime, signedMoney } from "./format";
+import { bytes, cpu, duration, memory, money, parseImage, relativeTime, signedMoney } from "./format";
 
 describe("money", () => {
   it("uses 2 places for dollars and 4 for sub-dollar amounts", () => {
@@ -51,5 +51,18 @@ describe("parseImage", () => {
   });
   it("copes with a reference that has no digest", () => {
     expect(parseImage("alpine")).toEqual({ name: "alpine", registry: "", digest: "" });
+  });
+});
+
+describe("bytes", () => {
+  it("scales through decimal units without ever printing 1000 of something", () => {
+    expect(bytes(0)).toBe("0 B");
+    expect(bytes(undefined)).toBe("0 B");
+    expect(bytes(812)).toBe("812 B");
+    expect(bytes(4_500)).toBe("4.5 kB");
+    expect(bytes(999_999)).toBe("1 MB");
+    expect(bytes(1_230_000_000)).toBe("1.23 GB");
+    expect(bytes(52_400_000)).toBe("52.4 MB");
+    expect(bytes(740_000_000_000)).toBe("740 GB");
   });
 });

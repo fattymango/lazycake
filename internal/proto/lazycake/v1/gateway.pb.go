@@ -21,12 +21,20 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ByteReport carries the bytes one forwarded connection moved since its previous report
+// (a delta, not a running total), so a connection that stays open for hours shows up over
+// time instead of as one spike when it finally closes, and the deltas of one connection sum
+// to what a single report at close used to carry. A gateway built before these fields sends
+// one report at close with service unset and final unset; the coordinator treats that as the
+// whole connection.
 type ByteReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GatewayId     string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
 	TaskId        string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	BytesToLocal  int64                  `protobuf:"varint,3,opt,name=bytes_to_local,json=bytesToLocal,proto3" json:"bytes_to_local,omitempty"` // gateway -> local service
 	BytesToTask   int64                  `protobuf:"varint,4,opt,name=bytes_to_task,json=bytesToTask,proto3" json:"bytes_to_task,omitempty"`    // local service -> gateway -> task
+	Service       string                 `protobuf:"bytes,5,opt,name=service,proto3" json:"service,omitempty"`                                  // which published service the connection used
+	Final         bool                   `protobuf:"varint,6,opt,name=final,proto3" json:"final,omitempty"`                                     // the connection has closed; this is its last report
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -89,6 +97,20 @@ func (x *ByteReport) GetBytesToTask() int64 {
 	return 0
 }
 
+func (x *ByteReport) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *ByteReport) GetFinal() bool {
+	if x != nil {
+		return x.Final
+	}
+	return false
+}
+
 type ByteReportAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -129,14 +151,16 @@ var File_lazycake_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_lazycake_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"\x8e\x01\n" +
+	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"\xbe\x01\n" +
 	"\n" +
 	"ByteReport\x12\x1d\n" +
 	"\n" +
 	"gateway_id\x18\x01 \x01(\tR\tgatewayId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12$\n" +
 	"\x0ebytes_to_local\x18\x03 \x01(\x03R\fbytesToLocal\x12\"\n" +
-	"\rbytes_to_task\x18\x04 \x01(\x03R\vbytesToTask\"\x0f\n" +
+	"\rbytes_to_task\x18\x04 \x01(\x03R\vbytesToTask\x12\x18\n" +
+	"\aservice\x18\x05 \x01(\tR\aservice\x12\x14\n" +
+	"\x05final\x18\x06 \x01(\bR\x05final\"\x0f\n" +
 	"\rByteReportAck2T\n" +
 	"\x0eGatewayService\x12B\n" +
 	"\vReportBytes\x12\x17.lazycake.v1.ByteReport\x1a\x1a.lazycake.v1.ByteReportAckB:Z8github.com/mkassab215/lazycake/internal/proto/lazycakev1b\x06proto3"

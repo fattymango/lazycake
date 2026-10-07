@@ -21,6 +21,7 @@ type Store interface {
 	Meters
 	Ledger
 	Holds
+	GatewayTraffic
 	PortalAuth
 }
 
@@ -187,6 +188,27 @@ type Gateways interface {
 	// the database and would otherwise keep claiming a gateway is connected
 	// after a restart until it happens to reconnect.
 	ResetGatewaysConnected(ctx context.Context) error
+}
+
+// GatewayTraffic persists what gateways report moving for tasks (task 8.14).
+type GatewayTraffic interface {
+	// RecordGatewayTraffic adds one report: the gateway's 5-minute bucket and
+	// lifetime totals, and (when r.RecordTask) the task's per-gateway totals.
+	RecordGatewayTraffic(ctx context.Context, r GatewayTrafficReport) error
+	// GatewayTotals returns lifetime totals for the given gateways (a gateway
+	// with no traffic yet has no entry).
+	GatewayTotals(ctx context.Context, gatewayIDs []string) (map[string]TrafficTotals, error)
+	// GatewayTrafficSeries returns the gateway's traffic since `since`, summed
+	// per `step` ("hour" or "day"), oldest first. Quiet periods have no point.
+	GatewayTrafficSeries(ctx context.Context, gatewayID string, since time.Time, step string) ([]TrafficPoint, error)
+	// GatewayBusiestTasks returns the tasks that moved the most through the
+	// gateway since `since`, biggest first.
+	GatewayBusiestTasks(ctx context.Context, gatewayID string, since time.Time, limit int) ([]TaskTraffic, error)
+	// TaskGatewayUsage returns what one task moved through each gateway service.
+	TaskGatewayUsage(ctx context.Context, taskID string) ([]TaskGatewayTraffic, error)
+	// PruneGatewayTraffic deletes 5-minute buckets older than `before`. The
+	// lifetime and per-task totals are untouched. It returns rows deleted.
+	PruneGatewayTraffic(ctx context.Context, before time.Time) (int64, error)
 }
 
 // Meters persists task_meters rows (IMPLEMENTATION.md task 4.2): duration

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { Network, Plus, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Network, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
-import { relativeTime } from "@/lib/format";
+import { bytes, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
@@ -226,7 +226,11 @@ export function Gateways() {
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-raised text-muted">
                         <Network className="size-4" aria-hidden />
                       </span>
-                      <h2 className="truncate text-sm font-semibold text-fg">{g.label}</h2>
+                      <h2 className="truncate text-sm font-semibold text-fg">
+                        <Link to={`/gateways/${g.id}`} className="hover:text-accent hover:underline">
+                          {g.label}
+                        </Link>
+                      </h2>
                     </div>
                     <ConnectionPill connected={g.connected} size="sm" />
                   </div>
@@ -247,6 +251,33 @@ export function Gateways() {
                       </ul>
                     )}
                   </div>
+
+                  <Link
+                    to={`/gateways/${g.id}`}
+                    className="block rounded-lg border border-border bg-raised/40 p-3 transition-colors hover:bg-raised/70"
+                    aria-label={`Traffic for ${g.label}`}
+                  >
+                    <dl className="grid grid-cols-2 gap-3">
+                      <div className="min-w-0">
+                        <dt className="flex items-center gap-1.5 text-xs text-muted">
+                          <ArrowDownToLine className="size-3.5 text-accent" aria-hidden />
+                          Received from tasks
+                        </dt>
+                        <dd className="mt-0.5 truncate text-sm font-semibold text-fg" data-tnum>
+                          {bytes(g.traffic.received_from_tasks_bytes)}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="flex items-center gap-1.5 text-xs text-muted">
+                          <ArrowUpFromLine className="size-3.5 text-success" aria-hidden />
+                          Sent to tasks
+                        </dt>
+                        <dd className="mt-0.5 truncate text-sm font-semibold text-fg" data-tnum>
+                          {bytes(g.traffic.sent_to_tasks_bytes)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </Link>
                 </CardBody>
                 <div className="border-t border-border px-5 py-4">
                   <GatewayTester gatewayId={g.id} />

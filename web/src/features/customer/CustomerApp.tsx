@@ -12,6 +12,7 @@ import { ErrorBoundary } from "@/ui/ErrorBoundary";
 import { NotFound } from "@/ui/NotFound";
 import { Tooltip } from "@/ui/Tooltip";
 import { Billing } from "./Billing";
+import { GatewayDetail } from "./GatewayDetail";
 import { Gateways } from "./Gateways";
 import { Overview } from "./Overview";
 import { SubmitTask } from "./SubmitTask";
@@ -70,6 +71,7 @@ export function CustomerApp() {
           <Route path="/tasks/new" element={<SubmitTask />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/gateways" element={<Gateways />} />
+          <Route path="/gateways/:id" element={<GatewayDetail />} />
           <Route path="/billing" element={<Billing />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />

@@ -225,7 +225,7 @@ disabled during and after a run). Redeploy both of the owner's gateways (VM and 
 
 ### Task 8.14 — Gateway traffic: totals, time series, and per-task/per-gateway usage
 
-**Status: backlog, not started.** Suggested 2026-10-07.
+**Status: DONE 2026-10-07** (see "As built" at the end of this task). Suggested 2026-10-07.
 
 **Today.** The gateway already reports bytes after each forwarded connection (`ReportBytes`: gateway ID, task ID, and the two
 directions separately). The coordinator throws the gateway ID and the direction away: it adds the total into an in-memory per-task
@@ -257,6 +257,27 @@ counts and already flags large three-way disagreement, so show the gateway's (cu
 **Verify:** per-gateway attribution when one task uses three gateways (no leakage between them); a long-lived connection shows
 steady growth, not one spike; coordinator restart loses nothing already stored; retention pruning; migration up/down; the chart and
 per-task numbers against a task whose traffic is known exactly (e.g. fetch a file of a known size).
+
+**As built (differences from the sketch above, and why):**
+- **Three tables, not one row per connection** (migration 017): `gateway_traffic` (5-minute buckets per gateway, task and service; pruned after 90 days by an hourly
+  job in the coordinator), `gateway_totals` (lifetime, never pruned) and `task_gateway_totals` (per task, gateway and service, never pruned). Buckets are upserted, so
+  a progress report every 10 s costs one small row per bucket instead of one per report, and pruning detail can't change a total.
+- **`ByteReport` carries deltas** with two new fields, `service` and `final`. Every old consumer keeps working because the coordinator still sums the two directions
+  into the billing reconciler exactly as before. A report from a gateway built before this (no `service`) is treated as one whole, closed connection.
+- **The gateway reports every 10 s while a connection is open** and once more at close (`final`); `cmd/gateway/reporter.go` carries unsent deltas across a coordinator
+  outage instead of dropping them. Summing a connection's reports gives its totals (tested over real QUIC).
+- **A gateway can't attribute traffic to someone else's task**: per-task rows are recorded only when the task exists and belongs to the gateway's account; the report
+  still counts toward the gateway's own totals. Negative counts are rejected.
+- **API:** `traffic` (lifetime totals) on each gateway in the list; `GET /gateways/{id}/traffic?range=7d|30d` (hourly or daily series, busiest tasks);
+  `GET /tasks/{id}/traffic` (per gateway and service). All scoped to the signed-in account; another account's ids are 404.
+- **UI:** totals on each gateway card, a gateway page at `/gateways/:id` with a stacked chart (`ui/StackedChart`, written to be reused by 8.15) whose hover lists each
+  series, and the task page's Network card with per-target and total bytes, refreshed every 10 s while the task runs. Zero-traffic hours are filled in so a quiet week
+  isn't squashed (`lib/series.ts`).
+- **Not done:** the optional "Transferred" column on the tasks list; flagging a task where the gateway's number disagrees with the agent's (the coordinator
+  already flags large disagreements for billing).
+- **Verified exactly:** a task fetched a 5,000,000-byte file three times through a real gateway and agent. The coordinator showed 15,000,615 bytes sent to the task
+  (3 x 5,000,000 plus 615 bytes of HTTP headers) and 273 received (3 requests of 91 bytes, matching the agent's own log), over 3 connections. Browser checks:
+  `web/e2e/traffic.mjs`.
 
 ### Task 8.15 — Machine usage: CPU, memory, disk and network over time, with per-task breakdown
 

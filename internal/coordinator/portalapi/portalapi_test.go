@@ -43,7 +43,7 @@ func testStore(t *testing.T) *store.PostgresStore {
 	t.Cleanup(s.Close)
 
 	_, err = s.Pool().Exec(ctx, `TRUNCATE task_logs, node_images, sessions, portal_credentials,
-		ledger_entries, task_holds, task_meters, gateways, tasks, nodes, api_tokens, accounts CASCADE`)
+		ledger_entries, task_holds, task_meters, gateway_traffic, gateway_totals, task_gateway_totals, gateways, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }
@@ -908,4 +908,49 @@ func TestGatewayTestWithoutAProberIs503(t *testing.T) {
 	signUpCustomer(t, c, "owner")
 	id := createGatewayForTest(t, c, "mine", gatewayServiceView{Name: "db", Port: 5432})
 	require.Equal(t, http.StatusServiceUnavailable, c.do(http.MethodPost, "/api/portal/customer/gateways/"+id+"/test", nil).StatusCode)
+}
+
+// Gateway traffic (task 8.14): totals on the list, a series and busiest tasks on the
+// detail, per-service usage on the task, and none of it visible to another account.
+func TestGatewayAndTaskTrafficAreReportedAndScoped(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	me := signUpCustomer(t, c, "tara")
+	fundAccount(t, st, me.AccountID, 10_000_000)
+	gw := createGatewayForTest(t, c, "lab", gatewayServiceView{Name: "db", Port: 5432})
+	taskID := submitTaskForTest(t, c)
+
+	ctx := context.Background()
+	require.NoError(t, st.RecordGatewayTraffic(ctx, store.GatewayTrafficReport{GatewayID: gw, TaskID: taskID, Service: "db", BytesToLocal: 100, BytesToTask: 4000, At: time.Now(), RecordTask: true}))
+	require.NoError(t, st.RecordGatewayTraffic(ctx, store.GatewayTrafficReport{GatewayID: gw, TaskID: taskID, Service: "db", BytesToLocal: 20, BytesToTask: 500, Final: true, At: time.Now(), RecordTask: true}))
+
+	list := decodeBody[[]gatewayView](t, c.do(http.MethodGet, "/api/portal/customer/gateways", nil))
+	require.Len(t, list, 1)
+	require.EqualValues(t, 120, list[0].Traffic.ReceivedFromTasksBytes)
+	require.EqualValues(t, 4500, list[0].Traffic.SentToTasksBytes)
+	require.EqualValues(t, 1, list[0].Traffic.Connections)
+
+	detail := decodeBody[gatewayTrafficResponse](t, c.do(http.MethodGet, "/api/portal/customer/gateways/"+gw+"/traffic?range=7d", nil))
+	require.Equal(t, "hour", detail.Step)
+	require.EqualValues(t, 4500, detail.Totals.SentToTasksBytes)
+	var seriesSum int64
+	for _, p := range detail.Series {
+		seriesSum += p.SentToTasksBytes
+	}
+	require.EqualValues(t, 4500, seriesSum)
+	require.Len(t, detail.Busiest, 1)
+	require.Equal(t, taskID, detail.Busiest[0].TaskID)
+	require.Equal(t, "day", decodeBody[gatewayTrafficResponse](t, c.do(http.MethodGet, "/api/portal/customer/gateways/"+gw+"/traffic?range=30d", nil)).Step)
+	require.Equal(t, http.StatusBadRequest, c.do(http.MethodGet, "/api/portal/customer/gateways/"+gw+"/traffic?range=1y", nil).StatusCode)
+
+	tt := decodeBody[taskTrafficResponse](t, c.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/traffic", nil))
+	require.Len(t, tt.Rows, 1)
+	require.Equal(t, "db", tt.Rows[0].Service)
+	require.EqualValues(t, 120, tt.Totals.ReceivedFromTasksBytes)
+
+	// Someone else sees none of it.
+	other := &testClient{t: t, base: c.base, hc: mustJarClient(t)}
+	signUpCustomer(t, other, "olga")
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/customer/gateways/"+gw+"/traffic", nil).StatusCode)
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/api/portal/customer/tasks/"+taskID+"/traffic", nil).StatusCode)
+	require.Empty(t, decodeBody[[]gatewayView](t, other.do(http.MethodGet, "/api/portal/customer/gateways", nil)))
 }

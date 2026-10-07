@@ -76,7 +76,7 @@ func TestGatewayReconnectsAfterRelayRestart(t *testing.T) {
 	go func() {
 		defer close(gwDone)
 		serveForever(gwCtx, log, func(ctx context.Context) error {
-			return serveOnce(ctx, cfg, kp, map[string]string{"files": "127.0.0.1:1"}, log, func(listener.ForwardStats) {})
+			return serveOnce(ctx, cfg, kp, map[string]string{"files": "127.0.0.1:1"}, log, func(listener.ForwardReport) {})
 		})
 	}()
 

@@ -277,6 +277,8 @@ type gatewayView struct {
 	Connected   bool                 `json:"connected"`
 	Services    []gatewayServiceView `json:"services"`
 	CreatedAtMS int64                `json:"created_at_ms"`
+	// Lifetime traffic (task 8.14); zero for a gateway that has moved nothing.
+	Traffic trafficTotalsView `json:"traffic"`
 }
 
 type gatewayServiceView struct {
@@ -299,9 +301,20 @@ func (s *Server) handleListGateways(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "listing gateways")
 		return
 	}
+	ids := make([]string, len(gateways))
+	for i, g := range gateways {
+		ids[i] = g.ID
+	}
+	totals, err := s.Store.GatewayTotals(r.Context(), ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading traffic")
+		return
+	}
 	out := make([]gatewayView, len(gateways))
 	for i, g := range gateways {
 		out[i] = toGatewayView(g)
+		t := totals[g.ID]
+		out[i].Traffic = totalsView(t.BytesToLocal, t.BytesToTask, t.Connections)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
