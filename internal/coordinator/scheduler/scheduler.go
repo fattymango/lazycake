@@ -111,6 +111,8 @@ type Scheduler struct {
 
 	mu       sync.Mutex
 	freeCap  map[string]store.CapacityFilter // node_id -> last reported free capacity
+	banned   map[string]bool                 // node_id -> currently below the trust ban threshold (for logging changes)
+	lastTick time.Time                       // when the placement loop last ran, for trust healing
 	rejected map[rejectKey]time.Time         // (node_id, task_id) -> cooldown expiry
 }
 

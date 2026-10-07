@@ -110,8 +110,19 @@ func (s *Scheduler) OnTaskFinished(ctx context.Context, nodeID string, ev api.Ta
 		// rather than restructuring BillingEvents to hand it over
 		// directly, since spec drift is a scheduler-owned concern billing
 		// has no reason to know about.
+		//
+		// Only a task that ran to a normal exit says anything about the machine's speed: one that hit
+		// its time limit, ran out of memory or failed to start took however long the customer's own code
+		// made it take. And it is compared only against the same workload's history on this machine.
+		if ev.ExitReason != "exited" || ev.ExitCode != 0 {
+			return nil
+		}
+		task, terr := s.Store.GetTask(ctx, ev.TaskID)
+		if terr != nil {
+			return nil
+		}
 		if meter, err := s.Store.GetMeter(ctx, ev.TaskID); err == nil && meter.NormalisedS != nil {
-			ratio, flagged := s.SpecDrift.Observe(nodeID, *meter.NormalisedS)
+			ratio, flagged := s.SpecDrift.Observe(nodeID, WorkloadKey(task), *meter.NormalisedS)
 			if flagged {
 				s.Log.Warn("spec drift detected", "node_id", nodeID, "task_id", ev.TaskID, "rolling_ratio", ratio)
 				s.Trust.SpecDrift(nodeID)

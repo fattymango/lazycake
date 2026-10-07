@@ -36,13 +36,29 @@ func (s *Scheduler) tick(ctx context.Context) {
 		s.Log.Error("listing nodes for placement", "error", err)
 		return
 	}
+	now := s.now()
+	var elapsed time.Duration
+	if !s.lastTick.IsZero() {
+		elapsed = now.Sub(s.lastTick)
+	}
+	s.lastTick = now
 	for _, n := range nodes {
 		if !n.Connected {
 			continue
 		}
-		// "Below 0.2, stop dispatching and freeze the balance" (task 5.3).
+		// A connected node's trust heals with time, so a ban is never forever.
+		s.Trust.Heal(n.ID, elapsed)
+		// "Below 0.2, stop dispatching and freeze the balance" (task 5.3). Said once per ban, because a
+		// silent skip looked exactly like a broken scheduler: 600 queued tasks and nothing in the logs.
 		if s.Trust.Banned(n.ID) {
+			if s.noteBan(n.ID, true) {
+				s.Log.Warn("not dispatching to this node: its trust score is below the ban threshold; it heals with time",
+					"node_id", n.ID, "trust", s.Trust.Score(n.ID), "threshold", TrustBanThreshold)
+			}
 			continue
+		}
+		if s.noteBan(n.ID, false) {
+			s.Log.Info("node trust is back above the ban threshold; dispatching again", "node_id", n.ID, "trust", s.Trust.Score(n.ID))
 		}
 		if s.maybeDispatchCanary(ctx, n) {
 			continue
@@ -51,6 +67,20 @@ func (s *Scheduler) tick(ctx context.Context) {
 			s.Log.Error("placing task", "node_id", n.ID, "error", err)
 		}
 	}
+}
+
+// noteBan records whether nodeID is currently banned and reports whether that just changed.
+func (s *Scheduler) noteBan(nodeID string, banned bool) (changed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.banned == nil {
+		s.banned = make(map[string]bool)
+	}
+	if s.banned[nodeID] == banned {
+		return false
+	}
+	s.banned[nodeID] = banned
+	return true
 }
 
 func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
