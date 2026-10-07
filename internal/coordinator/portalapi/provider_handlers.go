@@ -204,38 +204,41 @@ func (s *Server) handleNodeTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// machineOffer is what a provider chooses to lend. The coordinator can't see the machine yet, so it only
-// rejects nonsense; the agent itself refuses anything bigger than the machine really has.
+// machineOffer is what a provider chooses to lend: whole numbers only (whole cores, whole gigabytes,
+// whole Mbps). The coordinator can't see the machine yet, so it only rejects nonsense; the agent itself
+// refuses anything bigger than the machine really has.
 type machineOffer struct {
-	Cores       float64 `json:"cores"`
-	MemoryMB    int     `json:"memory_mb"`
-	DiskMB      int     `json:"disk_mb"`
-	NetworkMbps int     `json:"network_mbps"`
+	Cores       int `json:"cores"`
+	MemoryMB    int `json:"memory_mb"`
+	DiskMB      int `json:"disk_mb"`
+	NetworkMbps int `json:"network_mbps"`
 }
 
-// Bounds for what a provider may type: generous enough for a real server, small enough to catch a typo.
+// Bounds for what a provider may type: generous enough for a big server, small enough that no value can
+// overflow a 32-bit field downstream (the agent's offer is carried as int32 megabytes).
 const (
-	minOfferCores, maxOfferCores     = 0.25, 1024
-	minOfferMemoryMB, maxOfferMemory = 256, 16 * 1024 * 1024
-	minOfferDiskMB, maxOfferDisk     = 1024, 1024 * 1024 * 1024
-	minOfferMbps, maxOfferMbps       = 1, 100_000
+	minOfferCores, maxOfferCores = 1, 1024
+	minOfferGB, maxOfferMemoryGB = 1, 16 * 1024
+	maxOfferDiskGB               = 1024 * 1024
+	minOfferMbps, maxOfferMbps   = 1, 100_000
+	mbPerGB                      = 1024
 )
 
 func defaultMachineOffer() machineOffer {
-	return machineOffer{Cores: 2, MemoryMB: 2048, DiskMB: 8192, NetworkMbps: 100}
+	return machineOffer{Cores: 2, MemoryMB: 2 * mbPerGB, DiskMB: 10 * mbPerGB, NetworkMbps: 100}
 }
 
-// validate returns a sentence for the first value that is out of range, or "".
+// validate returns a sentence for the first value that is out of range or not a whole number, or "".
 func (o machineOffer) validate() string {
 	switch {
-	case !(o.Cores >= minOfferCores && o.Cores <= maxOfferCores):
-		return fmt.Sprintf("cores must be between %g and %g", minOfferCores, float64(maxOfferCores))
-	case o.MemoryMB < minOfferMemoryMB || o.MemoryMB > maxOfferMemory:
-		return fmt.Sprintf("memory must be between %d MB and %d MB", minOfferMemoryMB, maxOfferMemory)
-	case o.DiskMB < minOfferDiskMB || o.DiskMB > maxOfferDisk:
-		return fmt.Sprintf("storage must be between %d MB and %d MB", minOfferDiskMB, maxOfferDisk)
+	case o.Cores < minOfferCores || o.Cores > maxOfferCores:
+		return fmt.Sprintf("cores must be a whole number between %d and %d", minOfferCores, maxOfferCores)
+	case o.MemoryMB%mbPerGB != 0 || o.MemoryMB < minOfferGB*mbPerGB || o.MemoryMB > maxOfferMemoryGB*mbPerGB:
+		return fmt.Sprintf("memory must be a whole number of GB between %d and %d", minOfferGB, maxOfferMemoryGB)
+	case o.DiskMB%mbPerGB != 0 || o.DiskMB < minOfferGB*mbPerGB || o.DiskMB > maxOfferDiskGB*mbPerGB:
+		return fmt.Sprintf("storage must be a whole number of GB between %d and %d", minOfferGB, maxOfferDiskGB)
 	case o.NetworkMbps < minOfferMbps || o.NetworkMbps > maxOfferMbps:
-		return fmt.Sprintf("network must be between %d and %d Mbps", minOfferMbps, maxOfferMbps)
+		return fmt.Sprintf("network must be a whole number of Mbps between %d and %d", minOfferMbps, maxOfferMbps)
 	}
 	return ""
 }
@@ -343,7 +346,7 @@ func (s *Server) installCommand(token string, offer machineOffer) string {
 		" --network=host" +
 		" -e LAZYCAKE_COORDINATOR_ADDR=" + coordinatorAddr +
 		" -e LAZYCAKE_TOKEN=" + token +
-		" -e LAZYCAKE_OFFER_CORES=" + strconv.FormatFloat(offer.Cores, 'g', -1, 64) +
+		" -e LAZYCAKE_OFFER_CORES=" + strconv.Itoa(offer.Cores) +
 		" -e LAZYCAKE_OFFER_MEMORY_MB=" + strconv.Itoa(offer.MemoryMB) +
 		" -e LAZYCAKE_OFFER_DISK_MB=" + strconv.Itoa(offer.DiskMB) +
 		" -e LAZYCAKE_OFFER_NETWORK_MBPS=" + strconv.Itoa(offer.NetworkMbps) +

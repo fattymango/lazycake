@@ -1088,17 +1088,23 @@ func TestInstallTokenTakesTheChosenOffer(t *testing.T) {
 	signUpProvider(t, c, "ofelia")
 
 	chosen := decodeBody[installTokenResponse](t, c.do(http.MethodPost, "/api/portal/provider/nodes/install-token",
-		machineOffer{Cores: 4, MemoryMB: 8192, DiskMB: 50000, NetworkMbps: 250}))
+		machineOffer{Cores: 4, MemoryMB: 8192, DiskMB: 51200, NetworkMbps: 250}))
 	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_CORES=4 ")
 	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_MEMORY_MB=8192")
-	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_DISK_MB=50000")
+	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_DISK_MB=51200")
 	require.Contains(t, chosen.InstallCommand, "LAZYCAKE_OFFER_NETWORK_MBPS=250")
 
 	// No body at all (an older client): the defaults.
 	plain := decodeBody[installTokenResponse](t, c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", nil))
 	require.Contains(t, plain.InstallCommand, "LAZYCAKE_OFFER_NETWORK_MBPS=100")
 
+	// Fractions never mint a token, whether sent as a decimal or as a size that isn't a whole GB.
+	frac := c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", map[string]any{"cores": 2.5, "memory_mb": 2048, "disk_mb": 10240, "network_mbps": 100})
+	require.Equal(t, http.StatusBadRequest, frac.StatusCode)
+	halfGB := c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", machineOffer{Cores: 2, MemoryMB: 1536, DiskMB: 10240, NetworkMbps: 100})
+	require.Equal(t, http.StatusBadRequest, halfGB.StatusCode)
+
 	// Nonsense never mints a token.
-	bad := c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", machineOffer{Cores: 0, MemoryMB: 2048, DiskMB: 8192, NetworkMbps: 100})
+	bad := c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", machineOffer{Cores: 0, MemoryMB: 2048, DiskMB: 10240, NetworkMbps: 100})
 	require.Equal(t, http.StatusBadRequest, bad.StatusCode)
 }
