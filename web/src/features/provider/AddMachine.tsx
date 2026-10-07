@@ -43,6 +43,7 @@ import { Button } from "@/ui/Button";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { CodeBlock } from "@/ui/CodeBlock";
 import { Input, Textarea } from "@/ui/Input";
+import { useWideLayout } from "@/ui/AppShell";
 import { PageHeader } from "@/ui/PageHeader";
 import { StopSlider } from "@/ui/StopSlider";
 
@@ -148,6 +149,7 @@ function CapacityRow({
 
 export function AddMachine() {
   usePageTitle("Add a machine");
+  useWideLayout(); // mostly controls side by side: let it use a big screen
   const [result, setResult] = useState<InstallToken | null>(null);
   const [mintedFor, setMintedFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

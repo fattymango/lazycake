@@ -18,7 +18,8 @@ const browser = await puppeteer.launch({
   args: ["--no-sandbox", "--disable-gpu"],
 });
 const page = await browser.newPage();
-await page.setViewport({ width: 1440, height: 1200 });
+const WIDTH = Number(process.env.WIDTH || 1440);
+await page.setViewport({ width: WIDTH, height: 1200 });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 const shot = async (n) => SHOTS && (await page.screenshot({ path: `${SHOTS}/${n}.png` }));
@@ -84,6 +85,10 @@ check(
   boxes.install && boxes.install.left > boxes.lend.left + 300 && Math.abs(boxes.install.top - boxes.lend.top) < 20
 );
 
+if (WIDTH >= 1900) {
+  const w = await page.$eval("main#main", (m) => m.getBoundingClientRect().width);
+  check("on a wide screen the page uses the extra width instead of a narrow centred column", w > 1400, `${Math.round(w)}px wide`);
+}
 let body = await text();
 check(
   "CPU, memory, storage and network are all there",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import * as RadixDialog from "@radix-ui/react-dialog";
@@ -221,10 +221,26 @@ function UserMenu({ username, roleLabel, onLogout }: { username: string; roleLab
   );
 }
 
+/**
+ * Pages are held to a readable width by default. A page that is mostly controls and side-by-side panels
+ * (rather than prose or a table) can ask for the wide layout, which lets it use a big screen:
+ * `useWideLayout()` at the top of the page.
+ */
+const WideLayoutContext = createContext<(wide: boolean) => void>(() => {});
+
+export function useWideLayout() {
+  const setWide = useContext(WideLayoutContext);
+  useEffect(() => {
+    setWide(true);
+    return () => setWide(false);
+  }, [setWide]);
+}
+
 export function AppShell({ nav, crumbs, roleLabel, username, onLogout, topbarExtra, children }: AppShellProps) {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [drawer, setDrawer] = useState(false);
   const online = useOnline();
+  const [wide, setWide] = useState(false);
   const { pathname } = useLocation();
 
   useEffect(() => setDrawer(false), [pathname]);
@@ -314,8 +330,8 @@ export function AppShell({ nav, crumbs, roleLabel, username, onLogout, topbarExt
           </div>
         )}
 
-        <main id="main" className="mx-auto w-full max-w-[75rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {children}
+        <main id="main" className={cn("mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8", wide ? "max-w-[100rem]" : "max-w-[75rem]")}>
+          <WideLayoutContext.Provider value={setWide}>{children}</WideLayoutContext.Provider>
         </main>
       </div>
     </div>
