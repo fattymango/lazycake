@@ -34,12 +34,16 @@ export function bytes(n: number | undefined | null): string {
   return `${Number(x.toFixed(x < 10 ? 2 : x < 100 ? 1 : 0))} ${units[i]}`;
 }
 
-/** Cores in use: "0", "<0.01" for a tiny but real amount (never a misleading 0), else up to 2 places. */
+/**
+ * Cores in use, shown as measured: enough decimals that a small real figure is visible
+ * (0.0017, not a rounded 0), fewer when the number is large. Only a true zero reads "0".
+ */
 export function cores(v: number | undefined | null): string {
   const n = v ?? 0;
   if (n <= 0) return "0";
-  if (n < 0.005) return "<0.01";
-  return String(Number(n.toFixed(2)));
+  const places = n >= 0.1 ? 2 : n >= 0.01 ? 3 : 4;
+  const out = Number(n.toFixed(places));
+  return String(out === 0 ? Number(n.toPrecision(2)) : out);
 }
 
 export function cpu(cores: number | undefined): string {
