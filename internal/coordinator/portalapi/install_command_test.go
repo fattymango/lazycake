@@ -19,7 +19,8 @@ func TestInstallCommand(t *testing.T) {
 		"-v $HOME/.local/share/lazycake/bin:$HOME/.local/share/lazycake/bin", // same path on both sides
 		"-e LAZYCAKE_LCINIT_HOST_DIR=$HOME/.local/share/lazycake/bin",        // so the agent stages lcinit there
 		"/run/user/$(id -u)/podman/podman.sock",
-		"--network=host", // the agent reads the real link speed from the host's interfaces
+		"--restart=always", // an agent that doesn't return after a reboot silently leaves the pool
+		"--network=host",   // the agent reads the real link speed from the host's interfaces
 		"-e LAZYCAKE_OFFER_CORES=2",
 		"-e LAZYCAKE_OFFER_MEMORY_MB=2048",
 		"-e LAZYCAKE_OFFER_DISK_MB=10240",

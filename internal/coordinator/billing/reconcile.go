@@ -21,8 +21,9 @@ const divergenceSlackBytes = 16 * 1024
 // stream/connection teardown finishing on a different path - a chance to
 // arrive first. Whatever hasn't arrived by then is treated as 0, which is
 // exactly correct for a task that never opened a tunnel at all (all three
-// counts are legitimately 0, divergence 0%, nothing flagged).
-const finalizeGrace = 3 * time.Second
+// counts are legitimately 0, divergence 0%, nothing flagged). Longer than the
+// gateway's 5 s batching interval, so its last batch for the task has landed.
+const finalizeGrace = 10 * time.Second
 
 // Reconciliation is IMPLEMENTATION.md task 4.3's own metric: the spread
 // between the largest and smallest of three independently-reported byte

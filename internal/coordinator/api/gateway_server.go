@@ -78,6 +78,14 @@ func (s *GatewayServer) ReportBytes(ctx context.Context, req *lazycakev1.ByteRep
 	// gateway built before these fields sends one report at close with no service:
 	// that is the whole connection.
 	legacy := req.GetService() == ""
+	// A batched report says how many connections closed; an older gateway says final=true for one.
+	conns := int(req.GetConnections())
+	if conns < 0 {
+		conns = 0
+	}
+	if conns == 0 && (req.GetFinal() || legacy) {
+		conns = 1
+	}
 	recordTask := false
 	if t, err := s.Store.GetTask(ctx, req.GetTaskId()); err == nil && t.AccountID == gw.AccountID {
 		recordTask = true
@@ -85,7 +93,7 @@ func (s *GatewayServer) ReportBytes(ctx context.Context, req *lazycakev1.ByteRep
 	if err := s.Store.RecordGatewayTraffic(ctx, store.GatewayTrafficReport{
 		GatewayID: gw.ID, TaskID: req.GetTaskId(), Service: req.GetService(),
 		BytesToLocal: toLocal, BytesToTask: toTask,
-		Final: req.GetFinal() || legacy, At: time.Now(), RecordTask: recordTask,
+		Final: conns > 0, Connections: conns, At: time.Now(), RecordTask: recordTask,
 	}); err != nil {
 		// The report was accepted for billing; failing the RPC would only make the
 		// gateway resend what was already counted there.

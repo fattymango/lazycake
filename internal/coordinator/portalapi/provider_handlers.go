@@ -341,6 +341,11 @@ func (s *Server) installCommand(token string, offer machineOffer) string {
 		// these, any task with tunnel_targets fails outright - caught
 		// live installing an agent by hand from this exact command.
 		" --pid=host --cap-add=SYS_ADMIN" +
+		// --restart=always: an agent that doesn't come back after the machine reboots silently takes the machine
+		// out of the pool (hit live: a reboot left the agent container "Exited (0)" and nothing noticed). On a
+		// rootless engine this also needs podman-restart.service and lingering, which the page tells the
+		// provider to enable.
+		" --restart=always" +
 		// --network=host: the agent reads this machine's real network link speed to check the network
 		// offer against it, and a container only sees its own interfaces without it.
 		" --network=host" +

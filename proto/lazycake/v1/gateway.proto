@@ -25,6 +25,9 @@ message ByteReport {
   int64  bytes_to_task  = 4; // local service -> gateway -> task
   string service        = 5; // which published service the connection used
   bool   final          = 6; // the connection has closed; this is its last report
+  // How many connections closed since the previous report, when the gateway batches many into one. A report
+  // with final set and this left at 0 (a gateway built before batching) counts as one.
+  int32  connections    = 7;
 }
 
 message ByteReportAck {}
