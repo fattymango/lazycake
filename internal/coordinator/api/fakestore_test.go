@@ -30,6 +30,9 @@ type fakeStore struct {
 	ledgerN  int
 	holds    map[string]store.LedgerEntry // task_id -> {account_id, amount_micros}
 
+	gwTotals    map[string]store.TrafficTotals
+	trafficRows []fakeTrafficRow
+
 	portalCreds map[string]store.PortalCredential // account_id -> credential
 	sessions    map[string]store.Session          // string(id_hash) -> session
 }
@@ -707,4 +710,68 @@ func (f *fakeStore) ListCancelRequested(ctx context.Context) ([]store.Task, erro
 		}
 	}
 	return out, nil
+}
+
+// --- gateway traffic (task 8.14): the fake keeps what the real store would, minus time bucketing ---
+
+type fakeTrafficRow struct {
+	gateway, task, service string
+	store.TrafficTotals
+}
+
+func (f *fakeStore) RecordGatewayTraffic(ctx context.Context, r store.GatewayTrafficReport) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gwTotals == nil {
+		f.gwTotals = map[string]store.TrafficTotals{}
+	}
+	conns := int64(0)
+	if r.Final {
+		conns = 1
+	}
+	t := f.gwTotals[r.GatewayID]
+	t.BytesToLocal += r.BytesToLocal
+	t.BytesToTask += r.BytesToTask
+	t.Connections += conns
+	f.gwTotals[r.GatewayID] = t
+	if r.RecordTask {
+		f.trafficRows = append(f.trafficRows, fakeTrafficRow{r.GatewayID, r.TaskID, r.Service, store.TrafficTotals{BytesToLocal: r.BytesToLocal, BytesToTask: r.BytesToTask, Connections: conns}})
+	}
+	return nil
+}
+
+func (f *fakeStore) GatewayTotals(ctx context.Context, ids []string) (map[string]store.TrafficTotals, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]store.TrafficTotals{}
+	for _, id := range ids {
+		if t, ok := f.gwTotals[id]; ok {
+			out[id] = t
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GatewayTrafficSeries(ctx context.Context, gatewayID string, since time.Time, step string) ([]store.TrafficPoint, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) GatewayBusiestTasks(ctx context.Context, gatewayID string, since time.Time, limit int) ([]store.TaskTraffic, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) TaskGatewayUsage(ctx context.Context, taskID string) ([]store.TaskGatewayTraffic, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.TaskGatewayTraffic
+	for _, r := range f.trafficRows {
+		if r.task == taskID {
+			out = append(out, store.TaskGatewayTraffic{GatewayID: r.gateway, Service: r.service, TrafficTotals: r.TrafficTotals})
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) PruneGatewayTraffic(ctx context.Context, before time.Time) (int64, error) {
+	return 0, nil
 }

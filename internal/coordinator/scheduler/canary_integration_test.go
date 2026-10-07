@@ -22,7 +22,8 @@ import (
 )
 
 // fakeCanaryStore is a minimal store.Store double covering just what
-// api.GatewayServer.ReportBytes touches: Authenticate and GetGateway.
+// api.GatewayServer.ReportBytes touches: Authenticate, GetGateway, and the
+// traffic bookkeeping (which this test doesn't look at).
 type fakeCanaryStore struct {
 	store.Store
 	tokens   map[string]store.APIToken
@@ -43,6 +44,14 @@ func (f *fakeCanaryStore) GetGateway(ctx context.Context, id string) (store.Gate
 		return store.Gateway{}, store.ErrNotFound
 	}
 	return gw, nil
+}
+
+func (f *fakeCanaryStore) GetTask(ctx context.Context, id string) (store.Task, error) {
+	return store.Task{}, store.ErrNotFound
+}
+
+func (f *fakeCanaryStore) RecordGatewayTraffic(ctx context.Context, r store.GatewayTrafficReport) error {
+	return nil
 }
 
 // canaryFanout is exactly cmd/coordinator's gatewayFanout, minus the

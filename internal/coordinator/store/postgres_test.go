@@ -25,7 +25,7 @@ func testStore(t *testing.T) *PostgresStore {
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
 
-	_, err = s.pool.Exec(ctx, `TRUNCATE task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
+	_, err = s.pool.Exec(ctx, `TRUNCATE gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }
@@ -371,4 +371,139 @@ func TestRequestTaskCancel(t *testing.T) {
 	list, err = s.ListCancelRequested(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 1, "a running task nobody asked to stop isn't listed")
+}
+
+// --- gateway traffic (task 8.14) ---
+
+func mustGateway(t *testing.T, s *PostgresStore, id, accountID string) {
+	t.Helper()
+	require.NoError(t, s.CreateGateway(context.Background(), Gateway{ID: id, AccountID: accountID, Label: id}))
+}
+
+func TestGatewayTrafficTotalsSeriesAndAttribution(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	for _, g := range []string{"gw_a", "gw_b", "gw_c"} {
+		mustGateway(t, s, g, "act_1")
+	}
+	now := time.Now().UTC().Truncate(time.Minute)
+	rep := func(gw, task, svc string, toLocal, toTask int64, final bool, at time.Time) {
+		require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{
+			GatewayID: gw, TaskID: task, Service: svc, BytesToLocal: toLocal, BytesToTask: toTask,
+			Final: final, At: at, RecordTask: true,
+		}))
+	}
+
+	// One task spread across THREE gateways, with different amounts, must never leak between them.
+	rep("gw_a", "tsk_1", "db", 100, 1000, false, now)
+	rep("gw_a", "tsk_1", "db", 11, 22, true, now.Add(time.Second)) // final: one connection
+	rep("gw_b", "tsk_1", "files", 7, 70, true, now)
+	rep("gw_c", "tsk_1", "api", 3, 30, true, now)
+	// A second task on gateway a, bigger, an hour ago.
+	rep("gw_a", "tsk_2", "db", 5000, 9000, true, now.Add(-time.Hour))
+
+	totals, err := s.GatewayTotals(ctx, []string{"gw_a", "gw_b", "gw_c", "gw_nope"})
+	require.NoError(t, err)
+	require.Equal(t, TrafficTotals{BytesToLocal: 5111, BytesToTask: 10022, Connections: 2}, totals["gw_a"])
+	require.Equal(t, TrafficTotals{BytesToLocal: 7, BytesToTask: 70, Connections: 1}, totals["gw_b"])
+	require.Equal(t, TrafficTotals{BytesToLocal: 3, BytesToTask: 30, Connections: 1}, totals["gw_c"])
+	require.NotContains(t, totals, "gw_nope", "a gateway with no traffic has no entry")
+
+	// Per task, per gateway, per service: exact, no leakage.
+	usage, err := s.TaskGatewayUsage(ctx, "tsk_1")
+	require.NoError(t, err)
+	require.Equal(t, []TaskGatewayTraffic{
+		{GatewayID: "gw_a", Service: "db", TrafficTotals: TrafficTotals{BytesToLocal: 111, BytesToTask: 1022, Connections: 1}},
+		{GatewayID: "gw_b", Service: "files", TrafficTotals: TrafficTotals{BytesToLocal: 7, BytesToTask: 70, Connections: 1}},
+		{GatewayID: "gw_c", Service: "api", TrafficTotals: TrafficTotals{BytesToLocal: 3, BytesToTask: 30, Connections: 1}},
+	}, usage)
+
+	// Over time: hourly buckets, oldest first, only what's inside the window.
+	series, err := s.GatewayTrafficSeries(ctx, "gw_a", now.Add(-3*time.Hour), "hour")
+	require.NoError(t, err)
+	require.Len(t, series, 2)
+	require.True(t, series[0].At.Before(series[1].At))
+	require.Equal(t, int64(5000), series[0].BytesToLocal)
+	require.Equal(t, int64(111), series[1].BytesToLocal)
+	older, err := s.GatewayTrafficSeries(ctx, "gw_a", now.Add(-10*time.Minute), "hour")
+	require.NoError(t, err)
+	require.Len(t, older, 1, "the hour-old traffic is outside a 10-minute window")
+	_, err = s.GatewayTrafficSeries(ctx, "gw_a", now, "century")
+	require.Error(t, err)
+
+	// Busiest tasks, biggest first.
+	top, err := s.GatewayBusiestTasks(ctx, "gw_a", now.Add(-3*time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, top, 2)
+	require.Equal(t, "tsk_2", top[0].TaskID)
+	require.Equal(t, int64(14000), top[0].BytesToLocal+top[0].BytesToTask)
+	limited, err := s.GatewayBusiestTasks(ctx, "gw_a", now.Add(-3*time.Hour), 1)
+	require.NoError(t, err)
+	require.Len(t, limited, 1)
+}
+
+// A report about a task that isn't the gateway's own still counts toward the gateway's
+// totals but never creates per-task rows.
+func TestGatewayTrafficForAnUnknownTaskOnlyCountsTowardTheGateway(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustGateway(t, s, "gw_a", "act_1")
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_a", TaskID: "tsk_stranger", Service: "db", BytesToLocal: 50, BytesToTask: 60, Final: true, RecordTask: false}))
+
+	totals, _ := s.GatewayTotals(ctx, []string{"gw_a"})
+	require.Equal(t, int64(50), totals["gw_a"].BytesToLocal)
+	usage, err := s.TaskGatewayUsage(ctx, "tsk_stranger")
+	require.NoError(t, err)
+	require.Empty(t, usage)
+	top, err := s.GatewayBusiestTasks(ctx, "gw_a", time.Now().Add(-time.Hour), 10)
+	require.NoError(t, err)
+	require.Empty(t, top)
+}
+
+// Deltas from one long connection (progress reports) add up, land in the right 5-minute
+// bucket, and count one connection only when it closes.
+func TestGatewayTrafficProgressReportsAddUp(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustGateway(t, s, "gw_a", "act_1")
+	at := time.Now().UTC().Truncate(time.Minute)
+	for i := 0; i < 6; i++ {
+		require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_a", TaskID: "tsk_1", Service: "db", BytesToLocal: 10, BytesToTask: 100, At: at, RecordTask: true}))
+	}
+	usage, _ := s.TaskGatewayUsage(ctx, "tsk_1")
+	require.Len(t, usage, 1)
+	require.Equal(t, int64(60), usage[0].BytesToLocal)
+	require.Equal(t, int64(600), usage[0].BytesToTask)
+	require.Zero(t, usage[0].Connections, "still open: not counted as a connection yet")
+
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_a", TaskID: "tsk_1", Service: "db", BytesToLocal: 1, BytesToTask: 1, Final: true, At: at, RecordTask: true}))
+	usage, _ = s.TaskGatewayUsage(ctx, "tsk_1")
+	require.Equal(t, int64(1), usage[0].Connections)
+	require.Equal(t, int64(61), usage[0].BytesToLocal)
+}
+
+// Pruning removes old 5-minute buckets but never the lifetime or per-task totals.
+func TestPruningGatewayTrafficKeepsTheTotals(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustGateway(t, s, "gw_a", "act_1")
+	old := time.Now().Add(-100 * 24 * time.Hour)
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_a", TaskID: "tsk_old", Service: "db", BytesToLocal: 7, BytesToTask: 9, Final: true, At: old, RecordTask: true}))
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_a", TaskID: "tsk_new", Service: "db", BytesToLocal: 1, BytesToTask: 2, Final: true, At: time.Now(), RecordTask: true}))
+
+	deleted, err := s.PruneGatewayTraffic(ctx, time.Now().Add(-90*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deleted)
+
+	series, _ := s.GatewayTrafficSeries(ctx, "gw_a", time.Now().Add(-200*24*time.Hour), "day")
+	require.Len(t, series, 1, "the old bucket is gone from the chart data")
+	totals, _ := s.GatewayTotals(ctx, []string{"gw_a"})
+	require.Equal(t, int64(8), totals["gw_a"].BytesToLocal, "lifetime totals survive pruning")
+	usage, _ := s.TaskGatewayUsage(ctx, "tsk_old")
+	require.Len(t, usage, 1, "so does the old task's own total")
+	require.Equal(t, int64(7), usage[0].BytesToLocal)
 }

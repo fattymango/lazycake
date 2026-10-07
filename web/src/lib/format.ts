@@ -20,6 +20,20 @@ export function count(n: number | undefined | null): string {
   return integer.format(n ?? 0);
 }
 
+/** Byte counts -> "0 B" / "812 B" / "4.5 kB" / "1.23 GB" (decimal units, as network volume is usually quoted). */
+export function bytes(n: number | undefined | null): string {
+  const v = n ?? 0;
+  if (v < 1000) return `${Math.round(v)} B`;
+  const units = ["kB", "MB", "GB", "TB", "PB"];
+  let x = v / 1000;
+  let i = 0;
+  while (x >= 999.5 && i < units.length - 1) {
+    x /= 1000;
+    i++;
+  }
+  return `${Number(x.toFixed(x < 10 ? 2 : x < 100 ? 1 : 0))} ${units[i]}`;
+}
+
 export function cpu(cores: number | undefined): string {
   if (cores === undefined) return "—";
   return `${Number(cores.toFixed(2))} vCPU`;

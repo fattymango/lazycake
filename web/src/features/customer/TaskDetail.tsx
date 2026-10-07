@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { CircleStop, Network, RotateCcw, Terminal } from "lucide-react";
 import { ApiError, apiGet, apiPost, errorMessage } from "@/lib/api";
-import { cpu, duration, memory, money, relativeTime, shortDateTime, dateTime } from "@/lib/format";
+import { bytes, cpu, duration, memory, money, relativeTime, shortDateTime, dateTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useLogStream } from "@/lib/hooks/useLogStream";
 import { useNow } from "@/lib/hooks/useNow";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { useLiveEvents, useLiveStatus } from "@/lib/live";
 import { costByTask, taskCommand, taskDurationMs } from "@/lib/tasks";
-import type { Gateway, LedgerEntry, Task } from "@/lib/types";
+import type { Gateway, LedgerEntry, Task, TaskTraffic } from "@/lib/types";
 import { LogViewer } from "@/components/LogViewer";
 import { Alert } from "@/ui/Alert";
 import { Button } from "@/ui/Button";
@@ -107,6 +107,7 @@ export function TaskDetail() {
   const task = useAsync((s) => apiGet<Task>(`/api/portal/customer/tasks/${encodeURIComponent(id)}`, s), [id]);
   const ledger = useAsync((s) => apiGet<LedgerEntry[]>("/api/portal/customer/ledger", s), []);
   const gateways = useAsync((s) => apiGet<Gateway[]>("/api/portal/customer/gateways", s), []);
+  const traffic = useAsync((s) => apiGet<TaskTraffic>(`/api/portal/customer/tasks/${encodeURIComponent(id)}/traffic`, s), [id]);
   const logs = useLogStream(task.data ? id : undefined);
 
   usePageTitle(task.data ? `Task ${id.slice(0, 12)}…` : "Task");
@@ -132,6 +133,22 @@ export function TaskDetail() {
     const timer = window.setInterval(() => reloadTask(), 4000);
     return () => window.clearInterval(timer);
   }, [active, liveStatus, reloadTask]);
+
+  // Traffic moves while the task runs (gateways report every ~10 s) and settles once it ends.
+  const reloadTraffic = traffic.reload;
+  useEffect(() => {
+    if (!active) {
+      reloadTraffic();
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") reloadTraffic();
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [active, reloadTraffic]);
+  const trafficFor = (gatewayId: string, hostname: string) => {
+    return traffic.data?.rows.filter((r) => r.gateway_id === gatewayId && r.service === hostname);
+  };
 
   const rerun = useCallback(() => navigate("/tasks/new", { state: { from: t } }), [navigate, t]);
 
@@ -295,6 +312,21 @@ export function TaskDetail() {
           {t.tunnel_targets && t.tunnel_targets.length > 0 && (
             <Card>
               <CardHeader title="Network" description="This task can reach only these gateways." />
+              {traffic.data &&
+                traffic.data.totals.connections + traffic.data.totals.received_from_tasks_bytes + traffic.data.totals.sent_to_tasks_bytes >
+                  0 && (
+                  <p className="px-5 pb-1 text-xs text-muted">
+                    In total this task sent{" "}
+                    <span className="font-medium text-fg" data-tnum>
+                      {bytes(traffic.data.totals.received_from_tasks_bytes)}
+                    </span>{" "}
+                    to your services and received{" "}
+                    <span className="font-medium text-fg" data-tnum>
+                      {bytes(traffic.data.totals.sent_to_tasks_bytes)}
+                    </span>{" "}
+                    back.
+                  </p>
+                )}
               <CardBody className="space-y-3">
                 {t.tunnel_targets.map((g) => (
                   <div
@@ -313,6 +345,7 @@ export function TaskDetail() {
                         </Link>
                       </p>
                       <Identifier value={g.gateway_id} />
+                      <TargetTraffic rows={trafficFor(g.gateway_id, g.hostname)} />
                     </div>
                   </div>
                 ))}
@@ -362,5 +395,16 @@ export function TaskDetail() {
         onConfirm={stopTask}
       />
     </div>
+  );
+}
+
+function TargetTraffic({ rows }: { rows: TaskTraffic["rows"] | undefined }) {
+  if (!rows || rows.length === 0) return null;
+  const sent = rows.reduce((n, r) => n + r.received_from_tasks_bytes, 0);
+  const got = rows.reduce((n, r) => n + r.sent_to_tasks_bytes, 0);
+  return (
+    <p className="truncate pt-1 text-xs text-muted" data-tnum>
+      ↑ {bytes(sent)} sent · ↓ {bytes(got)} received
+    </p>
   );
 }

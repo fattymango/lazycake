@@ -271,3 +271,49 @@ type Gateway struct {
 	Connected   bool
 	CreatedAt   time.Time
 }
+
+// GatewayTrafficReport is one byte report from a gateway about one forwarded
+// connection: the bytes moved since that connection's previous report.
+type GatewayTrafficReport struct {
+	GatewayID string
+	TaskID    string
+	Service   string
+	// BytesToLocal went from the task, through the gateway, to the customer's
+	// own service; BytesToTask came back the other way.
+	BytesToLocal int64
+	BytesToTask  int64
+	// Final: the connection has closed, so it counts as one connection.
+	Final bool
+	At    time.Time
+	// RecordTask: the task is known and belongs to the gateway's account, so
+	// the per-task numbers may be recorded. A report about anything else still
+	// counts toward the gateway's own totals.
+	RecordTask bool
+}
+
+// TrafficTotals are cumulative byte counts, from the gateway's side.
+type TrafficTotals struct {
+	BytesToLocal int64
+	BytesToTask  int64
+	Connections  int64
+}
+
+// TrafficPoint is one point of a gateway's traffic over time.
+type TrafficPoint struct {
+	At           time.Time
+	BytesToLocal int64
+	BytesToTask  int64
+}
+
+// TaskTraffic is what one task moved through a gateway.
+type TaskTraffic struct {
+	TaskID string
+	TrafficTotals
+}
+
+// TaskGatewayTraffic is what one task moved through one service of one gateway.
+type TaskGatewayTraffic struct {
+	GatewayID string
+	Service   string
+	TrafficTotals
+}

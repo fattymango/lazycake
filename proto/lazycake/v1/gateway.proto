@@ -12,11 +12,19 @@ service GatewayService {
   rpc ReportBytes(ByteReport) returns (ByteReportAck);
 }
 
+// ByteReport carries the bytes one forwarded connection moved since its previous report
+// (a delta, not a running total), so a connection that stays open for hours shows up over
+// time instead of as one spike when it finally closes, and the deltas of one connection sum
+// to what a single report at close used to carry. A gateway built before these fields sends
+// one report at close with service unset and final unset; the coordinator treats that as the
+// whole connection.
 message ByteReport {
   string gateway_id     = 1;
   string task_id        = 2;
   int64  bytes_to_local = 3; // gateway -> local service
   int64  bytes_to_task  = 4; // local service -> gateway -> task
+  string service        = 5; // which published service the connection used
+  bool   final          = 6; // the connection has closed; this is its last report
 }
 
 message ByteReportAck {}

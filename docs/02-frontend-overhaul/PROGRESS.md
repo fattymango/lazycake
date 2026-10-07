@@ -86,3 +86,7 @@ verified.
   update to get the per-service check; older gateways show grey.
 
 - Idea 2026-10-07 (to discuss next): task 8.16, a version indicator and guided update for gateways and agents, deliberately *not* a push-update button. Recorded in `IMPLEMENTATION.md`.
+
+- Task 8.14 (gateway traffic) done, 2026-10-07: see "As built" in `IMPLEMENTATION.md`. Migration 017, delta reports every 10 s from the gateway, lifetime totals on gateway
+  cards, a gateway page with a stacked chart and busiest tasks, per-target bytes on the task page. Verified exactly with a known-size file through a real gateway
+  and agent, and in a real browser (`web/e2e/traffic.mjs`). Needs migration 017 and a gateway update for the over-time numbers; older gateways still count (one report at close).

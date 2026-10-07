@@ -12,6 +12,10 @@ coordinator logs it at startup.
 - **Gateway "Test connection"** (task 8.13): checks that a gateway is connected and that each service it publishes actually answers on the gateway's own machine.
   Green (all reachable), yellow (connected but a service isn't), red (not connected), grey (connected, but the gateway is too old to verify services, so update it),
   with a legend and per-service reasons. The per-service check needs the new gateway build. Throttled in the UI only.
+- **Gateway traffic** (task 8.14): every gateway card shows how much it has moved ("Received from tasks" / "Sent to tasks"), each gateway has a page with a 7- or
+  30-day chart and its busiest tasks, and a task's Network card shows what it moved through each service. A gateway reports every 10 seconds while a connection
+  is open, so a long database session shows up as it happens. Needs migration 017; update the gateway for the over-time numbers (older gateways still count,
+  once per connection).
 
 ## v0.2.0 — 2026-10-07
 
