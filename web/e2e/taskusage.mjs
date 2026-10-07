@@ -78,7 +78,11 @@ await shot("task-resource-network");
 await tab("Gateway");
 await sleep(500);
 body = await page.$eval("main#main", (m) => m.innerText);
-check("the gateway tab is there for a task that used a gateway", /Received from tasks/.test(body) && /Sent to tasks/.test(body));
+check(
+  "the gateway tab has a line per gateway, named, with what it moved",
+  /exactness · [\d.]+ (B|kB|MB)/.test(body) || /gateway · [\d.]+ (B|kB|MB)/.test(body),
+  body.match(/[^\n]* · [\d.]+ (B|kB|MB)/)?.[0]
+);
 await shot("task-resource-gateway");
 
 // A task that never started has no card (nothing to show yet).

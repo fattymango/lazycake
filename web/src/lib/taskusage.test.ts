@@ -56,23 +56,36 @@ describe("taskStack", () => {
 });
 
 describe("bucketTraffic", () => {
-  it("turns a short task's 10-second reports into a real line, with quiet moments as zeros", () => {
-    const series = [
-      { at_ms: 0, received: 10, sent: 100 },
-      { at_ms: 10_000, received: 10, sent: 100 },
-      { at_ms: 40_000, received: 5, sent: 50 },
-    ];
-    const cols = bucketTraffic(series, 0, 40_000);
-    expect(cols).toHaveLength(5);
-    expect(cols[2].values).toEqual({ received: 0, sent: 0 });
-    expect(cols[2].gap).toBeUndefined();
-    expect(cols.reduce((n, c) => n + c.values.sent, 0)).toBe(250);
-    expect(cols[1].at - cols[0].at).toBe(MIN_TRAFFIC_COLUMN_MS);
+  const series = [
+    { at_ms: 0, gateway_id: "gw_a", received: 10, sent: 100 },
+    { at_ms: 0, gateway_id: "gw_b", received: 1, sent: 2 },
+    { at_ms: 10_000, gateway_id: "gw_a", received: 10, sent: 100 },
+    { at_ms: 40_000, gateway_id: "gw_b", received: 5, sent: 50 },
+  ];
+
+  it("keeps each gateway's own consumption separate, biggest first, with exact totals", () => {
+    const { points, gateways, totals } = bucketTraffic(series, 0, 40_000);
+    expect(gateways).toEqual(["gw_a", "gw_b"]);
+    expect(totals.gw_a).toEqual({ received: 20, sent: 200 });
+    expect(totals.gw_b).toEqual({ received: 6, sent: 52 });
+    expect(points[0].values).toEqual({ gw_a: 110, gw_b: 3, received: 11, sent: 102 });
+    expect(points.reduce((n, p) => n + p.values.gw_a, 0)).toBe(220);
+    expect(points.reduce((n, p) => n + p.values.gw_b, 0)).toBe(58);
   });
 
-  it("caps the column count for a long task and returns nothing for no traffic", () => {
-    const day = Array.from({ length: 4000 }, (_, i) => ({ at_ms: i * 10_000, received: 1, sent: 1 }));
-    expect(bucketTraffic(day, 0, 4000 * 10_000).length).toBeLessThanOrEqual(61);
-    expect(bucketTraffic([], 0, 1000)).toEqual([]);
+  it("shows quiet moments as real zeros for every gateway, never as gaps", () => {
+    const { points } = bucketTraffic(series, 0, 40_000);
+    expect(points).toHaveLength(5);
+    expect(points[2].values).toEqual({ gw_a: 0, gw_b: 0, received: 0, sent: 0 });
+    expect(points[2].gap).toBeUndefined();
+    expect(points[1].at - points[0].at).toBe(MIN_TRAFFIC_COLUMN_MS);
+  });
+
+  it("names traffic recorded before gateways were tracked, caps the columns, and handles no traffic", () => {
+    const old = bucketTraffic([{ at_ms: 0, gateway_id: "", received: 1, sent: 1 }], 0, 0);
+    expect(old.gateways).toEqual(["unknown"]);
+    const day = Array.from({ length: 4000 }, (_, i) => ({ at_ms: i * 10_000, gateway_id: "g", received: 1, sent: 1 }));
+    expect(bucketTraffic(day, 0, 4000 * 10_000).points.length).toBeLessThanOrEqual(61);
+    expect(bucketTraffic([], 0, 1000).points).toEqual([]);
   });
 });

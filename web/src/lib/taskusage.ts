@@ -58,21 +58,57 @@ export function taskStack(cols: Column[], metric: TaskMetric): StackPoint[] {
 
 export const MIN_TRAFFIC_COLUMN_MS = 10_000;
 
+export interface GatewayTrafficPoint {
+  at_ms: number;
+  /** Empty for traffic recorded before gateways were tracked per sample. */
+  gateway_id: string;
+  received: number;
+  sent: number;
+}
+
+export interface GatewayBuckets {
+  points: StackPoint[];
+  /** Gateway keys, the one that moved the most first. */
+  gateways: string[];
+  /** What each gateway moved over the whole task. */
+  totals: Record<string, { received: number; sent: number }>;
+}
+
+/** The series key for a gateway ("" -> a fixed key, since an empty key can't label a line). */
+export const gatewayKey = (id: string) => id || "unknown";
+
 /**
- * Gateway traffic per column from `startMs` to `endMs`. The gateway only reports while bytes move, so a
- * column with nothing in it is a real zero (the line drops to the axis), never a gap.
+ * Gateway traffic per column from `startMs` to `endMs`, one value per gateway (bytes both ways added up),
+ * so a hover can say how much each gateway moved. The gateway only reports while bytes move, so a column
+ * with nothing in it is a real zero (the line drops to the axis), never a gap. `received` and `sent`
+ * (all gateways together) ride along on every point for the tooltip footer.
  */
-export function bucketTraffic(series: { at_ms: number; received: number; sent: number }[], startMs: number, endMs: number): StackPoint[] {
-  if (series.length === 0) return [];
+export function bucketTraffic(series: GatewayTrafficPoint[], startMs: number, endMs: number): GatewayBuckets {
+  const empty: GatewayBuckets = { points: [], gateways: [], totals: {} };
+  if (series.length === 0) return empty;
   const start = Math.min(startMs, series[0].at_ms);
   const end = Math.max(endMs, series[series.length - 1].at_ms);
   const width = Math.max(MIN_TRAFFIC_COLUMN_MS, Math.ceil((end - start) / TARGET_COLUMNS));
   const count = Math.floor((end - start) / width) + 1;
-  const cols: StackPoint[] = Array.from({ length: count }, (_, i) => ({ at: start + i * width, values: { received: 0, sent: 0 } }));
+  const totals: GatewayBuckets["totals"] = {};
   for (const p of series) {
-    const c = cols[Math.min(count - 1, Math.floor((p.at_ms - start) / width))];
+    const k = gatewayKey(p.gateway_id);
+    totals[k] ??= { received: 0, sent: 0 };
+    totals[k].received += p.received;
+    totals[k].sent += p.sent;
+  }
+  const gateways = Object.keys(totals).sort(
+    (a, b) => totals[b].received + totals[b].sent - (totals[a].received + totals[a].sent) || a.localeCompare(b)
+  );
+  const points: StackPoint[] = Array.from({ length: count }, (_, i) => ({
+    at: start + i * width,
+    values: { ...Object.fromEntries(gateways.map((g) => [g, 0])), received: 0, sent: 0 },
+  }));
+  for (const p of series) {
+    const c = points[Math.min(count - 1, Math.floor((p.at_ms - start) / width))];
+    c.values[gatewayKey(p.gateway_id)] += p.received + p.sent;
     c.values.received += p.received;
     c.values.sent += p.sent;
   }
-  return cols;
+  return { points, gateways, totals };
 }

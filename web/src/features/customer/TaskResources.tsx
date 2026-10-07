@@ -5,6 +5,7 @@ import { bytes, cores, coresLabel, memory } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import type { StackPoint } from "@/lib/series";
 import { bucketReadings, bucketTraffic, taskStack, type TaskMetric } from "@/lib/taskusage";
+import { seriesColor } from "@/lib/usage";
 import type { Task, TaskTraffic, TaskUsage } from "@/lib/types";
 import { isTerminalState } from "@/ui/status";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
@@ -23,7 +24,16 @@ const clockShort = (at: number) => new Date(at).toLocaleTimeString([], { hour: "
  * tunnel traffic from the machine's agent, and what the customer's own gateway counted. The
  * agent's numbers are reported by the machine it ran on, so this is for information only.
  */
-export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraffic | undefined }) {
+export function TaskResources({
+  task,
+  traffic,
+  gatewayLabel,
+}: {
+  task: Task;
+  traffic: TaskTraffic | undefined;
+  /** The customer-given name of a gateway, if known. */
+  gatewayLabel: (gatewayId: string) => string | undefined;
+}) {
   const [tab, setTab] = useState<Tab>("cpu");
   const usage = useAsync((s) => apiGet<TaskUsage>(`/api/portal/customer/tasks/${encodeURIComponent(task.id)}/usage`, s), [task.id]);
   const active = !isTerminalState(task.state);
@@ -46,22 +56,38 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
   const end = task.finished_at_ms ?? Date.now();
   const hasTunnel = (task.tunnel_targets?.length ?? 0) > 0;
 
+  const gw = useMemo(
+    () =>
+      bucketTraffic(
+        (traffic?.series ?? []).map((p) => ({
+          at_ms: p.at_ms,
+          gateway_id: p.gateway_id,
+          received: p.received_from_tasks_bytes,
+          sent: p.sent_to_tasks_bytes,
+        })),
+        start,
+        end
+      ),
+    [traffic, start, end]
+  );
+
   const points = useMemo<StackPoint[]>(() => {
     if (!u) return [];
-    if (tab === "gateway") {
-      const raw = (traffic?.series ?? []).map((p) => ({
-        at_ms: p.at_ms,
-        received: p.received_from_tasks_bytes,
-        sent: p.sent_to_tasks_bytes,
-      }));
-      return bucketTraffic(raw, start, end);
-    }
+    if (tab === "gateway") return gw.points;
     // From the first reading to the last: the first one arrives a few seconds after the task starts,
     // and that lead-in is not a gap in the data.
     const first = u.points[0]?.at_ms ?? start;
     const last = u.points[u.points.length - 1]?.at_ms ?? end;
     return taskStack(bucketReadings(u.points, first, last), tab);
-  }, [u, traffic, tab, start, end]);
+  }, [u, gw, tab, start, end]);
+
+  // One line per gateway, labelled with its name and everything it moved during the task.
+  const gatewaySeries: ChartSeries[] = gw.gateways.map((key, i) => {
+    const id = key === "unknown" ? "" : key;
+    const name = gatewayLabel(id) ?? (id ? "gateway" : "Unnamed gateway");
+    const t = gw.totals[key];
+    return { key, label: `${name} · ${bytes(t.received + t.sent)}`, color: seriesColor(i) };
+  });
 
   const series: ChartSeries[] =
     tab === "cpu"
@@ -73,10 +99,7 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
               { key: "out", label: "Sent by the task", color: "rgb(var(--accent))" },
               { key: "in", label: "Received by the task", color: "rgb(var(--success))" },
             ]
-          : [
-              { key: "received", label: "Received from tasks", color: "rgb(var(--accent))" },
-              { key: "sent", label: "Sent to tasks", color: "rgb(var(--success))" },
-            ];
+          : gatewaySeries;
 
   // Nothing to show before the task has started, and no point in an empty card for one that
   // finished without any reading when the machine's agent doesn't report usage.
@@ -151,6 +174,11 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
               formatTime={clock}
               axisLabel={clockShort}
               limit={limit}
+              footer={
+                tab === "gateway"
+                  ? (p) => `All gateways: ${bytes(p.values.received ?? 0)} received from the task · ${bytes(p.values.sent ?? 0)} sent to it`
+                  : undefined
+              }
               gapLabel="No reading received"
               showZero={tab !== "gateway"}
               emptyLabel={tab === "gateway" ? "No gateway traffic yet" : tab === "network" ? "No tunnel traffic" : "No readings"}

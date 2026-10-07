@@ -61,12 +61,12 @@ func (s *PostgresStore) RecordGatewayTraffic(ctx context.Context, r GatewayTraff
 	}
 	if r.RecordTask {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO task_gateway_samples (task_id, at, bytes_to_local, bytes_to_task)
-			VALUES ($1, date_bin('10 seconds', $2::timestamptz, TIMESTAMPTZ '2000-01-01'), $3, $4)
-			ON CONFLICT (task_id, at) DO UPDATE SET
+			INSERT INTO task_gateway_samples (task_id, gateway_id, at, bytes_to_local, bytes_to_task)
+			VALUES ($1, $5, date_bin('10 seconds', $2::timestamptz, TIMESTAMPTZ '2000-01-01'), $3, $4)
+			ON CONFLICT (task_id, gateway_id, at) DO UPDATE SET
 				bytes_to_local = task_gateway_samples.bytes_to_local + EXCLUDED.bytes_to_local,
 				bytes_to_task  = task_gateway_samples.bytes_to_task  + EXCLUDED.bytes_to_task`,
-			r.TaskID, at, r.BytesToLocal, r.BytesToTask); err != nil {
+			r.TaskID, at, r.BytesToLocal, r.BytesToTask, r.GatewayID); err != nil {
 			return fmt.Errorf("updating task gateway sample: %w", err)
 		}
 	}
