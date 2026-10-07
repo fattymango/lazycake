@@ -3,6 +3,12 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.9 — 2026-10-07
+
+### Fixed
+- **Spec drift ignores tasks too short to measure.** A second load test banned the PC again: six sub-second "hello" tasks (0.02 s to 0.3 s, all container start-up jitter) looked like a 10x slowdown. Tasks under 10 normalised
+  seconds are now ignored for drift (they neither set a baseline nor flag).
+
 ## v0.3.8 — 2026-10-07
 
 Found by a production load test: two connected machines were banned within three minutes of ordinary work, and nothing was dispatched to them afterwards.

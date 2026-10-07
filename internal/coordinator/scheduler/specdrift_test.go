@@ -67,7 +67,7 @@ func TestSpecDriftComparesLikeWithLike(t *testing.T) {
 	// arrive. Judged against the instant tasks they would look 300x slower; judged against their own kind
 	// (no baseline yet) they say nothing.
 	for i := 0; i < 5; i++ {
-		tracker.Observe("nod_mixed", "hello", 0.3)
+		tracker.Observe("nod_mixed", "short", 12)
 	}
 	for i := 0; i < 30; i++ {
 		if _, flagged := tracker.Observe("nod_mixed", "benchmark-90s", 90); flagged {
@@ -77,7 +77,7 @@ func TestSpecDriftComparesLikeWithLike(t *testing.T) {
 	// A real slowdown of the SAME workload is still caught.
 	flagged := false
 	for i := 0; i < 20 && !flagged; i++ {
-		_, flagged = tracker.Observe("nod_mixed", "hello", 0.3*3)
+		_, flagged = tracker.Observe("nod_mixed", "short", 12*3)
 	}
 	if !flagged {
 		t.Fatal("a machine taking 3x as long for the same workload must still be flagged")
@@ -114,5 +114,28 @@ func TestSpecDriftMemoryIsBounded(t *testing.T) {
 	}
 	if got := len(tracker.nodes["nod_1"]); got > specDriftMaxWorkloads {
 		t.Fatalf("tracked %d workloads for one node, cap is %d", got, specDriftMaxWorkloads)
+	}
+}
+
+// The second production finding: tasks that last a fraction of a second are all timing noise.
+func TestSpecDriftIgnoresTasksTooShortToMeasure(t *testing.T) {
+	tracker := NewSpecDriftTracker()
+	// Sub-second tasks whose durations vary wildly (0.02 s to 1.5 s: container start-up jitter) must never flag,
+	// however many there are, and must not count toward a baseline either.
+	durations := []float64{0.03, 0.3, 0.02, 1.5, 0.05, 0.9, 0.04, 0.6, 0.02, 1.2, 0.03, 0.8}
+	for i := 0; i < 200; i++ {
+		if ratio, flagged := tracker.Observe("nod_busy", "hello", durations[i%len(durations)]); flagged || ratio != 1 {
+			t.Fatalf("a sub-second task must say nothing (ratio %v, flagged %v) at observation %d", ratio, flagged, i)
+		}
+	}
+	if len(tracker.nodes["nod_busy"]) != 0 {
+		t.Fatal("tasks too short to measure must not even create a baseline")
+	}
+	// A task long enough to measure still counts.
+	for i := 0; i < specDriftCalibrationSamples; i++ {
+		tracker.Observe("nod_busy", "bench", specDriftMinNormalisedS)
+	}
+	if len(tracker.nodes["nod_busy"]) != 1 {
+		t.Fatal("a task at the minimum measurable length must be tracked")
 	}
 }
