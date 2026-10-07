@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import { bytes, memory } from "@/lib/format";
+import { bytes, cores, memory } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { fillBuckets, type StackPoint } from "@/lib/series";
 import { bucketReadings, taskStack, type TaskMetric } from "@/lib/taskusage";
@@ -89,7 +89,7 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
     );
   }
 
-  const format = tab === "cpu" ? (v: number) => `${Number(v.toFixed(2))} cores` : bytes;
+  const format = tab === "cpu" ? (v: number) => `${cores(v)} cores` : bytes;
   const limit =
     tab === "cpu" && u
       ? { value: u.limits.cores, label: `${u.limits.cores} cores requested` }
@@ -121,7 +121,7 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
         <CardHeader
           title={
             u?.supported
-              ? `Peak ${Number(peakCPU.toFixed(2))} of ${u.limits.cores} cores · ${bytes(peakMem)} of ${memory(u.limits.memory_mb)} memory`
+              ? `Peak ${cores(peakCPU)} of ${u.limits.cores} cores · ${bytes(peakMem)} of ${memory(u.limits.memory_mb)} memory`
               : u && !u.agent_reports_usage
                 ? "Usage isn't available for this machine yet"
                 : "Waiting for readings"

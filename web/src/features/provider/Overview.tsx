@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Cpu, HardDrive, MemoryStick, Plus, Server, ShieldCheck, Wallet, Wifi } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import { cpu, memory, money, relativeTime, count } from "@/lib/format";
+import { cores, cpu, memory, money, relativeTime, count } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useLiveReload } from "@/lib/hooks/useLiveReload";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
@@ -48,7 +48,7 @@ function UsageTrend({ node }: { node: Node }) {
       <div className="flex items-center justify-between text-xs text-muted">
         <span>CPU in use, 24 h</span>
         <span className="text-fg" data-tnum>
-          {now === undefined ? "—" : `${Number(now.toFixed(2))} of ${node.offer_cores}`}
+          {now === undefined ? "—" : `${cores(now)} of ${node.offer_cores}`}
         </span>
       </div>
       <Sparkline data={u.series.map((p) => p.tasks_cpu_cores)} />

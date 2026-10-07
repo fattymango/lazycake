@@ -34,6 +34,14 @@ export function bytes(n: number | undefined | null): string {
   return `${Number(x.toFixed(x < 10 ? 2 : x < 100 ? 1 : 0))} ${units[i]}`;
 }
 
+/** Cores in use: "0", "<0.01" for a tiny but real amount (never a misleading 0), else up to 2 places. */
+export function cores(v: number | undefined | null): string {
+  const n = v ?? 0;
+  if (n <= 0) return "0";
+  if (n < 0.005) return "<0.01";
+  return String(Number(n.toFixed(2)));
+}
+
 export function cpu(cores: number | undefined): string {
   if (cores === undefined) return "—";
   return `${Number(cores.toFixed(2))} vCPU`;
