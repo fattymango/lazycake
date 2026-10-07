@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import { bytes, cores, memory } from "@/lib/format";
+import { bytes, cores, coresLabel, memory } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { fillBuckets, type StackPoint } from "@/lib/series";
 import { bucketReadings, taskStack, type TaskMetric } from "@/lib/taskusage";
@@ -11,7 +11,7 @@ import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { ErrorState } from "@/ui/EmptyState";
 import { Segmented } from "@/ui/Segmented";
 import { Skeleton } from "@/ui/Skeleton";
-import { StackedChart, type ChartSeries } from "@/ui/StackedChart";
+import { LineChart, type ChartSeries } from "@/ui/LineChart";
 
 type Tab = TaskMetric | "gateway";
 
@@ -64,17 +64,17 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
 
   const series: ChartSeries[] =
     tab === "cpu"
-      ? [{ key: "cpu", label: "CPU used", className: "bg-accent" }]
+      ? [{ key: "cpu", label: "CPU used", color: "rgb(var(--accent))" }]
       : tab === "memory"
-        ? [{ key: "memory", label: "Memory used", className: "bg-success" }]
+        ? [{ key: "memory", label: "Memory used", color: "rgb(var(--success))" }]
         : tab === "network"
           ? [
-              { key: "out", label: "Sent by the task", className: "bg-accent" },
-              { key: "in", label: "Received by the task", className: "bg-success" },
+              { key: "out", label: "Sent by the task", color: "rgb(var(--accent))" },
+              { key: "in", label: "Received by the task", color: "rgb(var(--success))" },
             ]
           : [
-              { key: "received", label: "Received from tasks", className: "bg-accent" },
-              { key: "sent", label: "Sent to tasks", className: "bg-success" },
+              { key: "received", label: "Received from tasks", color: "rgb(var(--accent))" },
+              { key: "sent", label: "Sent to tasks", color: "rgb(var(--success))" },
             ];
 
   // Nothing to show before the task has started, and no point in an empty card for one that
@@ -89,7 +89,7 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
     );
   }
 
-  const format = tab === "cpu" ? (v: number) => `${cores(v)} cores` : bytes;
+  const format = tab === "cpu" ? coresLabel : bytes;
   const limit =
     tab === "cpu" && u
       ? { value: u.limits.cores, label: `${u.limits.cores} cores requested` }
@@ -141,7 +141,7 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
                   : "The machine didn't report usage for this task."}
             </p>
           ) : (
-            <StackedChart
+            <LineChart
               points={points}
               series={series}
               format={format}

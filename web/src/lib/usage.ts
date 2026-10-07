@@ -2,6 +2,9 @@
 import { fillBuckets, type StackPoint } from "./series";
 import type { NodeUsage } from "./types";
 
+/** The series key of the line that adds every task together. */
+export const TOTAL_KEY = "_total";
+
 /** The series key the server uses for every task beyond the biggest few. */
 export const OTHERS_KEY = "_others";
 
@@ -23,7 +26,8 @@ export function usageStack(u: NodeUsage, metric: UsageMetric, now = Date.now()):
         values[task] =
           metric === "cpu" ? share.cpu_cores : metric === "memory" ? share.memory_bytes : share.tunnel_out_bytes + share.tunnel_in_bytes;
       }
-      // Time with no task running is a real zero, not a gap: make sure the point exists.
+      // Time with no task running is a real zero, not a gap: the point exists with a total of 0.
+      values[TOTAL_KEY] = Object.values(values).reduce((a, b) => a + b, 0);
     }
     return { at: p.at_ms, values };
   });
@@ -35,20 +39,21 @@ export function usageAt(u: NodeUsage, at: number) {
   return u.series.find((p) => p.at_ms === at);
 }
 
-// Colour classes for the per-task bands: the first few tasks get distinct hues, "others" is neutral.
-const BANDS = [
-  "bg-accent",
-  "bg-success",
-  "bg-warning",
-  "bg-info",
-  "bg-danger",
-  "bg-[rgb(var(--accent)/0.55)]",
-  "bg-[rgb(var(--success)/0.55)]",
-  "bg-[rgb(var(--info)/0.55)]",
+// Line colours for the per-task series: the first few tasks get distinct hues; "others" is neutral.
+export const SERIES_COLORS = [
+  "rgb(var(--accent))",
+  "rgb(var(--success))",
+  "rgb(var(--warning))",
+  "rgb(var(--info))",
+  "rgb(var(--danger))",
+  "rgb(var(--accent) / 0.55)",
+  "rgb(var(--success) / 0.55)",
+  "rgb(var(--info) / 0.55)",
 ];
+export const OTHERS_COLOR = "rgb(var(--muted))";
 
-export function bandClass(index: number): string {
-  return BANDS[index % BANDS.length];
+export function seriesColor(index: number): string {
+  return SERIES_COLORS[index % SERIES_COLORS.length];
 }
 
 /** Percent 0..100 with no more precision than is meaningful. */

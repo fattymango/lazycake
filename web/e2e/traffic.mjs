@@ -4,6 +4,7 @@
 //
 //   BASE=http://127.0.0.1:18081 GATEWAY_LABEL=exactness SHOTS=/tmp/shots node e2e/traffic.mjs
 import puppeteer from "puppeteer-core";
+import { chartInfo, hoverFind } from "./chart.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:18081";
 const LABEL = process.env.GATEWAY_LABEL || "exactness";
@@ -15,7 +16,11 @@ const check = (name, ok, detail = "") => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.launch({ executablePath: process.env.CHROME || "/usr/bin/google-chrome", headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const browser = await puppeteer.launch({
+  executablePath: process.env.CHROME || "/usr/bin/google-chrome",
+  headless: "new",
+  args: ["--no-sandbox", "--disable-gpu"],
+});
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 900 });
 const errors = [];
@@ -53,16 +58,15 @@ await sleep(1200);
 const detail = await text();
 check("clicking a gateway opens its traffic page", /Traffic over time/.test(detail) && /Busiest tasks/.test(detail));
 check("lifetime stats are shown", /\d+ MB/.test(detail) && /Connections/.test(detail));
-const columns = await page.$$('[aria-label*=": "][tabindex="0"]');
-check("the chart has a column for every hour of the week", columns.length >= 167, `${columns.length} columns`);
-// Hover the column that has the traffic.
-const idx = await page.$$eval('[aria-label*=": "][tabindex="0"]', (els) => els.findIndex((e) => !/: 0 B$/.test(e.getAttribute("aria-label"))));
-check("exactly the hour that had traffic is non-empty", idx >= 0, `column ${idx}`);
-const box = await (await page.$$('[aria-label*=": "][tabindex="0"]'))[idx].boundingBox();
-await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-await sleep(300);
-const tip = await page.$eval('[role="status"]', (e) => e.innerText).catch(() => "");
-check("hovering it says who moved how much", /Sent to tasks/.test(tip) && /Received from tasks/.test(tip) && /\d+ MB/.test(tip), tip.replace(/\n/g, " | "));
+const info = await chartInfo(page);
+check("the chart has a point for every hour of the week", info.points >= 167, `${info.points} points`);
+const tip = await hoverFind(page, (t) => /\d+ (B|kB|MB)/.test(t) && !/Nothing/.test(t));
+check("some hour had traffic", tip !== "");
+check(
+  "hovering it says who moved how much",
+  /Sent to tasks/.test(tip) && /Received from tasks/.test(tip) && /\d+ (B|kB|MB)/.test(tip),
+  tip.replace(/\n/g, " | ")
+);
 await shot("gateway-detail");
 check("the busiest-tasks table links to the task", (await page.$$eval("table a", (as) => as.length)) >= 1);
 await page.click("[role=radio]:nth-of-type(2)").catch(() => {});

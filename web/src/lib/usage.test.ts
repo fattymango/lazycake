@@ -47,7 +47,7 @@ describe("usageStack", () => {
     const pts = usageStack(u, "cpu", now);
     expect(pts).toHaveLength(288);
     const at = (t: number) => pts.find((p) => p.at === t * M5)!;
-    expect(at(1000).values).toEqual({ tsk_a: 1 });
+    expect(at(1000).values).toEqual({ tsk_a: 1, _total: 1 });
     expect(at(998).gap).toBeUndefined(); // the machine reported, it was just idle
     expect(at(999).gap).toBe(true); // nothing reported
   });
@@ -73,8 +73,8 @@ describe("usageStack", () => {
         },
       ],
     };
-    expect(usageStack(u, "memory", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ tsk_a: 10, [OTHERS_KEY]: 20 });
-    expect(usageStack(u, "network", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ tsk_a: 7, [OTHERS_KEY]: 9 });
+    expect(usageStack(u, "memory", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ tsk_a: 10, [OTHERS_KEY]: 20, _total: 30 });
+    expect(usageStack(u, "network", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ tsk_a: 7, [OTHERS_KEY]: 9, _total: 16 });
     expect(usageStack(u, "disk", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ disk: 777 });
   });
 

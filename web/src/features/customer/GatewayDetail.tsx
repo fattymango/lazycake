@@ -19,15 +19,15 @@ import { Segmented } from "@/ui/Segmented";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatCard } from "@/ui/StatCard";
 import { ConnectionPill } from "@/ui/StatusPill";
-import { StackedChart, type ChartSeries } from "@/ui/StackedChart";
+import { LineChart, type ChartSeries } from "@/ui/LineChart";
 import { TrafficLegend } from "./TrafficLegend";
 
 type Range = "7d" | "30d";
 const WINDOW: Record<Range, number> = { "7d": 7 * 86_400_000, "30d": 30 * 86_400_000 };
 
 const SERIES: ChartSeries[] = [
-  { key: "received", label: "Received from tasks", className: "bg-accent" },
-  { key: "sent", label: "Sent to tasks", className: "bg-success" },
+  { key: "received", label: "Received from tasks", color: "rgb(var(--accent))" },
+  { key: "sent", label: "Sent to tasks", color: "rgb(var(--success))" },
 ];
 
 type Busiest = GatewayTraffic["busiest_tasks"][number];
@@ -174,7 +174,7 @@ export function GatewayDetail() {
           {traffic.loading ? (
             <Skeleton className="h-48 rounded-lg" />
           ) : (
-            <StackedChart
+            <LineChart
               points={points}
               series={SERIES}
               format={bytes}
