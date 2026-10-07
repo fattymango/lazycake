@@ -3,6 +3,12 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.5 — 2026-10-07
+
+### Changed
+- **Add a machine is more compact**: the hint sits beside each field's name instead of under the slider, the hardware check is tucked into a collapsible row, and "How your machine is protected" is a slim strip at the bottom.
+- **The slider ends exactly at what your machine has** once you've checked its hardware (for example 1, 2, 4, 8, 12 on a 12-core machine), so you can pick the full amount.
+
 ## v0.3.4 — 2026-10-07
 
 ### Changed

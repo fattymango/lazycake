@@ -142,11 +142,17 @@ await typeInto("CPU", "48");
 body = await text();
 check("the field accepts a number past the slider's top (48 cores)", (await val("CPU")) === "48" && !/CPU[^\n]*only has/.test(body));
 check("the slider stays at its end", await page.$eval('input[aria-label="CPU slider"]', (e) => Number(e.value) === Number(e.max)));
-check("and says it is beyond the slider", /[Bb]eyond the slider/.test(body));
+check("and says it is past the slider", /[Pp]ast the slider/.test(body));
 check("the install command can still be generated", (await genButton()) === false);
 await typeInto("CPU", "2");
 
 // --- the machine's real limits -------------------------------------------------------------------------
+check(
+  "the hardware check is tucked away until asked for",
+  (await page.$('textarea[aria-label="Output of the capacity command"]')) === null
+);
+await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /Check against this machine/.test(b.textContent))?.click());
+await page.waitForSelector('textarea[aria-label="Output of the capacity command"]');
 await page.type('textarea[aria-label="Output of the capacity command"]', "cores=12 memory_mb=15314 disk_mb=441802 network_mbps=1000");
 await sleep(300);
 body = await text();

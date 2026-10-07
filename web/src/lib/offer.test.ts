@@ -11,6 +11,7 @@ import {
   parseWhole,
   sliderPosition,
   snapToStop,
+  stopsFor,
 } from "./offer";
 
 const caps = { cores: 12, memoryMB: 15314, diskMB: 441802, networkMbps: 1000 };
@@ -154,5 +155,23 @@ describe("defaults, request and slider", () => {
     expect(snapToStop(SLIDER_STOPS.cores, 2.6)).toBe(8);
     expect(snapToStop(SLIDER_STOPS.cores, -3)).toBe(1);
     expect(snapToStop(SLIDER_STOPS.cores, 99)).toBe(24);
+  });
+});
+
+describe("stopsFor: the slider never offers more than the machine has, and can reach exactly what it has", () => {
+  it("is the usual checkpoints when the machine is unknown or bigger than the slider", () => {
+    expect(stopsFor("cores", null)).toEqual([1, 2, 4, 8, 16, 24]);
+    expect(stopsFor("cores", 64)).toEqual([1, 2, 4, 8, 16, 24]);
+    expect(stopsFor("cores", 24)).toEqual([1, 2, 4, 8, 16, 24]);
+  });
+  it("ends at the machine's own amount when it is smaller", () => {
+    expect(stopsFor("cores", 12)).toEqual([1, 2, 4, 8, 12]);
+    expect(stopsFor("memoryGB", 14)).toEqual([1, 2, 4, 8, 14]);
+    expect(stopsFor("storageGB", 431)).toEqual([5, 10, 20, 50, 100]);
+    expect(stopsFor("networkMbps", 100)).toEqual([10, 25, 50, 100]);
+  });
+  it("always has at least two checkpoints, even on a tiny machine", () => {
+    expect(stopsFor("cores", 1).length).toBeGreaterThanOrEqual(2);
+    expect(stopsFor("memoryGB", 1).length).toBeGreaterThanOrEqual(2);
   });
 });

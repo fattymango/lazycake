@@ -162,3 +162,15 @@ export function snapToStop(stops: number[], position: number): number {
   const i = Math.max(0, Math.min(stops.length - 1, Math.round(position)));
   return stops[i];
 }
+
+/**
+ * The checkpoints to show for a field: the normal ones, but never above what the machine has, and ending
+ * exactly at what it has when that is below the slider's usual top (so a 12-core machine gets 1, 2, 4, 8, 12).
+ */
+export function stopsFor(field: OfferField, machineMax: number | null): number[] {
+  const stops = SLIDER_STOPS[field];
+  if (machineMax === null || machineMax >= stops[stops.length - 1]) return stops;
+  const below = stops.filter((s) => s < machineMax);
+  const out = [...below, machineMax];
+  return out.length >= 2 ? out : [HARD_LIMITS[field].min, Math.max(machineMax, HARD_LIMITS[field].min + 1)];
+}
