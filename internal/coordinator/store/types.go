@@ -360,6 +360,18 @@ type NodeTaskPoint struct {
 	TaskID      string
 	CPUCores    float64
 	MemoryBytes int64
+	// TunnelOut and TunnelIn are bytes the task moved through its tunnel in the
+	// period (a sum, not an average): out of the container, and into it.
+	TunnelOut, TunnelIn int64
+}
+
+// TaskUsageReading is one task's own reading at heartbeat resolution.
+type TaskUsageReading struct {
+	At          time.Time
+	CPUCores    float64
+	MemoryBytes int64
+	// TunnelOut and TunnelIn are bytes moved since the previous reading.
+	TunnelOut, TunnelIn int64
 }
 
 // TaskUsageSummary is what one task used in total, kept after its detailed samples are pruned.

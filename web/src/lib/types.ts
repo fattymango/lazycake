@@ -121,6 +121,8 @@ export interface GatewayTraffic {
 export interface TaskTraffic {
   totals: TrafficTotals;
   rows: ({ gateway_id: string; service: string } & TrafficTotals)[];
+  /** Per 5-minute bucket, as the customer's own gateway counted it. */
+  series: { at_ms: number; received_from_tasks_bytes: number; sent_to_tasks_bytes: number }[];
 }
 
 export interface CreateGatewayRequest {
@@ -193,6 +195,9 @@ export interface GatewayTestResult {
 export interface TaskShare {
   cpu_cores: number;
   memory_bytes: number;
+  /** Bytes moved through the tunnel during the period (sums, not averages). */
+  tunnel_out_bytes: number;
+  tunnel_in_bytes: number;
 }
 
 export interface UsagePoint {
@@ -203,6 +208,8 @@ export interface UsagePoint {
   disk_used_bytes: number;
   tasks_cpu_cores: number;
   tasks_memory_bytes: number;
+  tunnel_out_bytes: number;
+  tunnel_in_bytes: number;
   per_task: Record<string, TaskShare>;
 }
 
@@ -239,3 +246,20 @@ export interface TaskUsageTotals {
 
 /** A task as listed on a machine page, with what it used (when its agent reported it). */
 export type NodeTask = Task & { usage?: TaskUsageTotals };
+
+/** One reading of a task's own use, about every 15 s (as reported by the machine's agent). */
+export interface TaskReading {
+  at_ms: number;
+  cpu_cores: number;
+  memory_bytes: number;
+  /** Bytes moved through the tunnel since the previous reading. */
+  tunnel_out_bytes: number;
+  tunnel_in_bytes: number;
+}
+
+export interface TaskUsage {
+  supported: boolean;
+  limits: { cores: number; memory_mb: number };
+  points: TaskReading[];
+  summary?: TaskUsageTotals;
+}

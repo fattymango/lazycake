@@ -132,6 +132,11 @@ func TestTunnelIsolation(t *testing.T) {
 	case stats := <-forwarded:
 		require.Equal(t, "db", stats.Service)
 		require.Greater(t, stats.BytesToLocal, int64(0), "expected the container's bytes to reach the local service")
+		// The agent's own tunnel counters (reported in TaskFinished, charted on the task page) agree with what the gateway counted.
+		require.Eventually(t, func() bool {
+			out, in := proxy.Traffic()
+			return out == stats.BytesToLocal && in == stats.BytesToTask
+		}, 3*time.Second, 50*time.Millisecond, "agent and gateway should count the same bytes")
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for the gateway to report a forwarded connection")
 	}

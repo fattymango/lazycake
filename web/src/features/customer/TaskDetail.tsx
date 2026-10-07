@@ -11,6 +11,7 @@ import { useLiveEvents, useLiveStatus } from "@/lib/live";
 import { costByTask, taskCommand, taskDurationMs } from "@/lib/tasks";
 import type { Gateway, LedgerEntry, Task, TaskTraffic } from "@/lib/types";
 import { LogViewer } from "@/components/LogViewer";
+import { TaskResources } from "./TaskResources";
 import { Alert } from "@/ui/Alert";
 import { Button } from "@/ui/Button";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
@@ -265,22 +266,25 @@ export function TaskDetail() {
       </Card>
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="min-w-0 space-y-3" aria-labelledby="output-h">
-          <div className="flex items-center gap-2">
-            <Terminal className="size-4 text-muted" aria-hidden />
-            <h2 id="output-h" className="text-sm font-semibold text-fg">
-              Output
-            </h2>
-          </div>
-          <LogViewer
-            taskId={t.id}
-            lines={logs.lines}
-            status={logs.status}
-            truncated={logs.truncated}
-            onRetry={logs.restart}
-            taskFinished={isTerminalState(t.state)}
-          />
-        </section>
+        <div className="min-w-0 space-y-6">
+          <TaskResources task={t} traffic={traffic.data} />
+          <section className="min-w-0 space-y-3" aria-labelledby="output-h">
+            <div className="flex items-center gap-2">
+              <Terminal className="size-4 text-muted" aria-hidden />
+              <h2 id="output-h" className="text-sm font-semibold text-fg">
+                Output
+              </h2>
+            </div>
+            <LogViewer
+              taskId={t.id}
+              lines={logs.lines}
+              status={logs.status}
+              truncated={logs.truncated}
+              onRetry={logs.restart}
+              taskFinished={isTerminalState(t.state)}
+            />
+          </section>
+        </div>
 
         <aside className="min-w-0 space-y-6">
           <Card>

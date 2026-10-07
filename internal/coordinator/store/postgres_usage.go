@@ -74,15 +74,52 @@ func (s *PostgresStore) RecordNodeUsage(ctx context.Context, u NodeUsageSample) 
 		return fmt.Errorf("updating machine usage bucket: %w", err)
 	}
 
+	// The agent reports cumulative tunnel counters; the charts want what moved in each period,
+	// so difference against the last cumulative value we stored for the task.
+	prevOut, prevIn := map[string]int64{}, map[string]int64{}
+	if len(tasks) > 0 {
+		taskIDs := make([]string, len(tasks))
+		for i, t := range tasks {
+			taskIDs[i] = t.TaskID
+		}
+		rows, err := tx.Query(ctx, `SELECT task_id, tunnel_to_gateway, tunnel_to_task FROM task_usage_totals WHERE task_id = ANY($1)`, taskIDs)
+		if err != nil {
+			return fmt.Errorf("reading previous tunnel counters: %w", err)
+		}
+		for rows.Next() {
+			var id string
+			var o, i int64
+			if err := rows.Scan(&id, &o, &i); err != nil {
+				rows.Close()
+				return fmt.Errorf("scanning tunnel counters: %w", err)
+			}
+			prevOut[id], prevIn[id] = o, i
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("reading previous tunnel counters: %w", err)
+		}
+	}
+
 	for _, t := range tasks {
+		dOut, dIn := counterDelta(t.TunnelToGateway, prevOut[t.TaskID]), counterDelta(t.TunnelToTask, prevIn[t.TaskID])
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO node_task_usage (node_id, task_id, bucket, cpu_sum, mem_sum)
-			VALUES ($1, $3, `+usageBucketSQL+`, $4, $5)
+			INSERT INTO node_task_usage (node_id, task_id, bucket, cpu_sum, mem_sum, tunnel_out, tunnel_in)
+			VALUES ($1, $3, `+usageBucketSQL+`, $4, $5, $6, $7)
 			ON CONFLICT (node_id, task_id, bucket) DO UPDATE SET
-				cpu_sum = node_task_usage.cpu_sum + EXCLUDED.cpu_sum,
-				mem_sum = node_task_usage.mem_sum + EXCLUDED.mem_sum`,
-			u.NodeID, at, t.TaskID, t.CPUCores, float64(t.MemoryBytes)); err != nil {
+				cpu_sum    = node_task_usage.cpu_sum + EXCLUDED.cpu_sum,
+				mem_sum    = node_task_usage.mem_sum + EXCLUDED.mem_sum,
+				tunnel_out = node_task_usage.tunnel_out + EXCLUDED.tunnel_out,
+				tunnel_in  = node_task_usage.tunnel_in + EXCLUDED.tunnel_in`,
+			u.NodeID, at, t.TaskID, t.CPUCores, float64(t.MemoryBytes), dOut, dIn); err != nil {
 			return fmt.Errorf("updating task usage bucket: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO task_usage_samples (task_id, at, cpu_cores, memory_bytes, tunnel_out, tunnel_in)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (task_id, at) DO NOTHING`,
+			t.TaskID, at, t.CPUCores, t.MemoryBytes, dOut, dIn); err != nil {
+			return fmt.Errorf("recording task sample: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO task_usage_totals (task_id, node_id, core_seconds, peak_memory_bytes, tunnel_to_gateway, tunnel_to_task, samples)
@@ -112,6 +149,15 @@ func (s *PostgresStore) RecordNodeUsage(ctx context.Context, u NodeUsageSample) 
 		return fmt.Errorf("updating latest usage: %w", err)
 	}
 	return tx.Commit(ctx)
+}
+
+// counterDelta is how much a cumulative counter grew. A counter that went down was reset
+// (the task's tunnel restarted), so everything it now reads is new.
+func counterDelta(cur, prev int64) int64 {
+	if cur >= prev {
+		return cur - prev
+	}
+	return cur
 }
 
 // usageBucketSQL rounds the timestamp parameter $2 down to its 5-minute bucket.
@@ -203,10 +249,10 @@ func (s *PostgresStore) NodeTaskSeries(ctx context.Context, nodeID string, since
 			SELECT `+period+` AS p, SUM(samples) AS samples FROM node_usage
 			WHERE node_id = $1 AND bucket >= $2 GROUP BY p
 		), t AS (
-			SELECT `+period+` AS p, task_id, SUM(cpu_sum) AS cpu, SUM(mem_sum) AS mem FROM node_task_usage
+			SELECT `+period+` AS p, task_id, SUM(cpu_sum) AS cpu, SUM(mem_sum) AS mem, SUM(tunnel_out) AS tout, SUM(tunnel_in) AS tin FROM node_task_usage
 			WHERE node_id = $1 AND bucket >= $2 GROUP BY p, task_id
 		)
-		SELECT t.p, t.task_id, t.cpu / NULLIF(n.samples, 0), t.mem / NULLIF(n.samples, 0)
+		SELECT t.p, t.task_id, t.cpu / NULLIF(n.samples, 0), t.mem / NULLIF(n.samples, 0), t.tout, t.tin
 		FROM t JOIN n USING (p) ORDER BY t.p, t.task_id`, nodeID, since)
 	if err != nil {
 		return nil, fmt.Errorf("reading task usage series: %w", err)
@@ -216,7 +262,7 @@ func (s *PostgresStore) NodeTaskSeries(ctx context.Context, nodeID string, since
 	for rows.Next() {
 		var p NodeTaskPoint
 		var cpu, mem *float64
-		if err := rows.Scan(&p.At, &p.TaskID, &cpu, &mem); err != nil {
+		if err := rows.Scan(&p.At, &p.TaskID, &cpu, &mem, &p.TunnelOut, &p.TunnelIn); err != nil {
 			return nil, fmt.Errorf("scanning task usage series: %w", err)
 		}
 		p.CPUCores, p.MemoryBytes = deref(cpu), int64(deref(mem))
@@ -257,5 +303,47 @@ func (s *PostgresStore) PruneNodeUsage(ctx context.Context, before time.Time) (i
 	if err != nil {
 		return 0, fmt.Errorf("pruning task usage: %w", err)
 	}
-	return a.RowsAffected() + b.RowsAffected(), nil
+	c, err := s.pool.Exec(ctx, `DELETE FROM task_usage_samples WHERE at < $1`, before)
+	if err != nil {
+		return 0, fmt.Errorf("pruning task samples: %w", err)
+	}
+	return a.RowsAffected() + b.RowsAffected() + c.RowsAffected(), nil
+}
+
+func (s *PostgresStore) TaskUsageSeries(ctx context.Context, taskID string) ([]TaskUsageReading, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT at, cpu_cores, memory_bytes, tunnel_out, tunnel_in
+		FROM task_usage_samples WHERE task_id = $1 ORDER BY at`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("reading task usage samples: %w", err)
+	}
+	defer rows.Close()
+	var out []TaskUsageReading
+	for rows.Next() {
+		var r TaskUsageReading
+		if err := rows.Scan(&r.At, &r.CPUCores, &r.MemoryBytes, &r.TunnelOut, &r.TunnelIn); err != nil {
+			return nil, fmt.Errorf("scanning task usage sample: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]TrafficPoint, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT bucket, SUM(bytes_to_local), SUM(bytes_to_task)
+		FROM gateway_traffic WHERE task_id = $1 GROUP BY bucket ORDER BY bucket`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("reading task gateway series: %w", err)
+	}
+	defer rows.Close()
+	var out []TrafficPoint
+	for rows.Next() {
+		var p TrafficPoint
+		if err := rows.Scan(&p.At, &p.BytesToLocal, &p.BytesToTask); err != nil {
+			return nil, fmt.Errorf("scanning task gateway series: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

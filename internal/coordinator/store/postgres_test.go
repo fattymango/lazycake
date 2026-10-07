@@ -25,7 +25,7 @@ func testStore(t *testing.T) *PostgresStore {
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
 
-	_, err = s.pool.Exec(ctx, `TRUNCATE node_usage, node_task_usage, node_usage_latest, task_usage_totals, gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
+	_, err = s.pool.Exec(ctx, `TRUNCATE task_usage_samples, node_usage, node_task_usage, node_usage_latest, task_usage_totals, gateway_traffic, gateway_totals, task_gateway_totals, task_logs, node_images, sessions, portal_credentials, tasks, nodes, api_tokens, accounts CASCADE`)
 	require.NoError(t, err)
 	return s
 }
@@ -618,7 +618,7 @@ func TestPruningNodeUsageKeepsTheTaskSummary(t *testing.T) {
 
 	n, err := s.PruneNodeUsage(ctx, time.Now().Add(-30*24*time.Hour))
 	require.NoError(t, err)
-	require.EqualValues(t, 2, n, "the old machine bucket and the old task bucket")
+	require.EqualValues(t, 3, n, "the old machine bucket, the old task bucket and the task's old reading")
 	series, err := s.NodeUsageSeries(ctx, "nod_1", old.Add(-time.Hour), "hour")
 	require.NoError(t, err)
 	require.Len(t, series, 1, "only the recent bucket is left")
@@ -628,4 +628,74 @@ func TestPruningNodeUsageKeepsTheTaskSummary(t *testing.T) {
 	require.InDelta(t, 15, sums["tsk_a"].CoreSeconds, 1e-9)
 	require.EqualValues(t, 500, sums["tsk_a"].TunnelToGateway)
 	require.EqualValues(t, 900, sums["tsk_a"].TunnelToTask)
+}
+
+// Network over time (follow-up to 8.15): the agent's cumulative tunnel counters become
+// per-period bytes, per task and per machine bucket; a counter reset doesn't go negative;
+// the task's own readings keep heartbeat resolution; and the gateway's view of the task is charted too.
+func TestTunnelTrafficBecomesDeltasPerPeriod(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustNode(t, s, "nod_1", "act_1")
+	mustGateway(t, s, "gw_1", "act_1")
+	mustRunningTask(t, s, "tsk_a", "act_1", "nod_1")
+	mustRunningTask(t, s, "tsk_b", "act_1", "nod_1")
+
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Hour)
+	rec := func(at time.Time, a, aIn, b int64) {
+		require.NoError(t, s.RecordNodeUsage(ctx, NodeUsageSample{
+			NodeID: "nod_1", At: at, IntervalMS: 15_000, HostCPUCount: 2,
+			Tasks: []TaskUsageSample{
+				{TaskID: "tsk_a", CPUCores: 1, MemoryBytes: 10, TunnelToGateway: a, TunnelToTask: aIn},
+				{TaskID: "tsk_b", CPUCores: 1, MemoryBytes: 10, TunnelToGateway: b},
+			},
+		}))
+	}
+	rec(base.Add(10*time.Second), 0, 0, 7)
+	rec(base.Add(25*time.Second), 1000, 4000, 7)
+	rec(base.Add(40*time.Second), 1500, 4500, 107)
+	rec(base.Add(55*time.Second), 200, 100, 107) // tsk_a's counters restarted: what it now reads is new
+
+	pts, err := s.NodeTaskSeries(ctx, "nod_1", base.Add(-time.Minute), "5m")
+	require.NoError(t, err)
+	out, in := map[string]int64{}, map[string]int64{}
+	for _, p := range pts {
+		out[p.TaskID] += p.TunnelOut
+		in[p.TaskID] += p.TunnelIn
+	}
+	require.EqualValues(t, 1500+200, out["tsk_a"], "1000 + 500 + a reset to 200")
+	require.EqualValues(t, 4500+100, in["tsk_a"])
+	require.EqualValues(t, 107, out["tsk_b"], "7 at the first reading, then 100 more")
+
+	readings, err := s.TaskUsageSeries(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.Len(t, readings, 4, "one per heartbeat, not folded into a bucket")
+	require.EqualValues(t, 1000, readings[1].TunnelOut)
+	require.EqualValues(t, 500, readings[2].TunnelOut)
+	require.EqualValues(t, 200, readings[3].TunnelOut)
+	var sum int64
+	for _, r := range readings {
+		sum += r.TunnelOut
+	}
+	require.EqualValues(t, out["tsk_a"], sum, "the fine readings and the buckets agree")
+	other, err := s.TaskUsageSeries(ctx, "tsk_none")
+	require.NoError(t, err)
+	require.Empty(t, other)
+
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_1", TaskID: "tsk_a", Service: "db", BytesToLocal: 10, BytesToTask: 20, At: base.Add(time.Minute), RecordTask: true}))
+	require.NoError(t, s.RecordGatewayTraffic(ctx, GatewayTrafficReport{GatewayID: "gw_1", TaskID: "tsk_b", Service: "db", BytesToLocal: 99, BytesToTask: 99, At: base.Add(time.Minute), RecordTask: true}))
+	gw, err := s.TaskGatewaySeries(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.Len(t, gw, 1)
+	require.EqualValues(t, 10, gw[0].BytesToLocal)
+	require.EqualValues(t, 20, gw[0].BytesToTask)
+
+	// Pruning removes the fine readings with the buckets.
+	n, err := s.PruneNodeUsage(ctx, time.Now())
+	require.NoError(t, err)
+	require.Positive(t, n)
+	readings, err = s.TaskUsageSeries(ctx, "tsk_a")
+	require.NoError(t, err)
+	require.Empty(t, readings)
 }
