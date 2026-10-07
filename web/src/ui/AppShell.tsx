@@ -330,7 +330,7 @@ export function AppShell({ nav, crumbs, roleLabel, username, onLogout, topbarExt
           </div>
         )}
 
-        <main id="main" className={cn("mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8", wide ? "max-w-[100rem]" : "max-w-[75rem]")}>
+        <main id="main" className={cn("mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8", wide ? "max-w-[87.5rem]" : "max-w-[75rem]")}>
           <WideLayoutContext.Provider value={setWide}>{children}</WideLayoutContext.Provider>
         </main>
       </div>

@@ -87,7 +87,11 @@ check(
 
 if (WIDTH >= 1900) {
   const w = await page.$eval("main#main", (m) => m.getBoundingClientRect().width);
-  check("on a wide screen the page uses the extra width instead of a narrow centred column", w > 1400, `${Math.round(w)}px wide`);
+  check(
+    "on a wide screen the page uses the extra width instead of a narrow centred column",
+    w > 1250 && w < 1450,
+    `${Math.round(w)}px wide`
+  );
 }
 let body = await text();
 check(
