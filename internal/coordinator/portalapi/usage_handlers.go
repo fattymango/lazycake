@@ -70,7 +70,7 @@ type nodeUsageResponse struct {
 	Series []usagePointView `json:"series"`
 }
 
-// handleNodeUsage is GET .../nodes/{id}/usage?range=24h|7d.
+// handleNodeUsage is GET .../nodes/{id}/usage?range=1h|24h|7d.
 func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromContext(r.Context())
 	nodeID := r.PathValue("id")
@@ -81,10 +81,12 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 	rng, step, window := "24h", "5m", 24*time.Hour
 	switch r.URL.Query().Get("range") {
 	case "", "24h":
+	case "1h":
+		rng, step, window = "1h", "30s", time.Hour
 	case "7d":
 		rng, step, window = "7d", "hour", 7*24*time.Hour
 	default:
-		writeError(w, http.StatusBadRequest, "range must be 24h or 7d")
+		writeError(w, http.StatusBadRequest, "range must be 1h, 24h or 7d")
 		return
 	}
 

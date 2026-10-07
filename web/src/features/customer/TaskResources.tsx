@@ -3,8 +3,8 @@ import { Gauge } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import { bytes, cores, coresLabel, memory } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
-import { fillBuckets, type StackPoint } from "@/lib/series";
-import { bucketReadings, taskStack, type TaskMetric } from "@/lib/taskusage";
+import type { StackPoint } from "@/lib/series";
+import { bucketReadings, bucketTraffic, taskStack, type TaskMetric } from "@/lib/taskusage";
 import type { Task, TaskTraffic, TaskUsage } from "@/lib/types";
 import { isTerminalState } from "@/ui/status";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
@@ -50,10 +50,11 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
     if (!u) return [];
     if (tab === "gateway") {
       const raw = (traffic?.series ?? []).map((p) => ({
-        at: p.at_ms,
-        values: { received: p.received_from_tasks_bytes, sent: p.sent_to_tasks_bytes },
+        at_ms: p.at_ms,
+        received: p.received_from_tasks_bytes,
+        sent: p.sent_to_tasks_bytes,
       }));
-      return fillBuckets(raw, "5m", Math.max(end - start, 5 * 60_000), end, false);
+      return bucketTraffic(raw, start, end);
     }
     // From the first reading to the last: the first one arrives a few seconds after the task starts,
     // and that lead-in is not a gap in the data.
@@ -145,6 +146,8 @@ export function TaskResources({ task, traffic }: { task: Task; traffic: TaskTraf
               points={points}
               series={series}
               format={format}
+              axisFormat={tab === "cpu" ? cores : undefined}
+              axisUnit={tab === "cpu" ? "cores" : undefined}
               formatTime={clock}
               axisLabel={clockShort}
               limit={limit}

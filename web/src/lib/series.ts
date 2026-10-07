@@ -9,7 +9,7 @@ export interface StackPoint {
   gap?: boolean;
 }
 
-const STEP_MS = { "5m": 300_000, hour: 3_600_000, day: 86_400_000 } as const;
+const STEP_MS = { "10s": 10_000, "30s": 30_000, "5m": 300_000, hour: 3_600_000, day: 86_400_000 } as const;
 export type Step = keyof typeof STEP_MS;
 
 /**

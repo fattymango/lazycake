@@ -59,6 +59,17 @@ func (s *PostgresStore) RecordGatewayTraffic(ctx context.Context, r GatewayTraff
 			return fmt.Errorf("updating traffic bucket: %w", err)
 		}
 	}
+	if r.RecordTask {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO task_gateway_samples (task_id, at, bytes_to_local, bytes_to_task)
+			VALUES ($1, date_bin('10 seconds', $2::timestamptz, TIMESTAMPTZ '2000-01-01'), $3, $4)
+			ON CONFLICT (task_id, at) DO UPDATE SET
+				bytes_to_local = task_gateway_samples.bytes_to_local + EXCLUDED.bytes_to_local,
+				bytes_to_task  = task_gateway_samples.bytes_to_task  + EXCLUDED.bytes_to_task`,
+			r.TaskID, at, r.BytesToLocal, r.BytesToTask); err != nil {
+			return fmt.Errorf("updating task gateway sample: %w", err)
+		}
+	}
 	return tx.Commit(ctx)
 }
 
@@ -153,5 +164,9 @@ func (s *PostgresStore) PruneGatewayTraffic(ctx context.Context, before time.Tim
 	if err != nil {
 		return 0, fmt.Errorf("pruning gateway traffic: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	fine, err := s.pool.Exec(ctx, `DELETE FROM task_gateway_samples WHERE at < $1`, before)
+	if err != nil {
+		return 0, fmt.Errorf("pruning task gateway samples: %w", err)
+	}
+	return tag.RowsAffected() + fine.RowsAffected(), nil
 }

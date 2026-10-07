@@ -9,6 +9,9 @@ Gateway traffic, machine usage, and a Resource use chart on every task. **Update
 
 Upgrade notes: the coordinator needs migrations 017, 018 and 019; the agent image is `docker.io/fattymango/lazycake-agent:v0.3.0` (also `:latest`).
 
+### Changed
+- **Charts are line charts**, one shared component everywhere; a 1-hour view for machines and 10-second gateway detail for tasks so short tasks draw a real line. Needs migration 020.
+
 ### Fixed
 - **Trust no longer drops for machines that run tunnel tasks**: the agent didn't report its byte counts at task end, so every task that used a gateway looked like a 100% byte
   mismatch. It now reports them (needs the updated agent).

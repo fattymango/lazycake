@@ -55,3 +55,24 @@ export function taskStack(cols: Column[], metric: TaskMetric): StackPoint[] {
     return { at: c.at, values: { out: c.out, in: c.in } };
   });
 }
+
+export const MIN_TRAFFIC_COLUMN_MS = 10_000;
+
+/**
+ * Gateway traffic per column from `startMs` to `endMs`. The gateway only reports while bytes move, so a
+ * column with nothing in it is a real zero (the line drops to the axis), never a gap.
+ */
+export function bucketTraffic(series: { at_ms: number; received: number; sent: number }[], startMs: number, endMs: number): StackPoint[] {
+  if (series.length === 0) return [];
+  const start = Math.min(startMs, series[0].at_ms);
+  const end = Math.max(endMs, series[series.length - 1].at_ms);
+  const width = Math.max(MIN_TRAFFIC_COLUMN_MS, Math.ceil((end - start) / TARGET_COLUMNS));
+  const count = Math.floor((end - start) / width) + 1;
+  const cols: StackPoint[] = Array.from({ length: count }, (_, i) => ({ at: start + i * width, values: { received: 0, sent: 0 } }));
+  for (const p of series) {
+    const c = cols[Math.min(count - 1, Math.floor((p.at_ms - start) / width))];
+    c.values.received += p.received;
+    c.values.sent += p.sent;
+  }
+  return cols;
+}

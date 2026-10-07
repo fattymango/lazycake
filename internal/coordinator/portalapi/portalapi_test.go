@@ -1020,6 +1020,10 @@ func TestMachineUsageSeriesTaskTotalsAndScoping(t *testing.T) {
 	require.EqualValues(t, 2*100, pt.TunnelOutBytes, "machine total = the two tasks that moved data")
 	require.EqualValues(t, 2*200, pt.TunnelInBytes)
 	require.Equal(t, "hour", decodeBody[nodeUsageResponse](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=7d", nil)).Step)
+	hour := decodeBody[nodeUsageResponse](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=1h", nil))
+	require.Equal(t, "30s", hour.Step)
+	require.Len(t, hour.Series, 1, "the reading from ten minutes ago is inside the last hour")
+	require.Contains(t, hour.Tasks, "tsk_ua")
 	require.Equal(t, http.StatusBadRequest, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_u/usage?range=1y", nil).StatusCode)
 
 	// The machine's task list carries each task's totals; a task never reported has none.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OTHERS_KEY, percent, usageStack } from "./usage";
+import { OTHERS_KEY, percent, trimLeadingGap, usageStack } from "./usage";
 import type { NodeUsage } from "./types";
 
 const M5 = 300_000;
@@ -14,7 +14,7 @@ const base: NodeUsage = {
 describe("usageStack", () => {
   const now = 1_000 * M5 + 7;
 
-  it("covers the whole window, with offline periods as gaps and idle periods as real zeros", () => {
+  it("starts at the first reading, with offline periods as gaps and idle periods as real zeros", () => {
     const u: NodeUsage = {
       ...base,
       series: [
@@ -45,7 +45,9 @@ describe("usageStack", () => {
       ],
     };
     const pts = usageStack(u, "cpu", now);
-    expect(pts).toHaveLength(288);
+    // The empty stretch before the first reading is not downtime, so the chart starts at the first reading.
+    expect(pts[0].at).toBe(998 * M5);
+    expect(pts).toHaveLength(1000 - 998 + 1);
     const at = (t: number) => pts.find((p) => p.at === t * M5)!;
     expect(at(1000).values).toEqual({ tsk_a: 1, _total: 1 });
     expect(at(998).gap).toBeUndefined(); // the machine reported, it was just idle
@@ -78,10 +80,23 @@ describe("usageStack", () => {
     expect(usageStack(u, "disk", now).find((p) => p.at === 1000 * M5)!.values).toEqual({ disk: 777 });
   });
 
-  it("uses hourly buckets for a week", () => {
-    const pts = usageStack({ ...base, range: "7d", step: "hour" }, "cpu", now);
-    expect(pts).toHaveLength(168);
-    expect(pts[1].at - pts[0].at).toBe(3_600_000);
+  it("uses hourly buckets for a week and 30-second bins for an hour", () => {
+    const hourly = usageStack({ ...base, range: "7d", step: "hour" }, "cpu", now);
+    expect(hourly).toHaveLength(168); // no readings at all: every period is a gap, nothing to trim to
+    expect(hourly[1].at - hourly[0].at).toBe(3_600_000);
+    const fine = usageStack({ ...base, range: "1h", step: "30s" }, "cpu", now);
+    expect(fine).toHaveLength(120);
+    expect(fine[1].at - fine[0].at).toBe(30_000);
+  });
+});
+
+describe("trimLeadingGap", () => {
+  it("drops only the stretch before the first reading, keeping later downtime", () => {
+    const g = (at: number) => ({ at, values: {}, gap: true });
+    const d = (at: number) => ({ at, values: { a: 1 } });
+    expect(trimLeadingGap([g(0), g(1), d(2), g(3), d(4)]).map((p) => p.at)).toEqual([2, 3, 4]);
+    expect(trimLeadingGap([d(0), g(1)]).map((p) => p.at)).toEqual([0, 1]);
+    expect(trimLeadingGap([g(0), g(1)]).map((p) => p.at)).toEqual([0, 1]);
   });
 });
 

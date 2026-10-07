@@ -10,7 +10,7 @@ export const OTHERS_KEY = "_others";
 
 export type UsageMetric = "cpu" | "memory" | "disk" | "network";
 
-const WINDOW = { "24h": 24 * 3_600_000, "7d": 7 * 24 * 3_600_000 } as const;
+const WINDOW = { "1h": 3_600_000, "24h": 24 * 3_600_000, "7d": 7 * 24 * 3_600_000 } as const;
 
 /**
  * One chart point per period in the window. A period with no samples is a gap (the
@@ -31,7 +31,18 @@ export function usageStack(u: NodeUsage, metric: UsageMetric, now = Date.now()):
     }
     return { at: p.at_ms, values };
   });
-  return fillBuckets(raw, u.step === "hour" ? "hour" : "5m", WINDOW[u.range], now, true);
+  const filled = fillBuckets(raw, u.step === "hour" ? "hour" : u.step === "30s" ? "30s" : "5m", WINDOW[u.range], now, true);
+  return trimLeadingGap(filled);
+}
+
+/**
+ * Drop the empty stretch before the first reading. Before a machine existed there is nothing to be
+ * "offline" about, and keeping it would squeeze a new machine's few readings into a corner of the chart.
+ * Gaps after the first reading are kept: those are real downtime.
+ */
+export function trimLeadingGap(points: StackPoint[]): StackPoint[] {
+  const first = points.findIndex((p) => !p.gap);
+  return first <= 0 ? points : points.slice(first);
 }
 
 /** How much of the machine the tasks were using at a point, for the tooltip footer. */

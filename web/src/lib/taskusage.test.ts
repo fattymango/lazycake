@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_COLUMN_MS, bucketReadings, taskStack } from "./taskusage";
+import { MIN_COLUMN_MS, MIN_TRAFFIC_COLUMN_MS, bucketReadings, bucketTraffic, taskStack } from "./taskusage";
 import type { TaskReading } from "./types";
 
 const r = (at_ms: number, cpu: number, mem: number, out = 0, inn = 0): TaskReading => ({
@@ -52,5 +52,27 @@ describe("taskStack", () => {
     expect(taskStack(cols, "cpu")[0].values).toEqual({ cpu: 0.5 });
     expect(taskStack(cols, "memory")[0].values).toEqual({ memory: 64 });
     expect(taskStack(cols, "network")[0].values).toEqual({ out: 9, in: 3 });
+  });
+});
+
+describe("bucketTraffic", () => {
+  it("turns a short task's 10-second reports into a real line, with quiet moments as zeros", () => {
+    const series = [
+      { at_ms: 0, received: 10, sent: 100 },
+      { at_ms: 10_000, received: 10, sent: 100 },
+      { at_ms: 40_000, received: 5, sent: 50 },
+    ];
+    const cols = bucketTraffic(series, 0, 40_000);
+    expect(cols).toHaveLength(5);
+    expect(cols[2].values).toEqual({ received: 0, sent: 0 });
+    expect(cols[2].gap).toBeUndefined();
+    expect(cols.reduce((n, c) => n + c.values.sent, 0)).toBe(250);
+    expect(cols[1].at - cols[0].at).toBe(MIN_TRAFFIC_COLUMN_MS);
+  });
+
+  it("caps the column count for a long task and returns nothing for no traffic", () => {
+    const day = Array.from({ length: 4000 }, (_, i) => ({ at_ms: i * 10_000, received: 1, sent: 1 }));
+    expect(bucketTraffic(day, 0, 4000 * 10_000).length).toBeLessThanOrEqual(61);
+    expect(bucketTraffic([], 0, 1000)).toEqual([]);
   });
 });

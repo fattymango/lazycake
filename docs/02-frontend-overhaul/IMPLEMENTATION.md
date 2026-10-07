@@ -344,6 +344,11 @@ an old agent shows the "update" message; heartbeat size with the cap hit; migrat
     memory against the memory requested, tunnel traffic in both directions, and, for a task that used a gateway, the gateway's own counts. It reads `GET /customer/tasks/{id}/usage`
     (the task's own readings at heartbeat resolution, kept 30 days in `task_usage_samples`) and `.../traffic` (now with a gateway-side `series`). Readings are grouped into columns of at
     least 20 s (CPU and memory averaged, network summed); a stretch with no reading is a hatched gap.
+  - **Line charts and finer resolution (migration 020).** Every time series is now one `ui/LineChart` (a line per series, crosshair tooltip, dashed limit line, hatched gaps that break
+    the line). A first version drew a few dots for short tasks and new machines because 5-minute buckets can't show a two-minute task, so: gateway traffic is also kept per task in
+    10-second bins (`task_gateway_samples`, 30 days) and the task's Gateway tab uses it; machine heartbeats are kept raw for 48 hours (`node_usage_samples`) and the machine page has a
+    **1 hour** range at 30-second resolution (now the default) next to 24 hours and 7 days. The 24 h / 7 d views start at the machine's first reading instead of showing empty hours
+    before it existed. Axis labels size their margin to their text (a long one such as "0.0025" was clipped) and the unit is named once above the chart.
   - **Bug found and fixed on the way:** the agent never filled `bytes_sent/bytes_recv` in `TaskFinished`, so every tunnel task reconciled as 100% divergent against the relay and the
     gateway and cost the machine trust (visible as a falling trust score). The agent now reports its exact tunnel counters; verified live at 0.07% divergence. **A machine only
     stops losing trust once its agent is updated.**
