@@ -101,11 +101,16 @@ function auditScript() {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
     if (r.right > vw + 1 && !el.closest("[data-scroll-x]")) {
-      bad.push(`${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)} extends ${Math.round(r.right - vw)}px past the viewport: "${(el.textContent || "").trim().slice(0, 50)}"`);
+      bad.push(
+        `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)} extends ${Math.round(r.right - vw)}px past the viewport: "${(el.textContent || "").trim().slice(0, 50)}"`
+      );
     }
-    const clipsText = el.children.length === 0 && el.scrollWidth > el.clientWidth + 1 && cs.overflow === "visible" && cs.display !== "inline";
+    const clipsText =
+      el.children.length === 0 && el.scrollWidth > el.clientWidth + 1 && cs.overflow === "visible" && cs.display !== "inline";
     if (clipsText && !el.closest("[data-scroll-x]")) {
-      bad.push(`text spills out of ${el.tagName.toLowerCase()}.${String(el.className).slice(0, 50)} (${el.scrollWidth}>${el.clientWidth}): "${(el.textContent || "").trim().slice(0, 50)}"`);
+      bad.push(
+        `text spills out of ${el.tagName.toLowerCase()}.${String(el.className).slice(0, 50)} (${el.scrollWidth}>${el.clientWidth}): "${(el.textContent || "").trim().slice(0, 50)}"`
+      );
     }
   }
   return [...new Set(bad)].slice(0, 12);
@@ -118,7 +123,13 @@ for (const role of ROLES) {
       // pass's session cookie can't turn /login into an instant redirect.
       const context = await browser.createBrowserContext();
       const page = await context.newPage();
-      page.on("console", (m) => m.type() === "error" && !/401 \(Unauthorized\)/.test(m.text()) && consoleErrors.push(`[${role}/${theme}/${width}] ${m.text().slice(0, 160)}`));
+      page.on(
+        "console",
+        (m) =>
+          m.type() === "error" &&
+          !/401 \(Unauthorized\)/.test(m.text()) &&
+          consoleErrors.push(`[${role}/${theme}/${width}] ${m.text().slice(0, 160)}`)
+      );
       page.on("pageerror", (e) => consoleErrors.push(`[${role}/${theme}/${width}] pageerror: ${String(e).slice(0, 160)}`));
       await page.setViewport({ width, height: width < 600 ? 800 : 900, deviceScaleFactor: 1 });
       await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);

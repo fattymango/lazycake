@@ -3,6 +3,7 @@
 //
 //   BASE=http://127.0.0.1:18081 TASK=tsk_... SHOTS=/tmp/shots node e2e/taskusage.mjs
 import puppeteer from "puppeteer-core";
+import { chartInfo, hoverFind } from "./chart.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:18081";
 const SHOTS = process.env.SHOTS;
@@ -37,17 +38,6 @@ const login = async (user) => {
 const api = (p) => page.evaluate(async (p) => (await fetch(p, { credentials: "include" })).json(), p);
 const tab = (label) =>
   page.evaluate((l) => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === l)?.click(), label);
-const columns = () => page.$$('[aria-label*=": "][tabindex="0"]');
-const hoverColumn = async (pred) => {
-  const labels = await page.$$eval('[aria-label*=": "][tabindex="0"]', (els) => els.map((e) => e.getAttribute("aria-label")));
-  const i = labels.findIndex(pred);
-  if (i < 0) return "";
-  const box = await (await columns())[i].boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await sleep(300);
-  return page.$eval('[role="status"]', (e) => e.innerText).catch(() => "");
-};
-
 // --- the customer's task page ----------------------------------------------------------------
 await login("alice");
 let taskId = process.env.TASK;
@@ -67,18 +57,18 @@ check(
   /Resource use/.test(body) && /Peak [\d.]+ of [\d.]+ cores/.test(body),
   body.match(/Peak [^\n]*/)?.[0]
 );
-const cpuCols = (await columns()).length;
-check("the CPU chart has columns", cpuCols >= 2, `${cpuCols} columns`);
-let tip = await hoverColumn((l) => /cores/.test(l) && !/No reading/.test(l));
+const cpuInfo = await chartInfo(page);
+check("the CPU chart has points", cpuInfo.points >= 2, `${cpuInfo.points} points`);
+let tip = await hoverFind(page, (t) => !/No reading/.test(t));
 check("hovering a moment says how many cores the task used", /CPU used/.test(tip) && /cores/.test(tip), tip.replace(/\n/g, " | "));
 await shot("task-resource-cpu");
 await tab("Memory");
 await sleep(500);
-tip = await hoverColumn((l) => /MB|kB/.test(l) && !/No reading/.test(l));
+tip = await hoverFind(page, (t) => !/No reading/.test(t));
 check("memory shows the task's memory against what it asked for", /Memory used/.test(tip) && /MB/.test(tip), tip.replace(/\n/g, " | "));
 await tab("Network");
 await sleep(500);
-tip = await hoverColumn((l) => /MB/.test(l) && !/No reading/.test(l));
+tip = await hoverFind(page, (t) => !/No reading/.test(t));
 check(
   "the network tab shows tunnel traffic in both directions",
   /Sent by the task/.test(tip) && /Received by the task/.test(tip) && /MB/.test(tip),
@@ -110,7 +100,7 @@ const node = nodes.find((n) => n.connected) ?? nodes[0];
 await go(`${BASE}/machines/${node.id}`);
 await tab("Network");
 await sleep(600);
-tip = await hoverColumn((l) => /MB/.test(l) && !/offline/.test(l));
+tip = await hoverFind(page, (t) => !/No reading/.test(t));
 check(
   "the machine's Network tab lists which task moved the data",
   /tsk_/.test(tip) && /MB/.test(tip) && /Out of the tasks/.test(tip),

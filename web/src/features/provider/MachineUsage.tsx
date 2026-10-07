@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
 import { Activity, Cpu, HardDrive, MemoryStick } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import { bytes, cores, memory, relativeTime, shortDateTime } from "@/lib/format";
+import { bytes, cores, coresLabel, memory, relativeTime, shortDateTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
 import { stackTotal } from "@/lib/series";
 import type { Node, NodeUsage } from "@/lib/types";
-import { OTHERS_KEY, bandClass, percent, usageAt, usageStack, type UsageMetric } from "@/lib/usage";
+import { OTHERS_COLOR, OTHERS_KEY, TOTAL_KEY, percent, seriesColor, usageAt, usageStack, type UsageMetric } from "@/lib/usage";
 import { Alert } from "@/ui/Alert";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { ErrorState } from "@/ui/EmptyState";
 import { ProgressBar } from "@/ui/ProgressBar";
 import { Segmented } from "@/ui/Segmented";
 import { Skeleton } from "@/ui/Skeleton";
-import { StackedChart, type ChartSeries } from "@/ui/StackedChart";
+import { LineChart, type ChartSeries } from "@/ui/LineChart";
 import type { Tone } from "@/ui/tone";
 
 type Range = "24h" | "7d";
@@ -76,11 +76,12 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
   const points = useMemo(() => (u ? usageStack(u, metric) : []), [u, metric]);
   const series = useMemo<ChartSeries[]>(() => {
     if (!u) return [];
-    if (metric === "disk") return [{ key: "disk", label: "Disk used", className: "bg-info" }];
+    if (metric === "disk") return [{ key: "disk", label: "Disk used", color: "rgb(var(--info))" }];
     // On the network chart a task's band is its traffic in both directions.
-    const named = u.tasks.map((id, i) => ({ key: id, label: taskLabel(id), className: bandClass(i) }));
+    const named = u.tasks.map((id, i) => ({ key: id, label: taskLabel(id), color: seriesColor(i) }));
     const hasOthers = u.series.some((p) => p.per_task[OTHERS_KEY]);
-    return hasOthers ? [...named, { key: OTHERS_KEY, label: "Other tasks", className: "bg-muted/60" }] : named;
+    const total: ChartSeries = { key: TOTAL_KEY, label: "All tasks", color: "rgb(var(--fg))", dashed: true };
+    return [total, ...named, ...(hasOthers ? [{ key: OTHERS_KEY, label: "Other tasks", color: OTHERS_COLOR }] : [])];
   }, [u, metric, taskLabel]);
 
   if (usage.error && !u) {
@@ -114,7 +115,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
       : metric === "memory"
         ? { value: offeredMem, label: `${memory(node.offer_memory_mb)} offered` }
         : undefined;
-  const format = metric === "cpu" ? (v: number) => `${cores(v)} cores` : bytes;
+  const format = metric === "cpu" ? coresLabel : bytes;
   const metricName = { cpu: "CPU", memory: "Memory", disk: "Disk", network: "Tunnel traffic" }[metric];
 
   return (
@@ -199,7 +200,7 @@ export function MachineUsage({ node, taskLabel }: { node: Node; taskLabel: (id: 
               />
             </div>
           </div>
-          <StackedChart
+          <LineChart
             points={points}
             series={series}
             format={format}

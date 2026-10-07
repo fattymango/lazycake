@@ -3,7 +3,11 @@ import puppeteer from "puppeteer-core";
 const [path, out, width = "1440", theme = "dark"] = process.argv.slice(2);
 const login = process.argv.includes("--login") ? process.argv[process.argv.indexOf("--login") + 1] : null;
 const BASE = process.env.BASE || "http://127.0.0.1:5173";
-const browser = await puppeteer.launch({ executablePath: "/usr/bin/google-chrome", headless: "new", args: ["--no-sandbox", "--disable-gpu", "--hide-scrollbars"] });
+const browser = await puppeteer.launch({
+  executablePath: "/usr/bin/google-chrome",
+  headless: "new",
+  args: ["--no-sandbox", "--disable-gpu", "--hide-scrollbars"],
+});
 const page = await browser.newPage();
 const errors = [];
 page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 200)));

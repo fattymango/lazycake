@@ -34,6 +34,11 @@ export function bytes(n: number | undefined | null): string {
   return `${Number(x.toFixed(x < 10 ? 2 : x < 100 ? 1 : 0))} ${units[i]}`;
 }
 
+/** "1 core" / "0.5 cores": the unit that goes with a cores() figure. */
+export function coresLabel(v: number | undefined | null): string {
+  return `${cores(v)} ${v === 1 ? "core" : "cores"}`;
+}
+
 /**
  * Cores in use, shown as measured: enough decimals that a small real figure is visible
  * (0.0017, not a rounded 0), fewer when the number is large. Only a true zero reads "0".

@@ -3,6 +3,7 @@
 //
 //   BASE=http://127.0.0.1:18081 SHOTS=/tmp/shots node e2e/usage.mjs
 import puppeteer from "puppeteer-core";
+import { chartInfo, hoverFind } from "./chart.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:18081";
 const SHOTS = process.env.SHOTS;
@@ -13,7 +14,11 @@ const check = (name, ok, detail = "") => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.launch({ executablePath: process.env.CHROME || "/usr/bin/google-chrome", headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const browser = await puppeteer.launch({
+  executablePath: process.env.CHROME || "/usr/bin/google-chrome",
+  headless: "new",
+  args: ["--no-sandbox", "--disable-gpu"],
+});
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 1000 });
 const errors = [];
@@ -34,7 +39,7 @@ await page.waitForFunction(() => location.pathname !== "/login", { timeout: 1500
 
 const api = (p) => page.evaluate(async (p) => (await fetch(p, { credentials: "include" })).json(), p);
 const nodes = await api("/api/portal/provider/nodes");
-const node = nodes.find((n) => n.connected) ?? nodes[0];
+const node = (process.env.NODE_ID && nodes.find((n) => n.id === process.env.NODE_ID)) || nodes.find((n) => n.connected) || nodes[0];
 
 // --- overview: a trend on the machine card -------------------------------------------
 await go(`${BASE}/`);
@@ -45,35 +50,35 @@ await shot("provider-overview-usage");
 // --- machine page ----------------------------------------------------------------------
 await go(`${BASE}/machines/${node.id}`);
 const body = await text();
-check("the Usage card is there with live gauges", /Usage/.test(body) && /CPU used by tasks/.test(body) && /Memory used by tasks/.test(body));
+check(
+  "the Usage card is there with live gauges",
+  /Usage/.test(body) && /CPU used by tasks/.test(body) && /Memory used by tasks/.test(body)
+);
 check("gauges read in the provider's terms, 'x of N offered cores'", /\d(\.\d+)? of 2\b/.test(body), body.match(/[\d.]+ of 2\b/)?.[0]);
 check("it says the numbers don't affect billing or trust", /doesn't affect billing or trust/.test(body));
-const cols = await page.$$('[aria-label*=": "][tabindex="0"]');
-check("the history chart has a column per five minutes of a day", cols.length === 288, `${cols.length}`);
-const labels = await page.$$eval('[aria-label*=": "][tabindex="0"]', (els) => els.map((e) => e.getAttribute("aria-label")));
-const offline = labels.filter((l) => /offline/.test(l)).length;
-check("periods with no reading are gaps, not zeros", offline > 0 && offline < labels.length, `${offline} gap columns`);
+const day = await chartInfo(page);
+check("the history chart has a point per five minutes of a day", day.points === 288, `${day.points}`);
+check("periods with no reading are gaps, not zeros", day.gaps > 0 && day.gaps < day.points, `${day.gaps} gap points`);
 
-// Hover the newest column that has data and read who used what.
-const idx = labels.map((l, i) => [l, i]).filter(([l]) => !/offline/.test(l)).map(([, i]) => i).pop();
-check("some column has task usage", idx !== undefined, `column ${idx}`);
-const box = await (await page.$$('[aria-label*=": "][tabindex="0"]'))[idx].boundingBox();
-await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-await sleep(400);
-const tip = await page.$eval('[role="status"]', (e) => e.innerText).catch(() => "");
-check("hovering a moment lists each task and the machine total", /cores/.test(tip) && /of 2 cores/.test(tip), tip.replace(/\n/g, " | "));
+// Hover the newest point that has a reading and read who used what.
+const tip = await hoverFind(page, (t) => !/offline/.test(t));
+check("some point has a reading", tip !== "");
+check(
+  "hovering a moment lists the tasks and the machine total",
+  /All tasks/.test(tip) && /of 2 cores/.test(tip),
+  tip.replace(/\n/g, " | ")
+);
 await shot("machine-usage-cpu");
 
 // Memory tab and 7 days.
 await page.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === "Memory")?.click());
 await sleep(500);
-const memCols = await page.$$('[aria-label*=": "][tabindex="0"]');
-check("memory tab charts the same period", memCols.length === 288);
+check("memory tab charts the same period", (await chartInfo(page)).points === 288);
 await shot("machine-usage-memory");
 await page.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent === "7 days")?.click());
 await sleep(1200);
-const weekCols = await page.$$('[aria-label*=": "][tabindex="0"]');
-check("7 days switches to one column per hour", weekCols.length === 168, `${weekCols.length}`);
+const week = await chartInfo(page);
+check("7 days switches to one point per hour", week.points === 168, `${week.points}`);
 await shot("machine-usage-7d");
 
 // --- hover on a task row ---------------------------------------------------------------------
@@ -87,7 +92,11 @@ for (const row of rows) {
   hoverText = await page.$eval('[role="tooltip"]', (e) => e.innerText).catch(() => "");
   if (/What this task used/.test(hoverText)) break;
 }
-check("hovering a task row shows what it used", /CPU time/.test(hoverText) && /Peak memory/.test(hoverText) && /Tunnel traffic/.test(hoverText), hoverText.replace(/\n/g, " | "));
+check(
+  "hovering a task row shows what it used",
+  /CPU time/.test(hoverText) && /Peak memory/.test(hoverText) && /Tunnel traffic/.test(hoverText),
+  hoverText.replace(/\n/g, " | ")
+);
 await shot("machine-task-hover");
 
 check("no uncaught page errors", errors.length === 0, errors.join(" | "));
