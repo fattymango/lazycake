@@ -149,3 +149,81 @@ func TestHeartbeatCarriesUsageAndAStuckReaderCannotStallIt(t *testing.T) {
 		})
 	}
 }
+
+// A connection that dies silently (a suspended laptop waking up) gives no error: sending still succeeds and nothing
+// ever answers. The agent must notice the silence and open a new stream, not wait forever.
+func TestRunnerReconnectsWhenTheCoordinatorStopsAnswering(t *testing.T) {
+	streams := make(chan *fakeStream, 8)
+	client := &fakeClient{next: func(ctx context.Context) *fakeStream {
+		s := newFakeStream(ctx)
+		streams <- s
+		return s
+	}}
+	r := &Runner{
+		Client:     client,
+		Identity:   Identity{Token: "tok", Hostname: "h1", Arch: "amd64"},
+		Log:        discardLogger(),
+		AckTimeout: 1500 * time.Millisecond,
+		Backoff:    &Backoff{Min: 10 * time.Millisecond, Max: 20 * time.Millisecond},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	first := waitFor(t, streams, time.Second, "first connect")
+	waitFor(t, first.out, time.Second, "register")
+	first.in <- &lazycakev1.CoordinatorMessage{Body: &lazycakev1.CoordinatorMessage_RegisterAck{
+		RegisterAck: &lazycakev1.RegisterAck{NodeId: "nod_1", HeartbeatS: 1, LeaseS: 5},
+	}}
+	// Heartbeats are sent (and nobody answers any of them).
+	waitFor(t, first.out, 3*time.Second, "a heartbeat")
+
+	// Within a few seconds the silent stream is abandoned and a new one is opened.
+	second := waitFor(t, streams, 6*time.Second, "a reconnect after the coordinator went silent")
+	if second == first {
+		t.Fatal("expected a fresh stream")
+	}
+}
+
+// A connection that is answering is left alone.
+func TestRunnerKeepsAStreamThatIsAnswering(t *testing.T) {
+	streams := make(chan *fakeStream, 8)
+	client := &fakeClient{next: func(ctx context.Context) *fakeStream {
+		s := newFakeStream(ctx)
+		streams <- s
+		return s
+	}}
+	r := &Runner{
+		Client:     client,
+		Identity:   Identity{Token: "tok", Hostname: "h1", Arch: "amd64"},
+		Log:        discardLogger(),
+		AckTimeout: 1500 * time.Millisecond,
+		Backoff:    &Backoff{Min: 10 * time.Millisecond, Max: 20 * time.Millisecond},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	first := waitFor(t, streams, time.Second, "first connect")
+	waitFor(t, first.out, time.Second, "register")
+	first.in <- &lazycakev1.CoordinatorMessage{Body: &lazycakev1.CoordinatorMessage_RegisterAck{
+		RegisterAck: &lazycakev1.RegisterAck{NodeId: "nod_1", HeartbeatS: 1, LeaseS: 5},
+	}}
+	// Answer every heartbeat for longer than the timeout.
+	deadline := time.After(4 * time.Second)
+	for {
+		select {
+		case msg := <-first.out:
+			if hb := msg.GetHeartbeat(); hb != nil {
+				first.in <- &lazycakev1.CoordinatorMessage{Body: &lazycakev1.CoordinatorMessage_HeartbeatAck{HeartbeatAck: &lazycakev1.HeartbeatAck{Seq: hb.GetSeq()}}}
+			}
+		case <-deadline:
+			select {
+			case <-streams:
+				t.Fatal("a stream that answers every heartbeat must not be abandoned")
+			default:
+			}
+			return
+		}
+	}
+}
