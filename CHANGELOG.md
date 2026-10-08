@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.12 — 2026-10-08
+
+### Fixed
+- **An agent recovers by itself after its machine suspends.** When a laptop slept and woke, the connection to the coordinator was dead but gave no error, so the agent kept sending heartbeats into it, fenced its tasks, and
+  then waited forever for answers that would never come. The coordinator showed the machine as down until the container was restarted by hand. The agent now treats three heartbeat intervals without an acknowledgement as a
+  dead connection and reconnects. Needs the updated agent (`docker.io/fattymango/lazycake-agent:v0.3.12`).
+
 ## v0.3.11 — 2026-10-07
 
 ### Fixed

@@ -59,6 +59,12 @@ type Runner struct {
 	// if nil. Exposed so tests can inject a fast backoff instead of
 	// sleeping through real reconnect delays.
 	Backoff *Backoff
+	// AckTimeout is how long the stream may go without a heartbeat acknowledgement before it is treated as
+	// dead and re-opened. Zero means three heartbeat intervals. A connection that died silently (a laptop
+	// that was suspended and woke up, a NAT that dropped the flow) gives no error: sending into it still
+	// succeeds locally, so without this the agent fenced its tasks and then waited forever on a stream that
+	// would never answer (found when a laptop agent stayed down after a suspend).
+	AckTimeout time.Duration
 
 	// SendFn lets callers push AgentMessage values onto the active stream
 	// (used by the agent's dispatch-result reporting, task 1.8+). It is set
@@ -71,6 +77,7 @@ type Runner struct {
 	// extendFenceDeadline. Guarded by mu since sendLoop and recvLoop (and
 	// whatever's watching FenceDeadline) run concurrently.
 	mu              sync.Mutex
+	lastAck         time.Time // when this stream last heard from the coordinator
 	leaseS          int32
 	fenceDeadline   time.Time
 	heartbeatSentAt map[int64]time.Time
@@ -213,6 +220,7 @@ func (r *Runner) runOnce(ctx context.Context) error {
 	// previous (possibly already-expired) value while waiting for the
 	// first heartbeat round trip.
 	r.fenceDeadline = r.clockNow().Add(time.Duration(r.leaseS) * time.Second)
+	r.lastAck = r.clockNow()
 	r.mu.Unlock()
 	if r.Handlers.OnRegistered != nil {
 		r.Handlers.OnRegistered(ack)
@@ -263,6 +271,21 @@ func (r *Runner) sendLoop(ctx context.Context, stream lazycakev1.AgentService_Co
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// A stream that has stopped answering is dead, however healthy sending into it looks.
+			timeout := r.AckTimeout
+			if timeout <= 0 {
+				timeout = 3 * heartbeatEvery
+			}
+			r.mu.Lock()
+			silent := r.clockNow().Sub(r.lastAck)
+			r.mu.Unlock()
+			if silent > timeout {
+				select {
+				case errCh <- fmt.Errorf("no heartbeat acknowledged for %s: the connection is dead, reconnecting", silent.Round(time.Second)):
+				default:
+				}
+				return
+			}
 			seq++
 			var running []string
 			if r.Handlers.RunningTaskIDs != nil {
@@ -332,6 +355,9 @@ func (r *Runner) recvLoop(streamCtx, taskCtx context.Context, stream lazycakev1.
 				r.Handlers.OnShutdown(taskCtx, body.Shutdown)
 			}
 		case *lazycakev1.CoordinatorMessage_HeartbeatAck:
+			r.mu.Lock()
+			r.lastAck = r.clockNow()
+			r.mu.Unlock()
 			r.extendFenceDeadline(body.HeartbeatAck.GetSeq())
 		case *lazycakev1.CoordinatorMessage_RegisterAck:
 			// no-op: already handled where Register was sent
