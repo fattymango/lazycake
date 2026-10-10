@@ -409,3 +409,20 @@ overflow a 32-bit megabyte field, and can't even be typed a decimal point, sign 
 **Install** steps are beside it on the right; changing a number after generating marks the command out of date. Two warnings: always, that if the machine can't provide the numbers the agent shuts down and the machine
 fails to connect; and when the offer is big (8+ cores, 16+ GB, 50+ GB or 500+ Mbps, or half the machine or more once its capacity is known) that this much will be set aside for customers' tasks and the provider's own
 use of the device may suffer. Browser checks: `web/e2e/addmachine.mjs` (33).
+
+### Task 8.18 — HTTPS for the portal and TLS for the agent connection
+
+**Status: backlog, deferred by the owner (2026-10-11).** Found in a security check of the production server: the portal at `http://<ip>:8080` carries logins, session cookies and money over plain HTTP, and the
+agent's gRPC connection on 7443 sends its token unencrypted. Postgres is not exposed to the internet (details are kept privately).
+
+**Idea to evaluate:** a Let's Encrypt certificate for the bare IP address (a newer feature: short-lived, about 6 days, validated over HTTP on port 80 or TLS-ALPN, no DNS needed). Not verified yet. Things found:
+- The server's Ubuntu 24.04 `certbot` is 2.9.0, probably too old for IP certificates: a newer client (certbot from snap/pip, `lego`, or Caddy) is needed.
+- Port 80 is closed and unused; 443 is already in use on the server, so the portal would sit on another port or the other service moves.
+- Try Let's Encrypt staging first; renewal must be automatic (6-day lifetime).
+- A domain name is the more durable option (an IP certificate breaks if the droplet's address changes).
+
+**Needs:** a reverse proxy (Caddy is the simplest) in front of the coordinator; TLS on the agent's gRPC port with an agent change, a new agent release and every machine updated; gateways connect to the same endpoints and
+need the same.
+
+**Also from that check (small, not scheduled):** server hardening items, kept privately.
+
