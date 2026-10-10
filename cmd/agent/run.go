@@ -84,7 +84,9 @@ func run() error {
 	ledger := capacity.NewLedger(offer)
 
 	clientConn, err := grpc.NewClient(cfg.CoordinatorAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// Fail dead connections fast and reconnect on a fresh socket (see conn.Dialer).
+		grpc.WithContextDialer(conn.Dialer))
 	if err != nil {
 		return err
 	}

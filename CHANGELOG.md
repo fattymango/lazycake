@@ -3,6 +3,12 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.3.13 — 2026-10-11
+
+### Fixed
+- **An agent really does recover after its machine suspends.** v0.3.12 noticed the dead connection but then reconnected on the same dead socket: the kernel keeps unacknowledged data for about 15 minutes, and the agent's
+  gRPC channel reused that socket for every new stream. The agent's connection now uses a 30-second TCP user timeout and keepalives, so the dead socket is torn down and replaced. Needs the updated agent.
+
 ## v0.3.12 — 2026-10-08
 
 ### Fixed
