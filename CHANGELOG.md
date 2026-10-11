@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.16 — 2026-10-11
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Fixed
+- **The big-task hold cost too much throughput.** v0.4.15 made every machine that could run a waiting big task stop taking new work until it was empty, so in the second load test machines sat mostly idle (3 tasks running with 270 queued) and 633 tasks finished against 855 before. Now only one machine empties itself per waiting task, and while it does, short tasks (wall-clock limit shorter than the wait) still run on it. Waiting times for 4-core tasks fell from 31 to 20 minutes median in that run and 8-core from 42 to 26.
+
 ## v0.4.15 — 2026-10-11
 
 Coordinator and agent (agents show "Update available"; gateways are unchanged). No migration.

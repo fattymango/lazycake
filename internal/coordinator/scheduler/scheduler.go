@@ -118,6 +118,12 @@ type Scheduler struct {
 	banned   map[string]bool                 // node_id -> currently below the trust ban threshold (for logging changes)
 	lastTick time.Time                       // when the placement loop last ran, for trust healing
 	rejected map[rejectKey]time.Time         // (node_id, task_id) -> cooldown expiry
+	drainers map[string]drainer              // waiting task id -> the one node currently emptying itself for it
+}
+
+type drainer struct {
+	nodeID string
+	at     time.Time
 }
 
 type rejectKey struct {
@@ -131,6 +137,7 @@ func New(st store.Store, dispatch Dispatcher, ck clock.Clock, log *slog.Logger, 
 		Store: st, Dispatch: dispatch, Clock: ck, Log: log, LeaseS: leaseS,
 		freeCap:   make(map[string]store.CapacityFilter),
 		rejected:  make(map[rejectKey]time.Time),
+		drainers:  make(map[string]drainer),
 		SpecDrift: NewSpecDriftTracker(),
 		Trust:     trust,
 		Canary:    NewCanaryTracker(trust, log),

@@ -182,7 +182,7 @@ func (s *PostgresStore) ClaimQueuedTask(ctx context.Context, nodeID string, filt
 				AND cpu_cores <= $5
 				AND memory_mb <= $6
 				AND disk_mb <= $7
-				AND ($8::timestamptz IS NULL OR created_at < $8)
+				AND ($8::timestamptz IS NULL OR created_at < $8 OR ($10::int > 0 AND wall_timeout_s <= $10::int))
 				AND NOT (id = ANY($9::text[]))
 			ORDER BY created_at
 			FOR UPDATE SKIP LOCKED
@@ -191,7 +191,7 @@ func (s *PostgresStore) ClaimQueuedTask(ctx context.Context, nodeID string, filt
 		RETURNING `+taskColumns,
 		nodeID, requeueAfter,
 		filter.Arch, filter.Isolations, filter.FreeCores, filter.FreeMemoryMB, filter.FreeDiskMB,
-		nullTime(filter.OlderThan), nonNilStrings(filter.ExcludeTaskIDs),
+		nullTime(filter.OlderThan), nonNilStrings(filter.ExcludeTaskIDs), filter.BackfillWallS,
 	)
 	t, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {

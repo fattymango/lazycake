@@ -194,3 +194,47 @@ func TestATaskCoolingDownForThisNodeDoesNotStallIt(t *testing.T) {
 	s.tick(context.Background())
 	require.Equal(t, []string{"tsk_next"}, disp.ids(), "the refused task is skipped, the next one is placed")
 }
+
+// Every node that could run a waiting big task used to empty itself for it, so two machines sat idle for a task only one of them would run
+// (the load test ran at under half its cores while 270 tasks queued). One drains; the other keeps working.
+func TestOnlyOneNodeDrainsForAWaitingBigTask(t *testing.T) {
+	st, disp, s := starvationEnv(t, 4)
+	ctx := context.Background()
+	require.NoError(t, st.UpsertNode(ctx, store.Node{ID: "nod_2", AccountID: "act_1", Hostname: "h2", Arch: "amd64",
+		OfferCores: 4, OfferMemoryMB: 8192, OfferDiskMB: 100_000}))
+	queuedTask(t, st, "tsk_big", 4, 1024)
+	age(t, st, "tsk_big", 5*time.Minute)
+	for i := 0; i < 4; i++ {
+		queuedTask(t, st, fmt.Sprintf("tsk_small%d", i), 0.25, 64)
+	}
+	report(t, s, 1)
+	require.NoError(t, s.OnCapacityReport(ctx, "nod_2", api.CapacityReportEvent{FreeCores: 1, FreeMemoryMB: 8192, FreeDiskMB: 100_000}))
+
+	s.tick(ctx)
+	require.Len(t, disp.ids(), 4, "one machine drains for the big task, the other takes the small ones")
+	for _, id := range []string{"nod_1", "nod_2"} {
+		on, err := st.ListTasksByNode(ctx, id, []store.TaskState{store.TaskDispatched})
+		require.NoError(t, err)
+		require.True(t, len(on) == 0 || len(on) == 4, "all four small tasks went to a single machine, the draining one got none: %s has %d", id, len(on))
+	}
+}
+
+// A node draining for a waiting big task used to sit with free cores until it was empty, however short the other work was. A newer task whose
+// wall-clock limit ends before the big one could start anyway (the running task's own limit) costs it nothing, so it runs now; a long one waits.
+func TestADrainingNodeStillRunsShortTasksThatEndBeforeTheBigOneCouldStart(t *testing.T) {
+	st, disp, s := starvationEnv(t, 4)
+	ctx := context.Background()
+	queuedTask(t, st, "tsk_running", 3, 1024)
+	_, err := st.Pool().Exec(ctx, `UPDATE tasks SET state = 'running', node_id = 'nod_1', started_at = now(), wall_timeout_s = 120 WHERE id = 'tsk_running'`)
+	require.NoError(t, err)
+	queuedTask(t, st, "tsk_big", 4, 1024)
+	age(t, st, "tsk_big", 5*time.Minute)
+	queuedTask(t, st, "tsk_short", 0.25, 64) // wall limit 60 s: over before the running task's 120 s
+	queuedTask(t, st, "tsk_long", 0.25, 64)
+	_, err = st.Pool().Exec(ctx, `UPDATE tasks SET wall_timeout_s = 600 WHERE id = 'tsk_long'`)
+	require.NoError(t, err)
+
+	report(t, s, 1)
+	s.tick(ctx)
+	require.Equal(t, []string{"tsk_short"}, disp.ids(), "the short task fits in the wait; the 10-minute one could delay the big task, so it waits")
+}

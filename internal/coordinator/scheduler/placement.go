@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/fattymango/lazycake/internal/coordinator/events"
@@ -145,8 +146,57 @@ func (s *Scheduler) holdForStarvingTask(ctx context.Context, n store.Node, filte
 	if head.Limits.CPUCores <= filter.FreeCores && head.Limits.MemoryMB <= filter.FreeMemoryMB && head.Limits.DiskMB <= filter.FreeDiskMB {
 		return // it fits now: it is the oldest task that fits, so it is the one claimed next
 	}
+	// One node empties itself for a waiting task, not every node that could run it: the others keep working, or they would all sit idle
+	// to make room for a task only one of them will run. The claim lapses if that node stops asking (disconnected, banned, task gone).
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if d, ok := s.drainers[head.ID]; ok && d.nodeID != n.ID && now.Sub(d.at) < drainerLapse {
+		return
+	}
+	for id, d := range s.drainers {
+		if now.Sub(d.at) > time.Minute {
+			delete(s.drainers, id)
+		}
+	}
+	s.drainers[head.ID] = drainer{nodeID: n.ID, at: now}
 	filter.OlderThan = head.CreatedAt
+	filter.BackfillWallS = s.backfillWindow(ctx, n, head, *filter, now)
 }
+
+// backfillWindow is how many seconds of wall-clock limit a newer task may have and still be placed on a node that is draining for head: the time
+// until the node would have room for head if every running task ran to its own wall limit, which is the latest it can happen. Such a task
+// cannot delay head past that bound. 0 when it cannot be worked out, which keeps the plain hold.
+func (s *Scheduler) backfillWindow(ctx context.Context, n store.Node, head store.Task, free store.CapacityFilter, now time.Time) int {
+	running, err := s.Store.ListTasksByNode(ctx, n.ID, []store.TaskState{store.TaskRunning, store.TaskDispatched, store.TaskReserved})
+	if err != nil || len(running) == 0 {
+		return 0
+	}
+	type ends struct {
+		at  time.Time
+		lim store.Limits
+	}
+	list := make([]ends, 0, len(running))
+	for _, t := range running {
+		start := now // not started yet: it may start any moment, so count its whole limit from now
+		if t.StartedAt != nil && t.StartedAt.Before(now) {
+			start = *t.StartedAt
+		}
+		list = append(list, ends{start.Add(time.Duration(t.Limits.WallTimeoutS) * time.Second), t.Limits})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].at.Before(list[j].at) })
+	cores, mem, disk := free.FreeCores, free.FreeMemoryMB, free.FreeDiskMB
+	for _, e := range list {
+		cores, mem, disk = cores+e.lim.CPUCores, mem+e.lim.MemoryMB, disk+e.lim.DiskMB
+		if head.Limits.CPUCores <= cores && head.Limits.MemoryMB <= mem && head.Limits.DiskMB <= disk {
+			return max(0, int(e.at.Sub(now).Seconds()))
+		}
+	}
+	return 0
+}
+
+// drainerLapse is how long a node's claim on draining for a waiting task lasts without being renewed (it is renewed every tick while the node asks).
+const drainerLapse = 5 * time.Second
 
 // cooldownTasks are the tasks this node refused and is still cooling down from; they are skipped when claiming.
 func (s *Scheduler) cooldownTasks(nodeID string) []string {

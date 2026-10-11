@@ -29,6 +29,7 @@ A **customer** submits a container task (image, limits, optional tunnel targets)
 | [architecture.md](architecture.md) | end-to-end flows: task lifecycle, lease/fencing, tunnel, version/update, startup |
 | [coordinator.md](coordinator.md) | `cmd/coordinator`, `api`, `auth`, `config`, `events`, `relay`, `seed`, `webassets` |
 | [scheduler-trust.md](scheduler-trust.md) | placement, trust score, spec drift, canaries, reclaim, cold-pull |
+| [scheduler-state.md](scheduler-state.md) | why a task is/is not placed on a machine: machine states, eligibility order, starvation hold, debugging checklist, scaling notes |
 | [billing.md](billing.md) | meters, pricing, ledger, holds, byte reconciliation |
 | [store-database.md](store-database.md) | `store` interface, Postgres tables and migrations |
 | [portal-api.md](portal-api.md) | REST routes, sessions, SSE, response shapes |

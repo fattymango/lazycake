@@ -201,6 +201,9 @@ type CapacityFilter struct {
 	// OlderThan, when set, restricts a claim to tasks submitted before it: how a node is held back from filling its cores with newer, smaller tasks
 	// while an older task that needs more is waiting for room.
 	OlderThan time.Time
+	// BackfillWallS, with OlderThan, also lets through a newer task whose wall-clock limit is at most this many seconds: it is over by the time
+	// the held node would have room for the waiting task anyway, so it delays nothing. Zero lets nothing extra through.
+	BackfillWallS int
 	// ExcludeTaskIDs are never claimed (tasks this node just refused and is cooling down from), so one of them at the front of the queue does not
 	// stall the node for the tick.
 	ExcludeTaskIDs []string
