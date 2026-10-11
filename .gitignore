@@ -8,3 +8,12 @@
 
 # gateway/agent private keys written next to the binary when run from the repo
 *.key
+
+# binaries from a plain `go build ./cmd/<name>` run in the repo root (`make build` puts them in /bin/); one of these was committed by accident once
+/coordinator
+/agent
+/gateway
+/lcctl
+/lcinit
+/lcbench
+/refworkload
