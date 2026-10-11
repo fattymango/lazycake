@@ -273,6 +273,8 @@ func isTerminal(st store.TaskState) bool {
 
 // gatewayView mirrors web/src/shared/types.ts's Gateway.
 type gatewayView struct {
+	// MaxMbps is the bandwidth cap the gateway reports it enforces (0 = unlimited); null until it reports one (a gateway that predates it).
+	MaxMbps     *int                 `json:"max_mbps"`
 	ID          string               `json:"id"`
 	Label       string               `json:"label"`
 	Connected   bool                 `json:"connected"`
@@ -293,7 +295,7 @@ func toGatewayView(g store.Gateway) gatewayView {
 	for i, svc := range g.Services {
 		services[i] = gatewayServiceView{Name: svc.Name, Port: svc.Port}
 	}
-	return gatewayView{ID: g.ID, Label: g.Label, Connected: g.Connected, Services: services, CreatedAtMS: g.CreatedAt.UnixMilli(), versionView: versionInfo(g.Version)}
+	return gatewayView{MaxMbps: g.MaxMbps, ID: g.ID, Label: g.Label, Connected: g.Connected, Services: services, CreatedAtMS: g.CreatedAt.UnixMilli(), versionView: versionInfo(g.Version, latestGateway)}
 }
 
 func (s *Server) handleListGateways(w http.ResponseWriter, r *http.Request) {

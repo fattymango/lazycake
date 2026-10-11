@@ -12,6 +12,8 @@ import (
 
 	quicgo "github.com/quic-go/quic-go"
 
+	"github.com/fattymango/lazycake/internal/gateway/config"
+
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
 )
 
@@ -81,5 +83,18 @@ func TestDormantWaitsForStop(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("didn't stop")
+	}
+}
+
+// What the gateway tells the coordinator at every connect: its release and the cap it really runs with; an unlimited gateway says 0
+// explicitly, so the dashboard can tell it from an old gateway that says nothing.
+func TestHelloMessageCarriesTheBandwidthLimit(t *testing.T) {
+	m := helloMessage(config.Config{GatewayID: "gw_1", MaxMbps: 50})
+	if m.GetGatewayId() != "gw_1" || m.MaxMbps == nil || m.GetMaxMbps() != 50 {
+		t.Fatalf("hello = %+v, want gateway gw_1 with a 50 Mbps limit", m)
+	}
+	u := helloMessage(config.Config{GatewayID: "gw_1"})
+	if u.MaxMbps == nil || u.GetMaxMbps() != 0 {
+		t.Fatalf("an unlimited gateway must report an explicit 0, got %+v", u.MaxMbps)
 	}
 }

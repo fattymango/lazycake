@@ -133,8 +133,20 @@ func (s *GatewayServer) Hello(ctx context.Context, req *lazycakev1.GatewayHello)
 	if err := s.Store.SetGatewayVersion(ctx, gw.ID, capVersion(req.GetVersion())); err != nil {
 		slog.Warn("recording gateway version", "gateway_id", gw.ID, "error", err)
 	}
+	// Only a gateway that knows about the limit says anything about it; an older one leaves it "not reported" rather than "unlimited".
+	if req.MaxMbps != nil {
+		if mbps := int(req.GetMaxMbps()); mbps >= 0 && mbps <= maxReportedMbps {
+			if err := s.Store.SetGatewayMaxMbps(ctx, gw.ID, mbps); err != nil {
+				slog.Warn("recording gateway bandwidth limit", "gateway_id", gw.ID, "error", err)
+			}
+		}
+	}
 	return &lazycakev1.GatewayHelloAck{}, nil
 }
+
+// maxReportedMbps bounds a bandwidth limit a gateway reports about itself: far above any real link, so a sane value is never refused, and
+// small enough that a garbage one is not stored.
+const maxReportedMbps = 1_000_000
 
 // maxVersionLen bounds a version string an agent or gateway reports about itself. A real one is a dozen bytes ("v0.4.0-12-gabc1234-dirty"); the
 // rest of the field is only there for whoever sends something else.

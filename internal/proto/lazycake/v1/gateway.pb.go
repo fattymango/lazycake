@@ -22,9 +22,12 @@ const (
 )
 
 type GatewayHello struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	GatewayId     string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
-	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	GatewayId string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	Version   string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	// The bandwidth cap this gateway enforces on its own, in whole megabits per second; 0 means unlimited. Absent from a gateway
+	// built before it existed (the portal then shows "not reported"), which is why it has presence rather than just a zero default.
+	MaxMbps       *int32 `protobuf:"varint,3,opt,name=max_mbps,json=maxMbps,proto3,oneof" json:"max_mbps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -71,6 +74,13 @@ func (x *GatewayHello) GetVersion() string {
 		return x.Version
 	}
 	return ""
+}
+
+func (x *GatewayHello) GetMaxMbps() int32 {
+	if x != nil && x.MaxMbps != nil {
+		return *x.MaxMbps
+	}
+	return 0
 }
 
 type GatewayHelloAck struct {
@@ -249,11 +259,13 @@ var File_lazycake_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_lazycake_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"G\n" +
+	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"t\n" +
 	"\fGatewayHello\x12\x1d\n" +
 	"\n" +
 	"gateway_id\x18\x01 \x01(\tR\tgatewayId\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\"\x11\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1e\n" +
+	"\bmax_mbps\x18\x03 \x01(\x05H\x00R\amaxMbps\x88\x01\x01B\v\n" +
+	"\t_max_mbps\"\x11\n" +
 	"\x0fGatewayHelloAck\"\xe0\x01\n" +
 	"\n" +
 	"ByteReport\x12\x1d\n" +
@@ -306,6 +318,7 @@ func file_lazycake_v1_gateway_proto_init() {
 	if File_lazycake_v1_gateway_proto != nil {
 		return
 	}
+	file_lazycake_v1_gateway_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -185,6 +185,8 @@ type Gateways interface {
 	CreateGateway(ctx context.Context, g Gateway) error
 	// SetGatewayVersion records the release a gateway reported (a no-op when unchanged).
 	SetGatewayVersion(ctx context.Context, id, version string) error
+	// SetGatewayMaxMbps records the bandwidth cap a gateway reported (whole Mbps, 0 = unlimited).
+	SetGatewayMaxMbps(ctx context.Context, id string, mbps int) error
 	// GetGateway also returns archived gateways (check ArchivedAt): their history stays readable.
 	GetGateway(ctx context.Context, id string) (Gateway, error)
 	// ArchiveGateway soft-deletes the account's gateway and revokes its install token, in one transaction.

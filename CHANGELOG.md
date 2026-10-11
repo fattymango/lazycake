@@ -3,6 +3,16 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.12 — 2026-10-11
+
+Needs migration 026 (before the coordinator) and an updated gateway. Agents are unchanged and are not rebuilt or restarted.
+
+### Added
+- **The dashboard shows each gateway's bandwidth limit.** The gateway now tells the coordinator the cap it enforces every time it connects, so the gateway card and the gateway page show what it is really running with: "50 Mbps", "No limit", or "Not reported" for a gateway older than this release (which is never shown as "No limit"). The limit is still set on the gateway's container; the dashboard only shows it. Migration 026 adds `gateways.max_mbps`.
+
+### Changed
+- **Agents and gateways now have separate "newest release" numbers for the Update badge.** Last release the badge stopped following the coordinator; it now also stops treating a change to one program as news for the other, so a gateway-only release does not mark every machine "Update available" (and the other way round). Each has its own test that fails until the number is bumped with its code.
+
 ## v0.4.11 — 2026-10-11
 
 Coordinator only; agents and gateways are unchanged and are not rebuilt or restarted.

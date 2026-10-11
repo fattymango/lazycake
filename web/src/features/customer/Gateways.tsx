@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, Network, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { gatewayActivity } from "@/lib/gatewayActivity";
+import { bandwidthLimit } from "@/lib/gatewayLimit";
 import { bytes, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
@@ -319,6 +320,13 @@ export function Gateways() {
                         </ul>
                       )}
                     </div>
+
+                    <p className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-muted">Bandwidth limit</span>
+                      <span className={bandwidthLimit(g.max_mbps).reported ? "font-medium text-fg" : "text-subtle"} data-tnum>
+                        {bandwidthLimit(g.max_mbps).text}
+                      </span>
+                    </p>
 
                     <Link
                       to={`/gateways/${g.id}`}

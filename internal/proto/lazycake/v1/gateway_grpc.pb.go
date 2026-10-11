@@ -35,7 +35,7 @@ const (
 // the same one it already uses to connect to the relay.
 type GatewayServiceClient interface {
 	ReportBytes(ctx context.Context, in *ByteReport, opts ...grpc.CallOption) (*ByteReportAck, error)
-	// Hello is how a gateway says which release it is whenever it (re)connects, so the portal can show it.
+	// Hello is how a gateway says which release it is, and what limit it runs with, whenever it (re)connects, so the portal can show it.
 	Hello(ctx context.Context, in *GatewayHello, opts ...grpc.CallOption) (*GatewayHelloAck, error)
 }
 
@@ -79,7 +79,7 @@ func (c *gatewayServiceClient) Hello(ctx context.Context, in *GatewayHello, opts
 // the same one it already uses to connect to the relay.
 type GatewayServiceServer interface {
 	ReportBytes(context.Context, *ByteReport) (*ByteReportAck, error)
-	// Hello is how a gateway says which release it is whenever it (re)connects, so the portal can show it.
+	// Hello is how a gateway says which release it is, and what limit it runs with, whenever it (re)connects, so the portal can show it.
 	Hello(context.Context, *GatewayHello) (*GatewayHelloAck, error)
 	mustEmbedUnimplementedGatewayServiceServer()
 }

@@ -12,7 +12,7 @@ Back to [README](README.md). Generated with `make proto` (`buf generate`; needs 
 `SubmitTask`, `GetTask`, `CancelTask`, `StreamLogs` (server stream), `ListNodes`, `CreateGateway`, `ListGateways`; `TaskLimits`, `TunnelTargetSpec`, `TaskStatus`, `NodeStatus`, `GatewayStatus`. Used by `lcctl` and (via shared logic) the portal.
 
 ## `gateway.proto` — `GatewayService`
-`ReportBytes(ByteReport)` (task, service, bytes, `connections` count; legacy per-connection final=1), `Hello(GatewayHello{gateway_id, version})`.
+`ReportBytes(ByteReport)` (task, service, bytes, `connections` count; legacy per-connection final=1), `Hello(GatewayHello{gateway_id, version, optional max_mbps})` (`max_mbps` = the cap the gateway enforces, 0 = unlimited, absent = a gateway older than v0.4.12, shown as "not reported").
 
 ## Rules
 - Auth is a bearer token in gRPC metadata (`api/bearer.go`), kind-checked per service.

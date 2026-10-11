@@ -486,6 +486,18 @@ func (f *fakeStore) GetGateway(ctx context.Context, id string) (store.Gateway, e
 	return g, nil
 }
 
+func (f *fakeStore) SetGatewayMaxMbps(ctx context.Context, id string, mbps int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.gateways[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	g.MaxMbps = &mbps
+	f.gateways[id] = g
+	return nil
+}
+
 func (f *fakeStore) ArchiveGateway(ctx context.Context, accountID, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

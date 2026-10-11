@@ -912,3 +912,22 @@ func TestMachineIdentityLookups(t *testing.T) {
 	_, err = s.FindLegacyNode(ctx, "act_1", "box", "amd64")
 	require.ErrorIs(t, err, ErrNotFound, "an entry that already has a machine id is not legacy")
 }
+
+// The bandwidth cap a gateway reports is kept; never having reported is NULL (not 0, which means unlimited).
+func TestGatewayMaxMbps(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustGateway(t, s, "gw_1", "act_1")
+	g, err := s.GetGateway(ctx, "gw_1")
+	require.NoError(t, err)
+	require.Nil(t, g.MaxMbps, "a gateway that never reported has no limit recorded")
+	require.NoError(t, s.SetGatewayMaxMbps(ctx, "gw_1", 50))
+	g, _ = s.GetGateway(ctx, "gw_1")
+	require.NotNil(t, g.MaxMbps)
+	require.Equal(t, 50, *g.MaxMbps)
+	require.NoError(t, s.SetGatewayMaxMbps(ctx, "gw_1", 0))
+	g, _ = s.GetGateway(ctx, "gw_1")
+	require.NotNil(t, g.MaxMbps, "unlimited is a recorded 0, not NULL")
+	require.Equal(t, 0, *g.MaxMbps)
+}

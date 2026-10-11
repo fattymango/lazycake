@@ -10,13 +10,16 @@ option go_package = "github.com/fattymango/lazycake/internal/proto/lazycakev1";
 // the same one it already uses to connect to the relay.
 service GatewayService {
   rpc ReportBytes(ByteReport) returns (ByteReportAck);
-  // Hello is how a gateway says which release it is whenever it (re)connects, so the portal can show it.
+  // Hello is how a gateway says which release it is, and what limit it runs with, whenever it (re)connects, so the portal can show it.
   rpc Hello(GatewayHello) returns (GatewayHelloAck);
 }
 
 message GatewayHello {
   string gateway_id = 1;
   string version    = 2;
+  // The bandwidth cap this gateway enforces on its own, in whole megabits per second; 0 means unlimited. Absent from a gateway
+  // built before it existed (the portal then shows "not reported"), which is why it has presence rather than just a zero default.
+  optional int32 max_mbps = 3;
 }
 
 message GatewayHelloAck {}

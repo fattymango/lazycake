@@ -24,12 +24,12 @@ func (s *PostgresStore) CreateGateway(ctx context.Context, g Gateway) error {
 	return nil
 }
 
-const gatewayColumns = `id, account_id, label, noise_pubkey, services, connected, created_at, version, archived_at, token_hash`
+const gatewayColumns = `id, account_id, label, noise_pubkey, services, connected, created_at, version, max_mbps, archived_at, token_hash`
 
 func scanGateway(row rowScanner) (Gateway, error) {
 	var g Gateway
 	var servicesRaw []byte
-	err := row.Scan(&g.ID, &g.AccountID, &g.Label, &g.NoisePubkey, &servicesRaw, &g.Connected, &g.CreatedAt, &g.Version, &g.ArchivedAt, &g.TokenHash)
+	err := row.Scan(&g.ID, &g.AccountID, &g.Label, &g.NoisePubkey, &servicesRaw, &g.Connected, &g.CreatedAt, &g.Version, &g.MaxMbps, &g.ArchivedAt, &g.TokenHash)
 	if err != nil {
 		return Gateway{}, err
 	}
@@ -140,4 +140,12 @@ func (s *PostgresStore) ArchiveGateway(ctx context.Context, accountID, id string
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *PostgresStore) SetGatewayMaxMbps(ctx context.Context, id string, mbps int) error {
+	_, err := s.pool.Exec(ctx, `UPDATE gateways SET max_mbps = $2 WHERE id = $1 AND max_mbps IS DISTINCT FROM $2`, id, mbps)
+	if err != nil {
+		return fmt.Errorf("setting gateway bandwidth limit: %w", err)
+	}
+	return nil
 }

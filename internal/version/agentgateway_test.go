@@ -12,21 +12,31 @@ import (
 	"testing"
 )
 
-// The release in which the code hashed below was last changed, and its hash. Change these two together with AgentGatewayRelease.
-const (
-	recordedCodeHash   = "82e69f303a0b4a2c5cf8ea4fca0b026e3ddd48613c5cc09020d96d8f2576e380"
-	recordedForRelease = "v0.4.4"
+// What the agent and the gateway are built from (paths relative to the repo root): their commands and internals, the transport pieces
+// both share with the coordinator's relay (not the relay itself), and the generated messages each speaks.
+var sharedCode = []string{
+	"internal/id", "internal/logging", "internal/tunnel/noise",
+	"internal/tunnel/quic/client.go", "internal/tunnel/quic/frame.go", "internal/tunnel/quic/probe.go", "internal/tunnel/quic/tls.go",
+}
+
+var (
+	agentCode = append([]string{
+		"cmd/agent", "internal/agent",
+		"internal/proto/lazycake/v1/agent.pb.go", "internal/proto/lazycake/v1/agent_grpc.pb.go",
+	}, sharedCode...)
+	gatewayCode = append([]string{
+		"cmd/gateway", "internal/gateway",
+		"internal/proto/lazycake/v1/gateway.pb.go", "internal/proto/lazycake/v1/gateway_grpc.pb.go",
+	}, sharedCode...)
 )
 
-// agentGatewayCode lists what makes up the agent and gateway programs (relative to the repo root): their commands and internals,
-// the transport pieces they share with the coordinator's relay (not the relay itself), and the generated messages they speak.
-var agentGatewayCode = []string{
-	"cmd/agent", "cmd/gateway", "internal/agent", "internal/gateway", "internal/id", "internal/logging",
-	"internal/tunnel/noise",
-	"internal/tunnel/quic/client.go", "internal/tunnel/quic/frame.go", "internal/tunnel/quic/probe.go", "internal/tunnel/quic/tls.go",
-	"internal/proto/lazycake/v1/agent.pb.go", "internal/proto/lazycake/v1/agent_grpc.pb.go",
-	"internal/proto/lazycake/v1/gateway.pb.go", "internal/proto/lazycake/v1/gateway_grpc.pb.go",
-}
+// The release in which each program's code (hashed below) was last changed, and its hash. Change a pair together with its release constant.
+const (
+	recordedAgentHash      = "3423dfa7a3eceecc5dfacc9b72645b21cb5b5331e31e0add4dbf6f51506424c9"
+	recordedAgentRelease   = "v0.4.4"
+	recordedGatewayHash    = "87d176c51c6b8c8ec025ba9f777ed9054342f581db0ffc9ba7f852dc5a42c9db"
+	recordedGatewayRelease = "v0.4.12"
+)
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -38,10 +48,10 @@ func repoRoot(t *testing.T) string {
 }
 
 // codeHash hashes every non-test Go file under the listed paths, by relative path and content, in a stable order.
-func codeHash(t *testing.T, root string) string {
+func codeHash(t *testing.T, root string, paths []string) string {
 	t.Helper()
 	var files []string
-	for _, p := range agentGatewayCode {
+	for _, p := range paths {
 		full := filepath.Join(root, p)
 		info, err := os.Stat(full)
 		if err != nil {
@@ -80,17 +90,26 @@ func codeHash(t *testing.T, root string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// An agent or gateway edit that is not announced would leave every running one looking "current" while it lacks the change: this
-// fails until the release number is bumped (and the hash re-recorded), so the dashboard can tell owners to update.
-func TestAgentGatewayReleaseIsBumpedWithTheirCode(t *testing.T) {
-	got := codeHash(t, repoRoot(t))
-	if got != recordedCodeHash {
-		t.Fatalf("the agent or gateway code changed since release %s.\n"+
-			"Set AgentGatewayRelease in version.go to the release you are cutting, then set recordedCodeHash to %q and recordedForRelease to that release in this file.\n"+
-			"(Only do that if the change really matters to running agents and gateways; if it was a comment or a test helper, still re-record the hash.)",
-			recordedForRelease, got)
+func checkProgram(t *testing.T, name string, paths []string, recordedHash, recordedRelease, release string) {
+	t.Helper()
+	got := codeHash(t, repoRoot(t), paths)
+	if got != recordedHash {
+		t.Fatalf("the %s code changed since release %s.\n"+
+			"Set the %s release constant in version.go to the release you are cutting, then set its recorded hash to %q and its recorded release to that release in this file.\n"+
+			"(Re-record the hash even if the change was only a comment: it is the release number that tells owners to update.)",
+			name, recordedRelease, name, got)
 	}
-	if recordedForRelease != AgentGatewayRelease {
-		t.Fatalf("recordedForRelease (%s) and AgentGatewayRelease (%s) must be changed together", recordedForRelease, AgentGatewayRelease)
+	if recordedRelease != release {
+		t.Fatalf("the recorded %s release (%s) and the constant in version.go (%s) must be changed together", name, recordedRelease, release)
 	}
+}
+
+// An agent or gateway edit that is not announced would leave every running one looking "current" while it lacks the change: these fail
+// until the release number is bumped (and the hash re-recorded), so the dashboard can tell owners to update.
+func TestAgentReleaseIsBumpedWithItsCode(t *testing.T) {
+	checkProgram(t, "agent", agentCode, recordedAgentHash, recordedAgentRelease, AgentRelease)
+}
+
+func TestGatewayReleaseIsBumpedWithItsCode(t *testing.T) {
+	checkProgram(t, "gateway", gatewayCode, recordedGatewayHash, recordedGatewayRelease, GatewayRelease)
 }

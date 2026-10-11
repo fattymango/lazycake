@@ -99,6 +99,8 @@ export interface Gateway extends VersionInfo {
   connected: boolean;
   services: GatewayService[];
   created_at_ms: number;
+  /** The bandwidth cap the gateway says it enforces, in Mbps (0 = none); null until it reports one (a gateway built before it did). */
+  max_mbps: number | null;
   /** Lifetime traffic through this gateway. */
   traffic: TrafficTotals;
 }

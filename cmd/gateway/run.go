@@ -221,9 +221,16 @@ func newByteReporter(ctx context.Context, cfg config.Config, log *slog.Logger) (
 		callCtx, cancel := context.WithTimeout(
 			metadata.NewOutgoingContext(hctx, metadata.Pairs("authorization", "Bearer "+cfg.Token)), 10*time.Second)
 		defer cancel()
-		if _, err := client.Hello(callCtx, &lazycakev1.GatewayHello{GatewayId: cfg.GatewayID, Version: version.Version}); err != nil {
+		if _, err := client.Hello(callCtx, helloMessage(cfg)); err != nil {
 			log.Debug("telling the coordinator this gateway's version", "error", err) // an older coordinator has no such call
 		}
 	}
 	return rp.Report, hello
+}
+
+// helloMessage is what a gateway tells the coordinator about itself each time it connects: its release and the bandwidth limit it enforces
+// (0 = unlimited), so the dashboard shows what is really running instead of what was typed when the gateway was created.
+func helloMessage(cfg config.Config) *lazycakev1.GatewayHello {
+	mbps := int32(cfg.MaxMbps)
+	return &lazycakev1.GatewayHello{GatewayId: cfg.GatewayID, Version: version.Version, MaxMbps: &mbps}
 }

@@ -249,3 +249,43 @@ func TestGatewayHelloRecordsTheVersionAndRefusesOthers(t *testing.T) {
 		t.Fatal("no token, no version")
 	}
 }
+
+// A gateway reports the bandwidth cap it enforces. "Unlimited" (0) and "never said" are different things, and a nonsense value is not kept.
+func TestGatewayHelloRecordsTheBandwidthLimit(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("gw-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenGateway})
+	_ = fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_1", AccountID: "act_1"})
+	_ = fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_other", AccountID: "act_2"})
+	client := startGatewayTestServer(t, fs, &fakeGatewayEvents{})
+	i32 := func(v int32) *int32 { return &v }
+	limit := func() *int { fs.mu.Lock(); defer fs.mu.Unlock(); return fs.gateways["gw_1"].MaxMbps }
+
+	// An older gateway sends no limit: it stays "not reported", never "unlimited".
+	if _, err := client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", Version: "v0.4.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if limit() != nil {
+		t.Fatalf("a gateway that sent no limit must read as not reported, got %d", *limit())
+	}
+	if _, err := client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", MaxMbps: i32(50)}); err != nil {
+		t.Fatal(err)
+	}
+	if l := limit(); l == nil || *l != 50 {
+		t.Fatalf("limit = %v, want 50", l)
+	}
+	if _, err := client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", MaxMbps: i32(0)}); err != nil {
+		t.Fatal(err)
+	}
+	if l := limit(); l == nil || *l != 0 {
+		t.Fatalf("an explicit 0 is \"unlimited\" and must be stored as 0, got %v", l)
+	}
+	for _, bad := range []int32{-5, 2_000_000} {
+		_, _ = client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", MaxMbps: i32(bad)})
+		if l := limit(); l == nil || *l != 0 {
+			t.Fatalf("a nonsense limit %d must not replace the stored one, got %v", bad, l)
+		}
+	}
+	if _, err := client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_other", MaxMbps: i32(1)}); err == nil {
+		t.Fatal("a gateway must not set another account's gateway limit")
+	}
+}

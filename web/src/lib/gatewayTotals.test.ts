@@ -7,6 +7,7 @@ const gw = (id: string, connected: boolean, rx: number, tx: number, conns: numbe
   label: id,
   connected,
   created_at_ms: 0,
+  max_mbps: null,
   traffic: { received_from_tasks_bytes: rx, sent_to_tasks_bytes: tx, connections: conns },
   services: Array.from({ length: services }, (_, i) => ({ name: `s${i}`, port: 1000 + i })),
   version: "",

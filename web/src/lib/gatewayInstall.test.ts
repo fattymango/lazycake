@@ -6,6 +6,7 @@ const gw = {
   label: "prod",
   connected: false,
   created_at_ms: 0,
+  max_mbps: null,
   traffic: { received_from_tasks_bytes: 0, sent_to_tasks_bytes: 0, connections: 0 },
   services: [
     { name: "db", port: 5432 },

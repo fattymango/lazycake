@@ -1212,3 +1212,20 @@ func TestPerIPLimitsOnLoginSignupAndBodySize(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusRequestEntityTooLarge, r.StatusCode)
 }
+
+// The dashboard gets the gateway's bandwidth cap: null until it reports one, then the number (0 = unlimited).
+func TestGatewayListShowsTheReportedBandwidthLimit(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	signUpCustomer(t, c, "limits")
+	id := createGatewayForTest(t, c, "capped", gatewayServiceView{Name: "db", Port: 5432})
+
+	list := decodeBody[[]map[string]any](t, c.do(http.MethodGet, "/api/portal/customer/gateways", nil))
+	require.Len(t, list, 1)
+	v, present := list[0]["max_mbps"]
+	require.True(t, present, "the field is always there")
+	require.Nil(t, v, "null until the gateway reports it")
+
+	require.NoError(t, st.SetGatewayMaxMbps(context.Background(), id, 50))
+	list = decodeBody[[]map[string]any](t, c.do(http.MethodGet, "/api/portal/customer/gateways", nil))
+	require.EqualValues(t, 50, list[0]["max_mbps"])
+}

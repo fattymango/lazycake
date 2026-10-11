@@ -81,7 +81,7 @@ type nodeView struct {
 func toNodeView(n store.Node) nodeView {
 	nv := nodeView{
 		ID: n.ID, Hostname: n.Hostname, Arch: n.Arch, Connected: n.Connected,
-		OfferCores: n.OfferCores, OfferMemoryMB: n.OfferMemoryMB, OfferDiskMB: n.OfferDiskMB, OfferNetworkMbps: n.OfferNetworkMbps, versionView: versionInfo(n.AgentVersion),
+		OfferCores: n.OfferCores, OfferMemoryMB: n.OfferMemoryMB, OfferDiskMB: n.OfferDiskMB, OfferNetworkMbps: n.OfferNetworkMbps, versionView: versionInfo(n.AgentVersion, latestAgent),
 		TrustScore: n.TrustScore, CreatedAtMS: n.CreatedAt.UnixMilli(),
 	}
 	if n.LastHeartbeatAt != nil {

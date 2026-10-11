@@ -7,6 +7,7 @@ import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { gatewayActivity, lastTrafficAtMs } from "@/lib/gatewayActivity";
+import { bandwidthLimit } from "@/lib/gatewayLimit";
 import { fillBuckets, type StackPoint } from "@/lib/series";
 import type { Gateway, GatewayTraffic, Task } from "@/lib/types";
 import { Badge } from "@/ui/Badge";
@@ -269,6 +270,16 @@ export function GatewayDetail() {
                         ),
                       },
                       { label: "Created", value: dateTime(gw.created_at_ms) },
+                      {
+                        label: "Bandwidth limit",
+                        value: bandwidthLimit(gw.max_mbps).reported ? (
+                          <span data-tnum>{bandwidthLimit(gw.max_mbps).text}</span>
+                        ) : (
+                          <span className="text-muted" title="This gateway is older than limit reporting. Update it and it will say.">
+                            {bandwidthLimit(gw.max_mbps).text}
+                          </span>
+                        ),
+                      },
                       {
                         label: "Last traffic",
                         value: traffic.loading ? (
