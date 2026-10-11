@@ -11,6 +11,9 @@ web/src/lib/         api.ts, auth, theme, live.tsx (SSE bus), format.ts, offer.t
 web/e2e/             puppeteer-core browser checks (*.mjs) + seed.py demo data
 ```
 
+## Layout (v0.4.6)
+Content fills the screen: `AppShell` holds pages to 112rem (1792 px, `useWideLayout()` allows 120rem), fluid padding. **Pages are built as a main area plus a right rail**, not one long column: `ui/Split.tsx` (`Split main/side`, side-by-side from **1400 px**, rail 23 rem, 27 rem from 1536 px, below that the rail stacks under the main content) and `StatRail` (two compact `StatCard compact` tiles across). The main area gets the table/chart/log/form, the rail gets stats and secondary cards. Used by both Overviews, machine and gateway pages, Billing and Earnings; `TaskDetail` and `SubmitTask` have their own grids with the same rail widths (the form puts "What to run" and "Resources" side by side from 1536 px). Card grids (machines, gateways) use `grid-cols-[repeat(auto-fill,minmax(19-21rem,1fr))]`. New pages should follow this; do not add a fixed `max-w-*` column. Check 1920, 1440, 1280, 768 and 390 px for horizontal overflow.
+
 ## Rules (enforced by review and e2e)
 - No raw colors; use tokens. Long identifiers go through `<Identifier>`/`<Truncate>`; tables are `table-fixed`. `e2e/shoot.mjs` fails on overflow.
 - One SSE stream per tab: use `useLiveEvents`/`useLiveReload`, never your own `EventSource`.

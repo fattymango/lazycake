@@ -23,6 +23,7 @@ import { KeyValueList } from "@/ui/KeyValue";
 import { ConnectionPill, TaskStatusPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
 import { LineChart, type ChartSeries } from "@/ui/LineChart";
+import { Split, StatRail } from "@/ui/Split";
 import { TrafficLegend } from "./TrafficLegend";
 import { DeleteGatewayDialog } from "./DeleteGatewayDialog";
 import { DeleteGatewayButton } from "./Gateways";
@@ -156,150 +157,165 @@ export function GatewayDetail() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Received from tasks"
-          icon={ArrowDownToLine}
-          tone="accent"
-          loading={!totals}
-          value={<span data-tnum>{bytes(totals?.received_from_tasks_bytes)}</span>}
-          sub="All time"
-        />
-        <StatCard
-          label="Sent to tasks"
-          icon={ArrowUpFromLine}
-          tone="success"
-          loading={!totals}
-          value={<span data-tnum>{bytes(totals?.sent_to_tasks_bytes)}</span>}
-          sub="All time"
-        />
-        <StatCard
-          label="Connections"
-          icon={Plug}
-          loading={!totals}
-          value={<span data-tnum>{count(totals?.connections)}</span>}
-          sub="Closed connections, all time"
-        />
-      </div>
+      <Split
+        main={
+          <>
+            <Card>
+              <CardHeader
+                title="Traffic over time"
+                description={`${bytes(periodTotal.received)} received from tasks and ${bytes(periodTotal.sent)} sent to tasks in the last ${range === "7d" ? "7 days" : "30 days"}, per ${step}.`}
+              />
+              <CardBody>
+                {traffic.loading ? (
+                  <Skeleton className="h-48 rounded-lg" />
+                ) : (
+                  <LineChart
+                    points={points}
+                    series={SERIES}
+                    format={bytes}
+                    formatTime={(at) =>
+                      step === "day" ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : shortDateTime(at)
+                    }
+                    summary={`Gateway traffic per ${step} over the last ${range}: ${bytes(periodTotal.received)} received from tasks, ${bytes(periodTotal.sent)} sent to tasks.`}
+                    emptyLabel="No traffic in this period"
+                  />
+                )}
+              </CardBody>
+            </Card>
 
-      {gw && (
-        <Card>
-          <CardHeader title="Targets and activity" description="What this gateway lets tasks reach, and what is using it right now." />
-          <CardBody className="grid gap-6 lg:grid-cols-2">
-            <div className="min-w-0 space-y-3">
-              <p className="text-xs font-medium text-muted">Targets</p>
-              {gw.services.length === 0 ? (
-                <p className="text-sm text-subtle">No services published.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {gw.services.map((svc) => (
-                    <li key={`${svc.name}:${svc.port}`} className="rounded-lg border border-border bg-raised/40 px-3 py-2 text-sm">
-                      <span className="font-mono font-semibold text-fg">{svc.name}</span>
-                      <span className="text-muted"> → port </span>
-                      <span className="font-mono text-fg">{svc.port}</span>
-                      <span className="text-muted"> on the gateway's machine</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="text-xs leading-5 text-muted">A task reaches a target by its name, and nothing else on that machine.</p>
-            </div>
-            <KeyValueList
-              items={[
-                { label: "Status", value: <ConnectionPill connected={gw.connected} size="sm" /> },
-                {
-                  label: "Version",
-                  value: (
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono">{gw.version || "unknown"}</span>
-                      <UpdateNotice kind="gateway" info={gw} name={gw.label} />
-                    </span>
-                  ),
-                },
-                { label: "Created", value: dateTime(gw.created_at_ms) },
-                {
-                  label: "Last traffic",
-                  value: traffic.loading ? (
-                    "…"
-                  ) : lastTraffic ? (
-                    <span title={dateTime(lastTraffic)}>{relativeTime(lastTraffic)}</span>
-                  ) : (
-                    `None in the last ${range === "7d" ? "7" : "30"} days`
-                  ),
-                },
-                {
-                  label: "Last task",
-                  value: tasks.loading ? (
-                    "…"
-                  ) : activity.lastTask ? (
-                    <span className="flex flex-wrap items-center gap-2">
-                      <Link to={`/tasks/${activity.lastTask.id}`} className="text-accent hover:underline">
-                        <Identifier value={activity.lastTask.id} />
-                      </Link>
-                      <span className="text-muted">{relativeTime(activity.lastTaskAtMs)}</span>
-                    </span>
-                  ) : (
-                    "None among your recent tasks"
-                  ),
-                },
-                { label: "Running tasks", value: <span data-tnum>{tasks.loading ? "…" : count(activity.running.length)}</span> },
-                { label: "Queued tasks", value: <span data-tnum>{tasks.loading ? "…" : count(activity.queued.length)}</span> },
-              ]}
-            />
-          </CardBody>
-          {active.length > 0 && (
-            <ul className="divide-y divide-border border-t border-border">
-              {active.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                  <Link to={`/tasks/${t.id}`} className="min-w-0 text-accent hover:underline">
-                    <Identifier value={t.id} />
-                  </Link>
-                  <TaskStatusPill state={t.state} stopping={t.cancel_requested} size="sm" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader
-          title="Traffic over time"
-          description={`${bytes(periodTotal.received)} received from tasks and ${bytes(periodTotal.sent)} sent to tasks in the last ${range === "7d" ? "7 days" : "30 days"}, per ${step}.`}
-        />
-        <CardBody>
-          {traffic.loading ? (
-            <Skeleton className="h-48 rounded-lg" />
-          ) : (
-            <LineChart
-              points={points}
-              series={SERIES}
-              format={bytes}
-              formatTime={(at) =>
-                step === "day" ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : shortDateTime(at)
-              }
-              summary={`Gateway traffic per ${step} over the last ${range}: ${bytes(periodTotal.received)} received from tasks, ${bytes(periodTotal.sent)} sent to tasks.`}
-              emptyLabel="No traffic in this period"
-            />
-          )}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader
-          title="Busiest tasks"
-          description={`Which tasks moved the most through this gateway in the last ${range === "7d" ? "7 days" : "30 days"}.`}
-        />
-        <DataTable
-          caption="Busiest tasks"
-          columns={columns}
-          rows={traffic.data?.busiest_tasks ?? []}
-          getRowKey={(b) => b.task_id}
-          loading={traffic.loading}
-          minWidth={520}
-          empty={<p className="px-5 py-8 text-center text-sm text-muted">No task used this gateway in this period.</p>}
-        />
-      </Card>
+            <Card>
+              <CardHeader
+                title="Busiest tasks"
+                description={`Which tasks moved the most through this gateway in the last ${range === "7d" ? "7 days" : "30 days"}.`}
+              />
+              <DataTable
+                caption="Busiest tasks"
+                columns={columns}
+                rows={traffic.data?.busiest_tasks ?? []}
+                getRowKey={(b) => b.task_id}
+                loading={traffic.loading}
+                minWidth={520}
+                empty={<p className="px-5 py-8 text-center text-sm text-muted">No task used this gateway in this period.</p>}
+              />
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <StatRail>
+              <StatCard
+                compact
+                className="col-span-2"
+                label="Received from tasks"
+                icon={ArrowDownToLine}
+                tone="accent"
+                loading={!totals}
+                value={<span data-tnum>{bytes(totals?.received_from_tasks_bytes)}</span>}
+                sub="All time"
+              />
+              <StatCard
+                compact
+                label="Sent to tasks"
+                icon={ArrowUpFromLine}
+                tone="success"
+                loading={!totals}
+                value={<span data-tnum>{bytes(totals?.sent_to_tasks_bytes)}</span>}
+                sub="All time"
+              />
+              <StatCard
+                compact
+                label="Connections"
+                icon={Plug}
+                loading={!totals}
+                value={<span data-tnum>{count(totals?.connections)}</span>}
+                sub="Closed connections, all time"
+              />
+            </StatRail>
+            {gw && (
+              <Card>
+                <CardHeader
+                  title="Targets and activity"
+                  description="What this gateway lets tasks reach, and what is using it right now."
+                />
+                <CardBody className="space-y-6">
+                  <div className="min-w-0 space-y-3">
+                    <p className="text-xs font-medium text-muted">Targets</p>
+                    {gw.services.length === 0 ? (
+                      <p className="text-sm text-subtle">No services published.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {gw.services.map((svc) => (
+                          <li key={`${svc.name}:${svc.port}`} className="rounded-lg border border-border bg-raised/40 px-3 py-2 text-sm">
+                            <span className="font-mono font-semibold text-fg">{svc.name}</span>
+                            <span className="text-muted"> → port </span>
+                            <span className="font-mono text-fg">{svc.port}</span>
+                            <span className="text-muted"> on the gateway's machine</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-xs leading-5 text-muted">A task reaches a target by its name, and nothing else on that machine.</p>
+                  </div>
+                  <KeyValueList
+                    items={[
+                      { label: "Status", value: <ConnectionPill connected={gw.connected} size="sm" /> },
+                      {
+                        label: "Version",
+                        value: (
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono">{gw.version || "unknown"}</span>
+                            <UpdateNotice kind="gateway" info={gw} name={gw.label} />
+                          </span>
+                        ),
+                      },
+                      { label: "Created", value: dateTime(gw.created_at_ms) },
+                      {
+                        label: "Last traffic",
+                        value: traffic.loading ? (
+                          "…"
+                        ) : lastTraffic ? (
+                          <span title={dateTime(lastTraffic)}>{relativeTime(lastTraffic)}</span>
+                        ) : (
+                          `None in the last ${range === "7d" ? "7" : "30"} days`
+                        ),
+                      },
+                      {
+                        label: "Last task",
+                        value: tasks.loading ? (
+                          "…"
+                        ) : activity.lastTask ? (
+                          <span className="flex flex-wrap items-center gap-2">
+                            <Link to={`/tasks/${activity.lastTask.id}`} className="text-accent hover:underline">
+                              <Identifier value={activity.lastTask.id} />
+                            </Link>
+                            <span className="text-muted">{relativeTime(activity.lastTaskAtMs)}</span>
+                          </span>
+                        ) : (
+                          "None among your recent tasks"
+                        ),
+                      },
+                      { label: "Running tasks", value: <span data-tnum>{tasks.loading ? "…" : count(activity.running.length)}</span> },
+                      { label: "Queued tasks", value: <span data-tnum>{tasks.loading ? "…" : count(activity.queued.length)}</span> },
+                    ]}
+                  />
+                </CardBody>
+                {active.length > 0 && (
+                  <ul className="divide-y divide-border border-t border-border">
+                    {active.map((t) => (
+                      <li key={t.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                        <Link to={`/tasks/${t.id}`} className="min-w-0 text-accent hover:underline">
+                          <Identifier value={t.id} />
+                        </Link>
+                        <TaskStatusPill state={t.state} stopping={t.cancel_requested} size="sm" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            )}
+          </>
+        }
+      />
 
       <TrafficLegend />
       <DeleteGatewayDialog gateway={deleting && gw ? gw : null} onClose={() => setDeleting(false)} onClosed={() => navigate("/gateways")} />

@@ -9,6 +9,7 @@ import { dailyEarnings } from "@/lib/spend";
 import type { LedgerEntry, Node, NodeUsage, ProviderMe } from "@/lib/types";
 import { TrustMeter } from "@/components/TrustMeter";
 import { TrustInfo } from "@/components/TrustInfo";
+import { Split, StatRail } from "@/ui/Split";
 import { BarChart } from "@/ui/BarChart";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
@@ -146,108 +147,124 @@ export function Overview() {
     <div className="space-y-6">
       <PageHeader title="Overview" description="Your machines, what they're offering, and what they've earned." actions={addButton} />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Lifetime earnings"
-          value={money(me.data?.lifetime_earnings_micros)}
-          sub="Across all machines"
-          icon={Wallet}
-          tone="success"
-          loading={me.loading}
-          trend={earnings.total > 0 ? earnings.bars.map((b) => b.value) : undefined}
-        />
-        <StatCard
-          label="Machines online"
-          value={nodes.loading ? "" : `${online.length} / ${list.length}`}
-          sub={
-            list.length === 0
-              ? "None registered yet"
-              : online.length === list.length
-                ? "All connected"
-                : `${list.length - online.length} offline`
-          }
-          icon={Wifi}
-          tone={online.length > 0 ? "accent" : "neutral"}
-          loading={nodes.loading}
-        />
-        <StatCard
-          label="Capacity on offer"
-          value={cpu(onlineCores)}
-          sub={`${memory(onlineMem)} RAM, online now`}
-          icon={Cpu}
-          loading={nodes.loading}
-        />
-        <StatCard
-          label={
-            <>
-              Average trust <TrustInfo />
-            </>
-          }
-          value={avgTrust === null ? "—" : avgTrust.toFixed(2)}
-          sub={avgTrust === null ? "Builds as machines complete work" : "Out of 1.00"}
-          icon={ShieldCheck}
-          tone={avgTrust === null ? "neutral" : avgTrust >= 0.8 ? "success" : "warning"}
-          loading={nodes.loading}
-        />
-      </div>
-
-      <section className="space-y-3" aria-labelledby="machines-h">
-        <div className="flex items-center justify-between">
-          <h2 id="machines-h" className="text-sm font-semibold text-fg">
-            Machines
-          </h2>
-          {list.length > 0 && <span className="text-xs text-muted">{count(list.length)} registered</span>}
-        </div>
-        {nodes.error && !nodes.data ? (
-          <Card>
-            <ErrorState title="Couldn't load your machines" message={nodes.error} onRetry={nodes.reload} />
-          </Card>
-        ) : nodes.loading ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-52 rounded-xl" />
-            ))}
-          </div>
-        ) : list.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={Server}
-              title="No machines yet"
-              description="Register a computer and it starts earning whenever a customer's task runs on it. It takes about two minutes."
-              action={addButton}
-            />
-          </Card>
-        ) : (
-          <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {list.map((n) => (
-              <li key={n.id} className="min-w-0">
-                <MachineCard node={n} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {list.length > 0 && (
-        <Card>
-          <CardHeader
-            title="Earnings"
-            description="Last 14 days"
-            action={
-              <span className="text-sm font-semibold text-fg" data-tnum>
-                {money(earnings.total)}
-              </span>
-            }
-          />
-          <CardBody>
-            {ledger.loading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : (
-              <BarChart data={earnings.bars} tone="success" summary={`Earnings over the last 14 days, ${money(earnings.total)} in total`} />
+      <Split
+        main={
+          <>
+            <section className="space-y-3" aria-labelledby="machines-h">
+              <div className="flex items-center justify-between">
+                <h2 id="machines-h" className="text-sm font-semibold text-fg">
+                  Machines
+                </h2>
+                {list.length > 0 && <span className="text-xs text-muted">{count(list.length)} registered</span>}
+              </div>
+              {nodes.error && !nodes.data ? (
+                <Card>
+                  <ErrorState title="Couldn't load your machines" message={nodes.error} onRetry={nodes.reload} />
+                </Card>
+              ) : nodes.loading ? (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4">
+                  {[0, 1, 2].map((i) => (
+                    <Skeleton key={i} className="h-52 rounded-xl" />
+                  ))}
+                </div>
+              ) : list.length === 0 ? (
+                <Card>
+                  <EmptyState
+                    icon={Server}
+                    title="No machines yet"
+                    description="Register a computer and it starts earning whenever a customer's task runs on it. It takes about two minutes."
+                    action={addButton}
+                  />
+                </Card>
+              ) : (
+                <ul className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4">
+                  {list.map((n) => (
+                    <li key={n.id} className="min-w-0">
+                      <MachineCard node={n} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </>
+        }
+        side={
+          <>
+            <StatRail>
+              <StatCard
+                compact
+                label="Lifetime earnings"
+                value={money(me.data?.lifetime_earnings_micros)}
+                sub="Across all machines"
+                icon={Wallet}
+                tone="success"
+                loading={me.loading}
+                trend={earnings.total > 0 ? earnings.bars.map((b) => b.value) : undefined}
+              />
+              <StatCard
+                compact
+                label="Machines online"
+                value={nodes.loading ? "" : `${online.length} / ${list.length}`}
+                sub={
+                  list.length === 0
+                    ? "None registered yet"
+                    : online.length === list.length
+                      ? "All connected"
+                      : `${list.length - online.length} offline`
+                }
+                icon={Wifi}
+                tone={online.length > 0 ? "accent" : "neutral"}
+                loading={nodes.loading}
+              />
+              <StatCard
+                compact
+                label="Capacity on offer"
+                value={cpu(onlineCores)}
+                sub={`${memory(onlineMem)} RAM, online now`}
+                icon={Cpu}
+                loading={nodes.loading}
+              />
+              <StatCard
+                compact
+                label={
+                  <>
+                    Average trust <TrustInfo />
+                  </>
+                }
+                value={avgTrust === null ? "—" : avgTrust.toFixed(2)}
+                sub={avgTrust === null ? "Builds as machines complete work" : "Out of 1.00"}
+                icon={ShieldCheck}
+                tone={avgTrust === null ? "neutral" : avgTrust >= 0.8 ? "success" : "warning"}
+                loading={nodes.loading}
+              />
+            </StatRail>
+            {list.length > 0 && (
+              <Card>
+                <CardHeader
+                  title="Earnings"
+                  description="Last 14 days"
+                  action={
+                    <span className="text-sm font-semibold text-fg" data-tnum>
+                      {money(earnings.total)}
+                    </span>
+                  }
+                />
+                <CardBody>
+                  {ledger.loading ? (
+                    <Skeleton className="h-32 w-full" />
+                  ) : (
+                    <BarChart
+                      data={earnings.bars}
+                      tone="success"
+                      summary={`Earnings over the last 14 days, ${money(earnings.total)} in total`}
+                    />
+                  )}
+                </CardBody>
+              </Card>
             )}
-          </CardBody>
-        </Card>
-      )}
+          </>
+        }
+      />
     </div>
   );
 }

@@ -158,7 +158,7 @@ export function SubmitTask() {
         </Alert>
       )}
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_27rem]">
         <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader title="Start from a template" description="Pick one to fill in the form, then adjust." />
@@ -185,138 +185,140 @@ export function SubmitTask() {
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader title="What to run" />
-            <CardBody className="space-y-5 pt-4">
-              <Field
-                label="Image"
-                required
-                error={showErr("image")}
-                hint="Pinned by digest so every node runs byte-for-byte the same thing."
-              >
-                <Input
-                  mono
-                  value={form.image}
-                  onChange={(e) => set("image", e.target.value)}
-                  placeholder="docker.io/library/alpine@sha256:c64c…"
-                  spellCheck={false}
-                  autoCapitalize="none"
-                />
-              </Field>
-              <Field
-                label="Command"
-                error={showErr("command")}
-                hint='Leave empty to use the image&apos;s own command. Quotes group words: sh -c "sleep 5; echo done".'
-              >
-                <Input
-                  mono
-                  value={form.command}
-                  onChange={(e) => set("command", e.target.value)}
-                  placeholder="python -m job --batch 500"
-                  spellCheck={false}
-                  autoCapitalize="none"
-                />
-              </Field>
+          <div className="grid items-start gap-6 2xl:grid-cols-2">
+            <Card>
+              <CardHeader title="What to run" />
+              <CardBody className="space-y-5 pt-4">
+                <Field
+                  label="Image"
+                  required
+                  error={showErr("image")}
+                  hint="Pinned by digest so every node runs byte-for-byte the same thing."
+                >
+                  <Input
+                    mono
+                    value={form.image}
+                    onChange={(e) => set("image", e.target.value)}
+                    placeholder="docker.io/library/alpine@sha256:c64c…"
+                    spellCheck={false}
+                    autoCapitalize="none"
+                  />
+                </Field>
+                <Field
+                  label="Command"
+                  error={showErr("command")}
+                  hint='Leave empty to use the image&apos;s own command. Quotes group words: sh -c "sleep 5; echo done".'
+                >
+                  <Input
+                    mono
+                    value={form.command}
+                    onChange={(e) => set("command", e.target.value)}
+                    placeholder="python -m job --batch 500"
+                    spellCheck={false}
+                    autoCapitalize="none"
+                  />
+                </Field>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-fg">Environment variables</p>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => set("env", [...form.env, { key: "", value: "" }])}>
-                    <Plus />
-                    Add variable
-                  </Button>
-                </div>
-                {form.env.length === 0 && (
-                  <p className="text-xs text-muted">None. Variables are visible to the host, so don't put secrets here.</p>
-                )}
-                {form.env.map((row, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      mono
-                      aria-label="Variable name"
-                      placeholder="NAME"
-                      value={row.key}
-                      onChange={(e) =>
-                        set(
-                          "env",
-                          form.env.map((r, j) => (j === i ? { ...r, key: e.target.value } : r))
-                        )
-                      }
-                      className="w-2/5"
-                    />
-                    <Input
-                      mono
-                      aria-label="Variable value"
-                      placeholder="value"
-                      value={row.value}
-                      onChange={(e) =>
-                        set(
-                          "env",
-                          form.env.map((r, j) => (j === i ? { ...r, value: e.target.value } : r))
-                        )
-                      }
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Remove variable"
-                      onClick={() =>
-                        set(
-                          "env",
-                          form.env.filter((_, j) => j !== i)
-                        )
-                      }
-                    >
-                      <Trash2 />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-fg">Environment variables</p>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => set("env", [...form.env, { key: "", value: "" }])}>
+                      <Plus />
+                      Add variable
                     </Button>
                   </div>
-                ))}
-                {showErr("env") && (
-                  <p role="alert" className="text-xs text-danger">
-                    {showErr("env")}
-                  </p>
-                )}
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader title="Resources" description="Enforced by the host's kernel. The task can't use more." />
-            <CardBody className="space-y-5 pt-4">
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-fg">CPU</p>
-                <Segmented
-                  label="CPU cores"
-                  value={String(form.cores)}
-                  onChange={(v) => set("cores", Number(v))}
-                  options={CORE_OPTIONS.map((c) => ({ value: String(c), label: `${c} vCPU` }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-fg">Memory</p>
-                <Segmented
-                  label="Memory"
-                  value={String(form.memoryMB)}
-                  onChange={(v) => set("memoryMB", Number(v))}
-                  options={MEMORY_OPTIONS.map((m) => ({ value: String(m), label: memory(m) }))}
-                />
-              </div>
-              <Field
-                label="Time limit"
-                hint="The task is stopped when this runs out. Your balance is held for the full limit up front and refunded for unused time."
-              >
-                <Select value={String(form.timeoutS)} onChange={(e) => set("timeoutS", Number(e.target.value))} className="max-w-[12rem]">
-                  {TIMEOUT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
+                  {form.env.length === 0 && (
+                    <p className="text-xs text-muted">None. Variables are visible to the host, so don't put secrets here.</p>
+                  )}
+                  {form.env.map((row, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input
+                        mono
+                        aria-label="Variable name"
+                        placeholder="NAME"
+                        value={row.key}
+                        onChange={(e) =>
+                          set(
+                            "env",
+                            form.env.map((r, j) => (j === i ? { ...r, key: e.target.value } : r))
+                          )
+                        }
+                        className="w-2/5"
+                      />
+                      <Input
+                        mono
+                        aria-label="Variable value"
+                        placeholder="value"
+                        value={row.value}
+                        onChange={(e) =>
+                          set(
+                            "env",
+                            form.env.map((r, j) => (j === i ? { ...r, value: e.target.value } : r))
+                          )
+                        }
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Remove variable"
+                        onClick={() =>
+                          set(
+                            "env",
+                            form.env.filter((_, j) => j !== i)
+                          )
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
                   ))}
-                </Select>
-              </Field>
-            </CardBody>
-          </Card>
+                  {showErr("env") && (
+                    <p role="alert" className="text-xs text-danger">
+                      {showErr("env")}
+                    </p>
+                  )}
+                </div>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader title="Resources" description="Enforced by the host's kernel. The task can't use more." />
+              <CardBody className="space-y-5 pt-4">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-fg">CPU</p>
+                  <Segmented
+                    label="CPU cores"
+                    value={String(form.cores)}
+                    onChange={(v) => set("cores", Number(v))}
+                    options={CORE_OPTIONS.map((c) => ({ value: String(c), label: `${c} vCPU` }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-fg">Memory</p>
+                  <Segmented
+                    label="Memory"
+                    value={String(form.memoryMB)}
+                    onChange={(v) => set("memoryMB", Number(v))}
+                    options={MEMORY_OPTIONS.map((m) => ({ value: String(m), label: memory(m) }))}
+                  />
+                </div>
+                <Field
+                  label="Time limit"
+                  hint="The task is stopped when this runs out. Your balance is held for the full limit up front and refunded for unused time."
+                >
+                  <Select value={String(form.timeoutS)} onChange={(e) => set("timeoutS", Number(e.target.value))} className="max-w-[12rem]">
+                    {TIMEOUT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </CardBody>
+            </Card>
+          </div>
 
           <Card>
             <CardHeader

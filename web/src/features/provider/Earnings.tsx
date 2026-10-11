@@ -14,6 +14,7 @@ import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { DataTable } from "@/ui/DataTable";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { Identifier } from "@/ui/Identifier";
+import { Split, StatRail } from "@/ui/Split";
 import { PageHeader } from "@/ui/PageHeader";
 import { Pagination } from "@/ui/Pagination";
 import { Segmented } from "@/ui/Segmented";
@@ -46,124 +47,142 @@ export function Earnings() {
     <div className="space-y-6">
       <PageHeader title="Earnings" description="What your machines have earned, task by task." />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Lifetime earnings"
-          value={money(me.data?.lifetime_earnings_micros)}
-          icon={Wallet}
-          tone="success"
-          loading={me.loading}
-        />
-        <StatCard label={`Last ${range} days`} value={money(earnings.total)} icon={Coins} tone="accent" loading={ledger.loading} />
-        <StatCard
-          label="Paid tasks"
-          value={count(entries.length)}
-          sub={entries.length ? `${money(avg)} average` : undefined}
-          icon={Coins}
-          loading={ledger.loading}
-        />
-      </div>
-
-      <Card>
-        <CardHeader
-          title="Daily earnings"
-          action={
-            <Segmented
-              label="Time range"
-              value={range}
-              onChange={setRange}
-              options={[
-                { value: "14", label: "14 days" },
-                { value: "30", label: "30 days" },
-              ]}
-            />
-          }
-        />
-        <CardBody>
-          {ledger.loading ? (
-            <Skeleton className="h-36 w-full" />
-          ) : (
-            <BarChart
-              data={earnings.bars}
-              tone="success"
-              heightClass="h-36"
-              summary={`Earnings over the last ${range} days, ${money(earnings.total)} in total`}
-            />
-          )}
-        </CardBody>
-      </Card>
-
-      <Card className="overflow-hidden">
-        <CardHeader title="Payments" description="Credited when a task finishes on one of your machines." className="pb-4" />
-        <div className="border-t border-border">
-          {ledger.error && !ledger.data ? (
-            <ErrorState title="Couldn't load payments" message={ledger.error} onRetry={ledger.reload} compact />
-          ) : (
-            <>
-              <DataTable
-                caption="Payments"
+      <Split
+        main={
+          <>
+            <Card className="overflow-hidden">
+              <CardHeader title="Payments" description="Credited when a task finishes on one of your machines." className="pb-4" />
+              <div className="border-t border-border">
+                {ledger.error && !ledger.data ? (
+                  <ErrorState title="Couldn't load payments" message={ledger.error} onRetry={ledger.reload} compact />
+                ) : (
+                  <>
+                    <DataTable
+                      caption="Payments"
+                      loading={ledger.loading}
+                      rows={visible}
+                      getRowKey={(e) => e.id}
+                      minWidth={520}
+                      empty={
+                        <EmptyState
+                          icon={Coins}
+                          title="No earnings yet"
+                          description="Payments appear here as customers' tasks finish on your machines."
+                        />
+                      }
+                      columns={[
+                        {
+                          id: "when",
+                          header: "When",
+                          width: "11rem",
+                          cell: (e) => (
+                            <span className="text-muted" title={shortDateTime(e.created_at_ms)} data-tnum>
+                              {relativeTime(e.created_at_ms)}
+                            </span>
+                          ),
+                        },
+                        {
+                          id: "kind",
+                          header: "Type",
+                          width: "7.5rem",
+                          cell: () => (
+                            <Badge tone="success" size="sm">
+                              Credit
+                            </Badge>
+                          ),
+                        },
+                        { id: "task", header: "Task", cell: (e) => <Identifier value={e.task_id} /> },
+                        {
+                          id: "amount",
+                          header: "Amount",
+                          width: "8rem",
+                          align: "right",
+                          cell: (e) => (
+                            <span className={cn("font-medium text-success")} data-tnum>
+                              {signedMoney(e.amount_micros, 1)}
+                            </span>
+                          ),
+                        },
+                      ]}
+                      mobileCard={(e) => (
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <Identifier value={e.task_id} copy={false} />
+                            <p className="text-xs text-muted">{relativeTime(e.created_at_ms)}</p>
+                          </div>
+                          <span className="shrink-0 text-sm font-medium text-success" data-tnum>
+                            {signedMoney(e.amount_micros, 1)}
+                          </span>
+                        </div>
+                      )}
+                    />
+                    <Pagination page={page} pageSize={PAGE_SIZE} total={entries.length} onChange={setPage} />
+                  </>
+                )}
+              </div>
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <StatRail>
+              <StatCard
+                compact
+                className="col-span-2"
+                label="Lifetime earnings"
+                value={money(me.data?.lifetime_earnings_micros)}
+                icon={Wallet}
+                tone="success"
+                loading={me.loading}
+              />
+              <StatCard
+                compact
+                label={`Last ${range} days`}
+                value={money(earnings.total)}
+                icon={Coins}
+                tone="accent"
                 loading={ledger.loading}
-                rows={visible}
-                getRowKey={(e) => e.id}
-                minWidth={520}
-                empty={
-                  <EmptyState
-                    icon={Coins}
-                    title="No earnings yet"
-                    description="Payments appear here as customers' tasks finish on your machines."
+              />
+              <StatCard
+                compact
+                label="Paid tasks"
+                value={count(entries.length)}
+                sub={entries.length ? `${money(avg)} average` : undefined}
+                icon={Coins}
+                loading={ledger.loading}
+              />
+            </StatRail>
+            <Card>
+              <CardHeader
+                title="Daily earnings"
+                action={
+                  <Segmented
+                    label="Time range"
+                    value={range}
+                    onChange={setRange}
+                    options={[
+                      { value: "14", label: "14 days" },
+                      { value: "30", label: "30 days" },
+                    ]}
                   />
                 }
-                columns={[
-                  {
-                    id: "when",
-                    header: "When",
-                    width: "11rem",
-                    cell: (e) => (
-                      <span className="text-muted" title={shortDateTime(e.created_at_ms)} data-tnum>
-                        {relativeTime(e.created_at_ms)}
-                      </span>
-                    ),
-                  },
-                  {
-                    id: "kind",
-                    header: "Type",
-                    width: "7.5rem",
-                    cell: () => (
-                      <Badge tone="success" size="sm">
-                        Credit
-                      </Badge>
-                    ),
-                  },
-                  { id: "task", header: "Task", cell: (e) => <Identifier value={e.task_id} /> },
-                  {
-                    id: "amount",
-                    header: "Amount",
-                    width: "8rem",
-                    align: "right",
-                    cell: (e) => (
-                      <span className={cn("font-medium text-success")} data-tnum>
-                        {signedMoney(e.amount_micros, 1)}
-                      </span>
-                    ),
-                  },
-                ]}
-                mobileCard={(e) => (
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <Identifier value={e.task_id} copy={false} />
-                      <p className="text-xs text-muted">{relativeTime(e.created_at_ms)}</p>
-                    </div>
-                    <span className="shrink-0 text-sm font-medium text-success" data-tnum>
-                      {signedMoney(e.amount_micros, 1)}
-                    </span>
-                  </div>
-                )}
               />
-              <Pagination page={page} pageSize={PAGE_SIZE} total={entries.length} onChange={setPage} />
-            </>
-          )}
-        </div>
-      </Card>
+              <CardBody>
+                {ledger.loading ? (
+                  <Skeleton className="h-36 w-full" />
+                ) : (
+                  <BarChart
+                    data={earnings.bars}
+                    tone="success"
+                    heightClass="h-36"
+                    summary={`Earnings over the last ${range} days, ${money(earnings.total)} in total`}
+                  />
+                )}
+              </CardBody>
+            </Card>
+          </>
+        }
+      />
     </div>
   );
 }

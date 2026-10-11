@@ -17,6 +17,7 @@ import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { DataTable } from "@/ui/DataTable";
 import { Dialog, DialogContent } from "@/ui/Dialog";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
+import { Split } from "@/ui/Split";
 import { Identifier } from "@/ui/Identifier";
 import { KeyValueList } from "@/ui/KeyValue";
 import { Field, Input } from "@/ui/Input";
@@ -135,146 +136,153 @@ export function Billing() {
         }
       />
 
-      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <Card>
-          <CardBody className="space-y-5">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted">Available balance</p>
-              {me.loading ? (
-                <Skeleton className="mt-2 h-10 w-40" />
-              ) : (
-                <p className="truncate text-4xl font-semibold tracking-tight text-fg" data-tnum>
-                  {money(me.data?.available_balance_micros)}
+      <Split
+        main={
+          <>
+            <Card className="overflow-hidden">
+              <CardHeader title="Transactions" description="Charged when a task finishes, at the normalised rate." className="pb-4" />
+              <div className="border-t border-border">
+                {ledger.error && !ledger.data ? (
+                  <ErrorState title="Couldn't load transactions" message={ledger.error} onRetry={ledger.reload} compact />
+                ) : (
+                  <>
+                    <DataTable
+                      caption="Transactions"
+                      loading={ledger.loading}
+                      rows={visible}
+                      getRowKey={(e) => e.id}
+                      minWidth={560}
+                      empty={
+                        <EmptyState
+                          icon={Receipt}
+                          title="No transactions yet"
+                          description="Charges appear here as soon as a task finishes."
+                          action={
+                            <Button asChild variant="secondary">
+                              <Link to="/tasks/new">Submit a task</Link>
+                            </Button>
+                          }
+                        />
+                      }
+                      columns={[
+                        {
+                          id: "when",
+                          header: "When",
+                          width: "11rem",
+                          cell: (e) => (
+                            <span className="text-muted" title={shortDateTime(e.created_at_ms)} data-tnum>
+                              {relativeTime(e.created_at_ms)}
+                            </span>
+                          ),
+                        },
+                        {
+                          id: "kind",
+                          header: "Type",
+                          width: "7.5rem",
+                          cell: (e) => (
+                            <Badge tone={e.kind === "charge" ? "neutral" : "success"} size="sm">
+                              {e.kind === "charge" ? "Charge" : "Credit"}
+                            </Badge>
+                          ),
+                        },
+                        {
+                          id: "task",
+                          header: "Task",
+                          cell: (e) => (
+                            <Link to={`/tasks/${e.task_id}`} className="inline-block max-w-full hover:underline">
+                              <Identifier value={e.task_id} copy={false} />
+                            </Link>
+                          ),
+                        },
+                        {
+                          id: "amount",
+                          header: "Amount",
+                          width: "8rem",
+                          align: "right",
+                          cell: (e) => (
+                            <span className={cn("font-medium", e.kind === "credit" ? "text-success" : "text-fg")} data-tnum>
+                              {signedMoney(e.amount_micros, e.kind === "credit" ? 1 : -1)}
+                            </span>
+                          ),
+                        },
+                      ]}
+                      mobileCard={(e) => (
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <Identifier value={e.task_id} copy={false} />
+                            <p className="text-xs text-muted">{relativeTime(e.created_at_ms)}</p>
+                          </div>
+                          <span className={cn("shrink-0 text-sm font-medium", e.kind === "credit" ? "text-success" : "text-fg")} data-tnum>
+                            {signedMoney(e.amount_micros, e.kind === "credit" ? 1 : -1)}
+                          </span>
+                        </div>
+                      )}
+                    />
+                    <Pagination page={page} pageSize={PAGE_SIZE} total={entries.length} onChange={setPage} />
+                  </>
+                )}
+              </div>
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <Card>
+              <CardBody className="space-y-5">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted">Available balance</p>
+                  {me.loading ? (
+                    <Skeleton className="mt-2 h-10 w-40" />
+                  ) : (
+                    <p className="truncate text-4xl font-semibold tracking-tight text-fg" data-tnum>
+                      {money(me.data?.available_balance_micros)}
+                    </p>
+                  )}
+                </div>
+                <KeyValueList
+                  items={[
+                    { label: "Total balance", value: <span data-tnum>{me.data ? money(me.data.balance_micros) : "…"}</span> },
+                    { label: "Held", value: <span data-tnum>{me.data ? money(held) : "…"}</span> },
+                    { label: `Spent (${range}d)`, value: <span data-tnum>{ledger.data ? money(spend.total) : "…"}</span> },
+                  ]}
+                />
+                <p className="text-xs leading-5 text-muted">
+                  Running tasks hold their worst-case cost up front; whatever isn't used is released when they finish.
                 </p>
-              )}
-            </div>
-            <KeyValueList
-              items={[
-                { label: "Total balance", value: <span data-tnum>{me.data ? money(me.data.balance_micros) : "…"}</span> },
-                { label: "Held", value: <span data-tnum>{me.data ? money(held) : "…"}</span> },
-                { label: `Spent (${range}d)`, value: <span data-tnum>{ledger.data ? money(spend.total) : "…"}</span> },
-              ]}
-            />
-            <p className="text-xs leading-5 text-muted">
-              Running tasks hold their worst-case cost up front; whatever isn't used is released when they finish.
-            </p>
-          </CardBody>
-        </Card>
+              </CardBody>
+            </Card>
 
-        <Card>
-          <CardHeader
-            title="Spend"
-            description={`${money(spend.total)} in the last ${range} days`}
-            action={
-              <Segmented
-                label="Time range"
-                value={range}
-                onChange={(v) => setRange(v)}
-                options={[
-                  { value: "7", label: "7 days" },
-                  { value: "30", label: "30 days" },
-                ]}
-              />
-            }
-          />
-          <CardBody>
-            {ledger.loading ? (
-              <Skeleton className="h-36 w-full" />
-            ) : (
-              <BarChart
-                data={spend.bars}
-                heightClass="h-36"
-                summary={`Spend over the last ${range} days, ${money(spend.total)} in total`}
-              />
-            )}
-          </CardBody>
-        </Card>
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardHeader title="Transactions" description="Charged when a task finishes, at the normalised rate." className="pb-4" />
-        <div className="border-t border-border">
-          {ledger.error && !ledger.data ? (
-            <ErrorState title="Couldn't load transactions" message={ledger.error} onRetry={ledger.reload} compact />
-          ) : (
-            <>
-              <DataTable
-                caption="Transactions"
-                loading={ledger.loading}
-                rows={visible}
-                getRowKey={(e) => e.id}
-                minWidth={560}
-                empty={
-                  <EmptyState
-                    icon={Receipt}
-                    title="No transactions yet"
-                    description="Charges appear here as soon as a task finishes."
-                    action={
-                      <Button asChild variant="secondary">
-                        <Link to="/tasks/new">Submit a task</Link>
-                      </Button>
-                    }
+            <Card>
+              <CardHeader
+                title="Spend"
+                description={`${money(spend.total)} in the last ${range} days`}
+                action={
+                  <Segmented
+                    label="Time range"
+                    value={range}
+                    onChange={(v) => setRange(v)}
+                    options={[
+                      { value: "7", label: "7 days" },
+                      { value: "30", label: "30 days" },
+                    ]}
                   />
                 }
-                columns={[
-                  {
-                    id: "when",
-                    header: "When",
-                    width: "11rem",
-                    cell: (e) => (
-                      <span className="text-muted" title={shortDateTime(e.created_at_ms)} data-tnum>
-                        {relativeTime(e.created_at_ms)}
-                      </span>
-                    ),
-                  },
-                  {
-                    id: "kind",
-                    header: "Type",
-                    width: "7.5rem",
-                    cell: (e) => (
-                      <Badge tone={e.kind === "charge" ? "neutral" : "success"} size="sm">
-                        {e.kind === "charge" ? "Charge" : "Credit"}
-                      </Badge>
-                    ),
-                  },
-                  {
-                    id: "task",
-                    header: "Task",
-                    cell: (e) => (
-                      <Link to={`/tasks/${e.task_id}`} className="inline-block max-w-full hover:underline">
-                        <Identifier value={e.task_id} copy={false} />
-                      </Link>
-                    ),
-                  },
-                  {
-                    id: "amount",
-                    header: "Amount",
-                    width: "8rem",
-                    align: "right",
-                    cell: (e) => (
-                      <span className={cn("font-medium", e.kind === "credit" ? "text-success" : "text-fg")} data-tnum>
-                        {signedMoney(e.amount_micros, e.kind === "credit" ? 1 : -1)}
-                      </span>
-                    ),
-                  },
-                ]}
-                mobileCard={(e) => (
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <Identifier value={e.task_id} copy={false} />
-                      <p className="text-xs text-muted">{relativeTime(e.created_at_ms)}</p>
-                    </div>
-                    <span className={cn("shrink-0 text-sm font-medium", e.kind === "credit" ? "text-success" : "text-fg")} data-tnum>
-                      {signedMoney(e.amount_micros, e.kind === "credit" ? 1 : -1)}
-                    </span>
-                  </div>
-                )}
               />
-              <Pagination page={page} pageSize={PAGE_SIZE} total={entries.length} onChange={setPage} />
-            </>
-          )}
-        </div>
-      </Card>
+              <CardBody>
+                {ledger.loading ? (
+                  <Skeleton className="h-36 w-full" />
+                ) : (
+                  <BarChart
+                    data={spend.bars}
+                    heightClass="h-36"
+                    summary={`Spend over the last ${range} days, ${money(spend.total)} in total`}
+                  />
+                )}
+              </CardBody>
+            </Card>
+          </>
+        }
+      />
 
       <AddFundsDialog
         open={funds}

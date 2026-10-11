@@ -222,9 +222,8 @@ function UserMenu({ username, roleLabel, onLogout }: { username: string; roleLab
 }
 
 /**
- * Pages are held to a readable width by default. A page that is mostly controls and side-by-side panels
- * (rather than prose or a table) can ask for the wide layout, which lets it use a big screen:
- * `useWideLayout()` at the top of the page.
+ * Pages fill a big screen by default (up to 112rem; ultra-wide monitors get margins, not stretched lines). A page that is mostly
+ * controls and side-by-side panels can ask for a little more with `useWideLayout()`; pages lay their content out with `Split`.
  */
 const WideLayoutContext = createContext<(wide: boolean) => void>(() => {});
 
@@ -330,7 +329,10 @@ export function AppShell({ nav, crumbs, roleLabel, username, onLogout, topbarExt
           </div>
         )}
 
-        <main id="main" className={cn("mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8", wide ? "max-w-[87.5rem]" : "max-w-[75rem]")}>
+        <main
+          id="main"
+          className={cn("mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8 2xl:px-10", wide ? "max-w-[120rem]" : "max-w-[112rem]")}
+        >
           <WideLayoutContext.Provider value={setWide}>{children}</WideLayoutContext.Provider>
         </main>
       </div>

@@ -10,6 +10,8 @@ import type { Node, NodeTask } from "@/lib/types";
 import { TaskTable } from "@/components/TaskTable";
 import { TrustMeter } from "@/components/TrustMeter";
 import { TrustInfo } from "@/components/TrustInfo";
+import { KeyValueList } from "@/ui/KeyValue";
+import { Split } from "@/ui/Split";
 import { MachineUsage } from "./MachineUsage";
 import { Alert } from "@/ui/Alert";
 import { Badge } from "@/ui/Badge";
@@ -25,15 +27,6 @@ import { ConnectionPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
 import { useToast } from "@/ui/Toast";
 import { Layers } from "lucide-react";
-
-function Stat({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0 bg-surface p-4">
-      <p className="flex items-center gap-1.5 text-xs font-medium text-muted">{label}</p>
-      <div className="mt-1.5 min-w-0 text-sm font-medium text-fg">{children}</div>
-    </div>
-  );
-}
 
 export function MachineDetail() {
   const { id = "" } = useParams<{ id: string }>();
@@ -122,102 +115,112 @@ export function MachineDetail() {
         </Alert>
       )}
 
-      <Card className="overflow-hidden">
-        <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-5">
-          <Stat label="Status">{n.connected ? "Online" : "Offline"}</Stat>
-          <Stat
-            label={
-              <>
-                Trust score <TrustInfo />
-              </>
-            }
-          >
-            <TrustMeter score={n.trust_score} />
-          </Stat>
-          <Stat label="Last heartbeat">
-            <span data-tnum>{relativeTime(n.last_heartbeat_at_ms)}</span>
-          </Stat>
-          <Stat label="Agent version">
-            <span className="font-mono text-[0.8125rem]" data-tnum>
-              {n.version === "" ? "not reported" : n.version}
-            </span>
-          </Stat>
-          <Stat label="Registered">
-            <span data-tnum>{dateTime(n.created_at_ms)}</span>
-          </Stat>
-        </div>
-      </Card>
-
-      <MachineUsage node={n} taskLabel={taskLabel} />
-
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card className="min-w-0 overflow-hidden">
-          <CardHeader title="Recent tasks" description="Work customers have run on this machine." className="pb-4" />
-          <div className="border-t border-border">
-            {tasks.error && !tasks.data ? (
-              <ErrorState title="Couldn't load tasks" message={tasks.error} onRetry={tasks.reload} compact />
-            ) : (
-              <TaskTable
-                tasks={tasks.data ?? []}
-                loading={tasks.loading}
-                showNode={false}
-                getHref={null}
-                rowHover={(t) => {
-                  const u = usageOf.get(t.id);
-                  if (!u) return <span className="text-muted">No usage reported for this task.</span>;
-                  return (
-                    <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5" data-tnum>
-                      <dt className="col-span-2 mb-0.5 font-medium text-fg">What this task used</dt>
-                      <dt className="text-muted">CPU time</dt>
-                      <dd className="text-right">{duration(u.core_seconds * 1000)} of one core</dd>
-                      <dt className="text-muted">Peak memory</dt>
-                      <dd className="text-right">{bytes(u.peak_memory_bytes)}</dd>
-                      <dt className="text-muted">Tunnel traffic</dt>
-                      <dd className="text-right">
-                        {bytes(u.tunnel_bytes_to_gateway)} out · {bytes(u.tunnel_bytes_to_task)} in
-                      </dd>
-                    </dl>
-                  );
-                }}
-                empty={
-                  <EmptyState
-                    icon={Layers}
-                    title="No tasks yet"
-                    description="Tasks appear here as soon as this machine picks one up."
-                    compact
+      <Split
+        main={
+          <>
+            <MachineUsage node={n} taskLabel={taskLabel} />
+            <Card className="min-w-0 overflow-hidden">
+              <CardHeader title="Recent tasks" description="Work customers have run on this machine." className="pb-4" />
+              <div className="border-t border-border">
+                {tasks.error && !tasks.data ? (
+                  <ErrorState title="Couldn't load tasks" message={tasks.error} onRetry={tasks.reload} compact />
+                ) : (
+                  <TaskTable
+                    tasks={tasks.data ?? []}
+                    loading={tasks.loading}
+                    showNode={false}
+                    getHref={null}
+                    rowHover={(t) => {
+                      const u = usageOf.get(t.id);
+                      if (!u) return <span className="text-muted">No usage reported for this task.</span>;
+                      return (
+                        <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5" data-tnum>
+                          <dt className="col-span-2 mb-0.5 font-medium text-fg">What this task used</dt>
+                          <dt className="text-muted">CPU time</dt>
+                          <dd className="text-right">{duration(u.core_seconds * 1000)} of one core</dd>
+                          <dt className="text-muted">Peak memory</dt>
+                          <dd className="text-right">{bytes(u.peak_memory_bytes)}</dd>
+                          <dt className="text-muted">Tunnel traffic</dt>
+                          <dd className="text-right">
+                            {bytes(u.tunnel_bytes_to_gateway)} out · {bytes(u.tunnel_bytes_to_task)} in
+                          </dd>
+                        </dl>
+                      );
+                    }}
+                    empty={
+                      <EmptyState
+                        icon={Layers}
+                        title="No tasks yet"
+                        description="Tasks appear here as soon as this machine picks one up."
+                        compact
+                      />
+                    }
                   />
-                }
-              />
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Capacity on offer" description="What this machine contributes to the pool." />
-          <CardBody className="space-y-5">
-            <ul className="space-y-4">
-              {[
-                { icon: Cpu, label: "CPU", value: cpu(n.offer_cores) },
-                { icon: MemoryStick, label: "Memory", value: memory(n.offer_memory_mb) },
-                { icon: HardDrive, label: "Disk", value: memory(n.offer_disk_mb) },
-                { icon: Gauge, label: "Network", value: n.offer_network_mbps > 0 ? `${n.offer_network_mbps} Mbps` : "No limit set" },
-                { icon: Server, label: "Architecture", value: <span className="font-mono text-[0.8125rem]">{n.arch}</span> },
-              ].map((r) => (
-                <li key={r.label} className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2.5 text-sm text-muted">
-                    <r.icon className="size-4" aria-hidden />
-                    {r.label}
-                  </span>
-                  <span className="text-sm font-medium text-fg" data-tnum>
-                    {r.value}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="text-xs leading-5 text-muted">Change what's on offer by restarting the agent with different offer settings.</p>
-          </CardBody>
-        </Card>
-      </div>
+                )}
+              </div>
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <Card>
+              <CardHeader title="Status" />
+              <CardBody className="space-y-4 pt-3">
+                <KeyValueList
+                  items={[
+                    { label: "State", value: n.connected ? "Online" : "Offline" },
+                    {
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          Trust <TrustInfo />
+                        </span>
+                      ),
+                      value: <TrustMeter score={n.trust_score} />,
+                    },
+                    { label: "Heartbeat", value: <span data-tnum>{relativeTime(n.last_heartbeat_at_ms)}</span> },
+                    {
+                      label: "Agent",
+                      value: (
+                        <span className="font-mono text-[0.8125rem]" data-tnum>
+                          {n.version === "" ? "not reported" : n.version}
+                        </span>
+                      ),
+                    },
+                    { label: "Registered", value: <span data-tnum>{dateTime(n.created_at_ms)}</span> },
+                  ]}
+                />
+              </CardBody>
+            </Card>
+            <Card>
+              <CardHeader title="Capacity on offer" description="What this machine contributes to the pool." />
+              <CardBody className="space-y-5">
+                <ul className="space-y-4">
+                  {[
+                    { icon: Cpu, label: "CPU", value: cpu(n.offer_cores) },
+                    { icon: MemoryStick, label: "Memory", value: memory(n.offer_memory_mb) },
+                    { icon: HardDrive, label: "Disk", value: memory(n.offer_disk_mb) },
+                    { icon: Gauge, label: "Network", value: n.offer_network_mbps > 0 ? `${n.offer_network_mbps} Mbps` : "No limit set" },
+                    { icon: Server, label: "Architecture", value: <span className="font-mono text-[0.8125rem]">{n.arch}</span> },
+                  ].map((r) => (
+                    <li key={r.label} className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2.5 text-sm text-muted">
+                        <r.icon className="size-4" aria-hidden />
+                        {r.label}
+                      </span>
+                      <span className="text-sm font-medium text-fg" data-tnum>
+                        {r.value}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs leading-5 text-muted">
+                  Change what's on offer by restarting the agent with different offer settings.
+                </p>
+              </CardBody>
+            </Card>
+          </>
+        }
+      />
 
       <ConfirmDialog
         open={confirm}

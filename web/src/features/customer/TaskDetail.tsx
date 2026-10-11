@@ -265,7 +265,7 @@ export function TaskDetail() {
         </div>
       </Card>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_27rem]">
         <div className="min-w-0 space-y-6">
           <TaskResources task={t} traffic={traffic.data} gatewayLabel={gwLabel} />
           <section className="min-w-0 space-y-3" aria-labelledby="output-h">

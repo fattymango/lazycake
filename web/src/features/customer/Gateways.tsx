@@ -263,7 +263,7 @@ export function Gateways() {
           <ErrorState title="Couldn't load your gateways" message={gateways.error} onRetry={gateways.reload} />
         </Card>
       ) : gateways.loading ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-4">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-44 rounded-xl" />
           ))}
@@ -278,7 +278,7 @@ export function Gateways() {
           />
         </Card>
       ) : (
-        <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-4">
           {list.map((g) => (
             <li key={g.id} className="min-w-0">
               <Card className="flex h-full flex-col">

@@ -13,6 +13,7 @@ import { BarChart } from "@/ui/BarChart";
 import { Button } from "@/ui/Button";
 import { Card, CardBody, CardFooter, CardHeader } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
+import { Split, StatRail } from "@/ui/Split";
 import { Identifier } from "@/ui/Identifier";
 import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
@@ -64,157 +65,167 @@ export function Overview() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Available balance"
-          value={money(me.data?.available_balance_micros)}
-          sub={
-            me.data && me.data.balance_micros !== me.data.available_balance_micros
-              ? `${money(me.data.balance_micros)} total, rest is held`
-              : "Ready to spend"
-          }
-          icon={Wallet}
-          tone="success"
-          loading={me.loading}
-        />
-        <StatCard
-          label="Running now"
-          value={count(running.length)}
-          sub={running.length ? `${cpu(coresInUse)} in use` : "Nothing running"}
-          icon={Activity}
-          tone="accent"
-          loading={loading}
-        />
-        <StatCard
-          label="In the queue"
-          value={count(queued.length)}
-          sub={queued.length ? "Waiting for capacity" : "Queue is empty"}
-          icon={Clock3}
-          loading={loading}
-        />
-        <StatCard
-          label="Success rate"
-          value={rate === null ? "—" : `${rate}%`}
-          sub={rate === null ? "No finished tasks yet" : `${succeeded} of last ${finished.length} finished`}
-          icon={CheckCircle2}
-          tone={rate === null || rate >= 80 ? "success" : "warning"}
-          loading={loading}
-        />
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardHeader
-          title="Recent tasks"
-          description="Your latest submissions, newest first."
-          action={
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/tasks">
-                View all
-                <ArrowRight />
-              </Link>
-            </Button>
-          }
-          className="pb-4"
-        />
-        <div className="border-t border-border">
-          {hasError ? (
-            <ErrorState title="Couldn't load your tasks" message={tasks.error} onRetry={tasks.reload} compact />
-          ) : (
-            <TaskTable
-              tasks={all.slice(0, 7)}
-              costs={costs}
-              loading={loading}
-              skeletonRows={5}
-              empty={
-                <EmptyState
-                  icon={Layers}
-                  title="No tasks yet"
-                  description="Submit a container and watch it queue, run on a host's machine, and settle here."
-                  action={
-                    <Button asChild>
-                      <Link to="/tasks/new">
-                        <Plus />
-                        Submit your first task
-                      </Link>
-                    </Button>
-                  }
-                />
-              }
-            />
-          )}
-        </div>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Spend"
-            description="Last 7 days"
-            action={
-              <span className="text-sm font-semibold text-fg" data-tnum>
-                {ledger.loading ? "" : money(spend.total)}
-              </span>
-            }
-          />
-          <CardBody>
-            {ledger.loading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : (
-              <BarChart data={spend.bars} tone="accent" summary={`Spend over the last 7 days, ${money(spend.total)} in total`} />
-            )}
-          </CardBody>
-          <CardFooter>
-            <span className="text-xs text-muted">Charged when a task finishes</span>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/billing">Billing</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader
-            title="Gateways"
-            description="Your doors into your own infrastructure."
-            action={
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/gateways">Manage</Link>
-              </Button>
-            }
-          />
-          <CardBody className="pt-3">
-            {gateways.loading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : (gateways.data ?? []).length === 0 ? (
-              <EmptyState
-                compact
-                icon={Network}
-                title="No gateways"
-                description="Install one next to your data to let tasks reach it."
+      <Split
+        main={
+          <>
+            <Card className="overflow-hidden">
+              <CardHeader
+                title="Recent tasks"
+                description="Your latest submissions, newest first."
                 action={
-                  <Button asChild variant="secondary" size="sm">
-                    <Link to="/gateways">Add a gateway</Link>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to="/tasks">
+                      View all
+                      <ArrowRight />
+                    </Link>
+                  </Button>
+                }
+                className="pb-4"
+              />
+              <div className="border-t border-border">
+                {hasError ? (
+                  <ErrorState title="Couldn't load your tasks" message={tasks.error} onRetry={tasks.reload} compact />
+                ) : (
+                  <TaskTable
+                    tasks={all.slice(0, 12)}
+                    costs={costs}
+                    loading={loading}
+                    skeletonRows={5}
+                    empty={
+                      <EmptyState
+                        icon={Layers}
+                        title="No tasks yet"
+                        description="Submit a container and watch it queue, run on a host's machine, and settle here."
+                        action={
+                          <Button asChild>
+                            <Link to="/tasks/new">
+                              <Plus />
+                              Submit your first task
+                            </Link>
+                          </Button>
+                        }
+                      />
+                    }
+                  />
+                )}
+              </div>
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <StatRail>
+              <StatCard
+                compact
+                label="Available balance"
+                value={money(me.data?.available_balance_micros)}
+                sub={
+                  me.data && me.data.balance_micros !== me.data.available_balance_micros
+                    ? `${money(me.data.balance_micros)} total, rest is held`
+                    : "Ready to spend"
+                }
+                icon={Wallet}
+                tone="success"
+                loading={me.loading}
+              />
+              <StatCard
+                compact
+                label="Running now"
+                value={count(running.length)}
+                sub={running.length ? `${cpu(coresInUse)} in use` : "Nothing running"}
+                icon={Activity}
+                tone="accent"
+                loading={loading}
+              />
+              <StatCard
+                compact
+                label="In the queue"
+                value={count(queued.length)}
+                sub={queued.length ? "Waiting for capacity" : "Queue is empty"}
+                icon={Clock3}
+                loading={loading}
+              />
+              <StatCard
+                compact
+                label="Success rate"
+                value={rate === null ? "—" : `${rate}%`}
+                sub={rate === null ? "No finished tasks yet" : `${succeeded} of last ${finished.length} finished`}
+                icon={CheckCircle2}
+                tone={rate === null || rate >= 80 ? "success" : "warning"}
+                loading={loading}
+              />
+            </StatRail>
+            <Card>
+              <CardHeader
+                title="Spend"
+                description="Last 7 days"
+                action={
+                  <span className="text-sm font-semibold text-fg" data-tnum>
+                    {ledger.loading ? "" : money(spend.total)}
+                  </span>
+                }
+              />
+              <CardBody>
+                {ledger.loading ? (
+                  <Skeleton className="h-32 w-full" />
+                ) : (
+                  <BarChart data={spend.bars} tone="accent" summary={`Spend over the last 7 days, ${money(spend.total)} in total`} />
+                )}
+              </CardBody>
+              <CardFooter>
+                <span className="text-xs text-muted">Charged when a task finishes</span>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/billing">Billing</Link>
+                </Button>
+              </CardFooter>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Gateways"
+                description="Your doors into your own infrastructure."
+                action={
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to="/gateways">Manage</Link>
                   </Button>
                 }
               />
-            ) : (
-              <ul className="space-y-2.5">
-                {(gateways.data ?? []).slice(0, 4).map((g) => (
-                  <li key={g.id} className="flex min-w-0 items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-fg">{g.label}</p>
-                      <Identifier value={g.id} copy={false} className="text-muted" />
-                    </div>
-                    <ConnectionPill connected={g.connected} size="sm" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-      </div>
+              <CardBody className="pt-3">
+                {gateways.loading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : (gateways.data ?? []).length === 0 ? (
+                  <EmptyState
+                    compact
+                    icon={Network}
+                    title="No gateways"
+                    description="Install one next to your data to let tasks reach it."
+                    action={
+                      <Button asChild variant="secondary" size="sm">
+                        <Link to="/gateways">Add a gateway</Link>
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <ul className="space-y-2.5">
+                    {(gateways.data ?? []).slice(0, 4).map((g) => (
+                      <li key={g.id} className="flex min-w-0 items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-fg">{g.label}</p>
+                          <Identifier value={g.id} copy={false} className="text-muted" />
+                        </div>
+                        <ConnectionPill connected={g.connected} size="sm" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+          </>
+        }
+      />
     </div>
   );
 }

@@ -15,6 +15,7 @@ export function StatCard({
   trend,
   loading,
   action,
+  compact,
   className,
 }: {
   label: ReactNode;
@@ -26,15 +27,25 @@ export function StatCard({
   trend?: number[];
   loading?: boolean;
   action?: ReactNode;
+  /** A smaller tile for a side rail. */
+  compact?: boolean;
   className?: string;
 }) {
   const t = toneClasses[tone];
   return (
-    <Card className={cn("relative flex flex-col gap-3 overflow-hidden p-5", className)}>
+    <Card className={cn("relative flex flex-col overflow-hidden", compact ? "gap-2 p-4" : "gap-3 p-5", className)}>
       <div className="flex items-center justify-between gap-3">
         <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted">{label}</span>
         {Icon && (
-          <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg border", t.bg, t.border, t.text)}>
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-lg border",
+              compact ? "size-7" : "size-8",
+              t.bg,
+              t.border,
+              t.text
+            )}
+          >
             <Icon className="size-4" aria-hidden />
           </span>
         )}
@@ -43,7 +54,10 @@ export function StatCard({
         {loading ? (
           <Skeleton className="h-8 w-28" />
         ) : (
-          <div className="truncate text-[1.75rem] font-semibold leading-9 tracking-tight text-fg" data-tnum>
+          <div
+            className={cn("truncate font-semibold tracking-tight text-fg", compact ? "text-xl leading-8" : "text-[1.75rem] leading-9")}
+            data-tnum
+          >
             {value}
           </div>
         )}

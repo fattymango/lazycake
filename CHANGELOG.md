@@ -3,6 +3,14 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.6 — 2026-10-11
+
+Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.
+
+### Changed
+- **The dashboard uses the whole screen.** Pages are no longer held to a narrow centred column: content now fills the window (up to 1792 px) instead of leaving about 265 px of empty space on each side of a 1920 px screen.
+- **Pages are laid out side by side instead of one long column.** The main subject sits on the left and stats and secondary cards on the right: the recent-tasks table with balance, running, queue, success rate, spend and gateways beside it; the machine list with earnings and trust beside it; a machine's usage and tasks with its status, trust and capacity beside them; a gateway's traffic with its totals, targets and activity beside it; billing and earnings with the transactions on the left and the figures on the right. The new-task form puts "What to run" and "Resources" next to each other on large screens. Machine and gateway lists use as many columns as fit (four on a full-HD screen). On windows narrower than 1400 px, and on phones, the right-hand column drops below the main one, so nothing is cut off.
+
 ## v0.4.5 — 2026-10-11
 
 Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.
