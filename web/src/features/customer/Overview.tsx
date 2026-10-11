@@ -8,12 +8,12 @@ import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { dailySpend } from "@/lib/spend";
 import { costByTask } from "@/lib/tasks";
 import type { Gateway, LedgerEntry, Me, Task } from "@/lib/types";
-import { TaskTable } from "@/components/TaskTable";
+import { TaskList } from "@/components/TaskList";
 import { BarChart } from "@/ui/BarChart";
 import { Button } from "@/ui/Button";
 import { Card, CardBody, CardFooter, CardHeader } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
-import { Split, StatRail } from "@/ui/Split";
+import { Split } from "@/ui/Split";
 import { Identifier } from "@/ui/Identifier";
 import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
@@ -68,10 +68,80 @@ export function Overview() {
       <Split
         main={
           <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                label="Available balance"
+                value={money(me.data?.available_balance_micros)}
+                sub={
+                  me.data && me.data.balance_micros !== me.data.available_balance_micros
+                    ? `${money(me.data.balance_micros)} total, rest is held`
+                    : "Ready to spend"
+                }
+                icon={Wallet}
+                tone="success"
+                loading={me.loading}
+              />
+              <StatCard
+                label="Running now"
+                value={count(running.length)}
+                sub={running.length ? `${cpu(coresInUse)} in use` : "Nothing running"}
+                icon={Activity}
+                tone="accent"
+                loading={loading}
+              />
+              <StatCard
+                label="In the queue"
+                value={count(queued.length)}
+                sub={queued.length ? "Waiting for capacity" : "Queue is empty"}
+                icon={Clock3}
+                loading={loading}
+              />
+              <StatCard
+                label="Success rate"
+                value={rate === null ? "—" : `${rate}%`}
+                sub={rate === null ? "No finished tasks yet" : `${succeeded} of last ${finished.length} finished`}
+                icon={CheckCircle2}
+                tone={rate === null || rate >= 80 ? "success" : "warning"}
+                loading={loading}
+              />
+            </div>
+            <Card>
+              <CardHeader
+                title="Spend"
+                description="Last 7 days"
+                action={
+                  <span className="text-sm font-semibold text-fg" data-tnum>
+                    {ledger.loading ? "" : money(spend.total)}
+                  </span>
+                }
+              />
+              <CardBody>
+                {ledger.loading ? (
+                  <Skeleton className="h-32 w-full" />
+                ) : (
+                  <BarChart
+                    data={spend.bars}
+                    heightClass="h-80"
+                    tone="accent"
+                    summary={`Spend over the last 7 days, ${money(spend.total)} in total`}
+                  />
+                )}
+              </CardBody>
+              <CardFooter>
+                <span className="text-xs text-muted">Charged when a task finishes</span>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/billing">Billing</Link>
+                </Button>
+              </CardFooter>
+            </Card>
+          </>
+        }
+        side={
+          <>
             <Card className="overflow-hidden">
               <CardHeader
                 title="Recent tasks"
-                description="Your latest submissions, newest first."
+                description="Newest first."
                 action={
                   <Button asChild variant="ghost" size="sm">
                     <Link to="/tasks">
@@ -86,8 +156,8 @@ export function Overview() {
                 {hasError ? (
                   <ErrorState title="Couldn't load your tasks" message={tasks.error} onRetry={tasks.reload} compact />
                 ) : (
-                  <TaskTable
-                    tasks={all.slice(0, 12)}
+                  <TaskList
+                    tasks={all.slice(0, 8)}
                     costs={costs}
                     loading={loading}
                     skeletonRows={5}
@@ -110,76 +180,6 @@ export function Overview() {
                 )}
               </div>
             </Card>
-          </>
-        }
-        side={
-          <>
-            <StatRail>
-              <StatCard
-                compact
-                label="Available balance"
-                value={money(me.data?.available_balance_micros)}
-                sub={
-                  me.data && me.data.balance_micros !== me.data.available_balance_micros
-                    ? `${money(me.data.balance_micros)} total, rest is held`
-                    : "Ready to spend"
-                }
-                icon={Wallet}
-                tone="success"
-                loading={me.loading}
-              />
-              <StatCard
-                compact
-                label="Running now"
-                value={count(running.length)}
-                sub={running.length ? `${cpu(coresInUse)} in use` : "Nothing running"}
-                icon={Activity}
-                tone="accent"
-                loading={loading}
-              />
-              <StatCard
-                compact
-                label="In the queue"
-                value={count(queued.length)}
-                sub={queued.length ? "Waiting for capacity" : "Queue is empty"}
-                icon={Clock3}
-                loading={loading}
-              />
-              <StatCard
-                compact
-                label="Success rate"
-                value={rate === null ? "—" : `${rate}%`}
-                sub={rate === null ? "No finished tasks yet" : `${succeeded} of last ${finished.length} finished`}
-                icon={CheckCircle2}
-                tone={rate === null || rate >= 80 ? "success" : "warning"}
-                loading={loading}
-              />
-            </StatRail>
-            <Card>
-              <CardHeader
-                title="Spend"
-                description="Last 7 days"
-                action={
-                  <span className="text-sm font-semibold text-fg" data-tnum>
-                    {ledger.loading ? "" : money(spend.total)}
-                  </span>
-                }
-              />
-              <CardBody>
-                {ledger.loading ? (
-                  <Skeleton className="h-32 w-full" />
-                ) : (
-                  <BarChart data={spend.bars} tone="accent" summary={`Spend over the last 7 days, ${money(spend.total)} in total`} />
-                )}
-              </CardBody>
-              <CardFooter>
-                <span className="text-xs text-muted">Charged when a task finishes</span>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/billing">Billing</Link>
-                </Button>
-              </CardFooter>
-            </Card>
-
             <Card>
               <CardHeader
                 title="Gateways"

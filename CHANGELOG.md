@@ -3,6 +3,14 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.7 — 2026-10-11
+
+Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.
+
+### Changed
+- **The two Overview pages now lead with the analytics.** The stat tiles run across the top of the big left column with a large chart under them (spend for customers, earnings for providers), and the lists move to the right-hand column: recent tasks and gateways for customers, the machines for providers. The recent tasks there are a compact list (id, state, image, age and charge) instead of the wide table; the full table is still on the Tasks page.
+- **Fixed:** on a phone, a card whose header has a control next to its title (for example the task page's Resource use) squeezed the title to a few letters. The control now wraps under the title.
+
 ## v0.4.6 — 2026-10-11
 
 Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.

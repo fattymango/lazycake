@@ -9,7 +9,7 @@ import { dailyEarnings } from "@/lib/spend";
 import type { LedgerEntry, Node, NodeUsage, ProviderMe } from "@/lib/types";
 import { TrustMeter } from "@/components/TrustMeter";
 import { TrustInfo } from "@/components/TrustInfo";
-import { Split, StatRail } from "@/ui/Split";
+import { Split } from "@/ui/Split";
 import { BarChart } from "@/ui/BarChart";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
@@ -150,49 +150,8 @@ export function Overview() {
       <Split
         main={
           <>
-            <section className="space-y-3" aria-labelledby="machines-h">
-              <div className="flex items-center justify-between">
-                <h2 id="machines-h" className="text-sm font-semibold text-fg">
-                  Machines
-                </h2>
-                {list.length > 0 && <span className="text-xs text-muted">{count(list.length)} registered</span>}
-              </div>
-              {nodes.error && !nodes.data ? (
-                <Card>
-                  <ErrorState title="Couldn't load your machines" message={nodes.error} onRetry={nodes.reload} />
-                </Card>
-              ) : nodes.loading ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4">
-                  {[0, 1, 2].map((i) => (
-                    <Skeleton key={i} className="h-52 rounded-xl" />
-                  ))}
-                </div>
-              ) : list.length === 0 ? (
-                <Card>
-                  <EmptyState
-                    icon={Server}
-                    title="No machines yet"
-                    description="Register a computer and it starts earning whenever a customer's task runs on it. It takes about two minutes."
-                    action={addButton}
-                  />
-                </Card>
-              ) : (
-                <ul className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4">
-                  {list.map((n) => (
-                    <li key={n.id} className="min-w-0">
-                      <MachineCard node={n} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </>
-        }
-        side={
-          <>
-            <StatRail>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
-                compact
                 label="Lifetime earnings"
                 value={money(me.data?.lifetime_earnings_micros)}
                 sub="Across all machines"
@@ -202,7 +161,6 @@ export function Overview() {
                 trend={earnings.total > 0 ? earnings.bars.map((b) => b.value) : undefined}
               />
               <StatCard
-                compact
                 label="Machines online"
                 value={nodes.loading ? "" : `${online.length} / ${list.length}`}
                 sub={
@@ -217,7 +175,6 @@ export function Overview() {
                 loading={nodes.loading}
               />
               <StatCard
-                compact
                 label="Capacity on offer"
                 value={cpu(onlineCores)}
                 sub={`${memory(onlineMem)} RAM, online now`}
@@ -225,7 +182,6 @@ export function Overview() {
                 loading={nodes.loading}
               />
               <StatCard
-                compact
                 label={
                   <>
                     Average trust <TrustInfo />
@@ -237,7 +193,7 @@ export function Overview() {
                 tone={avgTrust === null ? "neutral" : avgTrust >= 0.8 ? "success" : "warning"}
                 loading={nodes.loading}
               />
-            </StatRail>
+            </div>
             {list.length > 0 && (
               <Card>
                 <CardHeader
@@ -256,12 +212,53 @@ export function Overview() {
                     <BarChart
                       data={earnings.bars}
                       tone="success"
+                      heightClass="h-80"
                       summary={`Earnings over the last 14 days, ${money(earnings.total)} in total`}
                     />
                   )}
                 </CardBody>
               </Card>
             )}
+          </>
+        }
+        side={
+          <>
+            <section className="space-y-3" aria-labelledby="machines-h">
+              <div className="flex items-center justify-between">
+                <h2 id="machines-h" className="text-sm font-semibold text-fg">
+                  Machines
+                </h2>
+                {list.length > 0 && <span className="text-xs text-muted">{count(list.length)} registered</span>}
+              </div>
+              {nodes.error && !nodes.data ? (
+                <Card>
+                  <ErrorState title="Couldn't load your machines" message={nodes.error} onRetry={nodes.reload} />
+                </Card>
+              ) : nodes.loading ? (
+                <div className="grid grid-cols-1 gap-4">
+                  {[0, 1, 2].map((i) => (
+                    <Skeleton key={i} className="h-52 rounded-xl" />
+                  ))}
+                </div>
+              ) : list.length === 0 ? (
+                <Card>
+                  <EmptyState
+                    icon={Server}
+                    title="No machines yet"
+                    description="Register a computer and it starts earning whenever a customer's task runs on it. It takes about two minutes."
+                    action={addButton}
+                  />
+                </Card>
+              ) : (
+                <ul className="grid grid-cols-1 gap-4">
+                  {list.map((n) => (
+                    <li key={n.id} className="min-w-0">
+                      <MachineCard node={n} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </>
         }
       />

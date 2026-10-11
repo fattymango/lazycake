@@ -32,8 +32,9 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-start justify-between gap-4 px-5 pb-0 pt-4", className)}>
-      <div className="min-w-0 flex-1">
+    <div className={cn("flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pb-0 pt-4", className)}>
+      {/* The control wraps under the title on a narrow screen rather than squeezing it to nothing. */}
+      <div className="min-w-[min(100%,14rem)] flex-1">
         <h2 className="text-sm font-semibold leading-6 text-fg">{title}</h2>
         {description && <p className="mt-0.5 text-xs leading-5 text-muted">{description}</p>}
       </div>
