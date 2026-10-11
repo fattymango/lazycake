@@ -22,6 +22,7 @@ import { PageHeader } from "@/ui/PageHeader";
 import { GatewayTester } from "./GatewayTest";
 import { DeleteGatewayDialog } from "./DeleteGatewayDialog";
 import { GatewayInstallSteps } from "./GatewayInstallSteps";
+import { GatewaysOverview } from "./GatewaysOverview";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
@@ -278,87 +279,90 @@ export function Gateways() {
           />
         </Card>
       ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-4">
-          {list.map((g) => (
-            <li key={g.id} className="min-w-0">
-              <Card className="flex h-full flex-col">
-                <CardBody className="space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-raised text-muted">
-                        <Network className="size-4" aria-hidden />
+        <>
+          <GatewaysOverview gateways={list} tasks={tasks.data ?? undefined} />
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-4">
+            {list.map((g) => (
+              <li key={g.id} className="min-w-0">
+                <Card className="flex h-full flex-col">
+                  <CardBody className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-raised text-muted">
+                          <Network className="size-4" aria-hidden />
+                        </span>
+                        <h2 className="truncate text-sm font-semibold text-fg">
+                          <Link to={`/gateways/${g.id}`} className="hover:text-accent hover:underline">
+                            {g.label}
+                          </Link>
+                        </h2>
+                      </div>
+                      <span className="flex shrink-0 flex-col items-end gap-1.5">
+                        <ConnectionPill connected={g.connected} size="sm" />
+                        <UpdateNotice kind="gateway" info={g} name={g.label} />
                       </span>
-                      <h2 className="truncate text-sm font-semibold text-fg">
-                        <Link to={`/gateways/${g.id}`} className="hover:text-accent hover:underline">
-                          {g.label}
-                        </Link>
-                      </h2>
                     </div>
-                    <span className="flex shrink-0 flex-col items-end gap-1.5">
-                      <ConnectionPill connected={g.connected} size="sm" />
-                      <UpdateNotice kind="gateway" info={g} name={g.label} />
+
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-muted">Published services</p>
+                      {g.services.length === 0 ? (
+                        <p className="text-xs text-subtle">None</p>
+                      ) : (
+                        <ul className="flex flex-wrap gap-1.5">
+                          {g.services.map((s) => (
+                            <li key={`${s.name}:${s.port}`} className="max-w-full">
+                              <Badge tone="neutral" className="font-mono">
+                                {s.name}:{s.port}
+                              </Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <Link
+                      to={`/gateways/${g.id}`}
+                      className="block rounded-lg border border-border bg-raised/40 p-3 transition-colors hover:bg-raised/70"
+                      aria-label={`Traffic for ${g.label}`}
+                    >
+                      <dl className="grid grid-cols-2 gap-3">
+                        <div className="min-w-0">
+                          <dt className="flex items-center gap-1.5 text-xs text-muted">
+                            <ArrowDownToLine className="size-3.5 text-accent" aria-hidden />
+                            Received from tasks
+                          </dt>
+                          <dd className="mt-0.5 truncate text-sm font-semibold text-fg" data-tnum>
+                            {bytes(g.traffic.received_from_tasks_bytes)}
+                          </dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="flex items-center gap-1.5 text-xs text-muted">
+                            <ArrowUpFromLine className="size-3.5 text-success" aria-hidden />
+                            Sent to tasks
+                          </dt>
+                          <dd className="mt-0.5 truncate text-sm font-semibold text-fg" data-tnum>
+                            {bytes(g.traffic.sent_to_tasks_bytes)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </Link>
+                  </CardBody>
+                  <div className="border-t border-border px-5 py-4">
+                    <GatewayTester gatewayId={g.id} update={<UpdateNotice kind="gateway" info={g} name={g.label} />} />
+                  </div>
+                  <div className="flex-1" aria-hidden />
+                  <CardFooter>
+                    <Identifier value={g.id} className="text-muted" />
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-xs text-subtle">{relativeTime(g.created_at_ms)}</span>
+                      <DeleteGatewayButton gatewayId={g.id} label={g.label} tasks={tasks.data} onClick={() => setDeleting(g)} />
                     </span>
-                  </div>
-
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium text-muted">Published services</p>
-                    {g.services.length === 0 ? (
-                      <p className="text-xs text-subtle">None</p>
-                    ) : (
-                      <ul className="flex flex-wrap gap-1.5">
-                        {g.services.map((s) => (
-                          <li key={`${s.name}:${s.port}`} className="max-w-full">
-                            <Badge tone="neutral" className="font-mono">
-                              {s.name}:{s.port}
-                            </Badge>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  <Link
-                    to={`/gateways/${g.id}`}
-                    className="block rounded-lg border border-border bg-raised/40 p-3 transition-colors hover:bg-raised/70"
-                    aria-label={`Traffic for ${g.label}`}
-                  >
-                    <dl className="grid grid-cols-2 gap-3">
-                      <div className="min-w-0">
-                        <dt className="flex items-center gap-1.5 text-xs text-muted">
-                          <ArrowDownToLine className="size-3.5 text-accent" aria-hidden />
-                          Received from tasks
-                        </dt>
-                        <dd className="mt-0.5 truncate text-sm font-semibold text-fg" data-tnum>
-                          {bytes(g.traffic.received_from_tasks_bytes)}
-                        </dd>
-                      </div>
-                      <div className="min-w-0">
-                        <dt className="flex items-center gap-1.5 text-xs text-muted">
-                          <ArrowUpFromLine className="size-3.5 text-success" aria-hidden />
-                          Sent to tasks
-                        </dt>
-                        <dd className="mt-0.5 truncate text-sm font-semibold text-fg" data-tnum>
-                          {bytes(g.traffic.sent_to_tasks_bytes)}
-                        </dd>
-                      </div>
-                    </dl>
-                  </Link>
-                </CardBody>
-                <div className="border-t border-border px-5 py-4">
-                  <GatewayTester gatewayId={g.id} update={<UpdateNotice kind="gateway" info={g} name={g.label} />} />
-                </div>
-                <div className="flex-1" aria-hidden />
-                <CardFooter>
-                  <Identifier value={g.id} className="text-muted" />
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="text-xs text-subtle">{relativeTime(g.created_at_ms)}</span>
-                    <DeleteGatewayButton gatewayId={g.id} label={g.label} tasks={tasks.data} onClick={() => setDeleting(g)} />
-                  </span>
-                </CardFooter>
-              </Card>
-            </li>
-          ))}
-        </ul>
+                  </CardFooter>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <p className="text-xs leading-5 text-muted">

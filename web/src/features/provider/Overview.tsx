@@ -12,12 +12,12 @@ import { TrustInfo } from "@/components/TrustInfo";
 import { BarChart } from "@/ui/BarChart";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
-import { Card, CardBody, CardHeader } from "@/ui/Card";
+import { Card, CardBody, CardFooter } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { PageHeader } from "@/ui/PageHeader";
 import { Sparkline } from "@/ui/Sparkline";
 import { Skeleton } from "@/ui/Skeleton";
-import { StatCard } from "@/ui/StatCard";
+import { RingGauge } from "@/ui/RingGauge";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { Truncate } from "@/ui/Identifier";
 import { updateLabel } from "@/lib/update";
@@ -146,49 +146,110 @@ export function Overview() {
     <div className="space-y-6">
       <PageHeader title="Overview" description="Your machines, what they're offering, and what they've earned." actions={addButton} />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Lifetime earnings"
-          value={money(me.data?.lifetime_earnings_micros)}
-          sub="Across all machines"
-          icon={Wallet}
-          tone="success"
-          loading={me.loading}
-          trend={earnings.total > 0 ? earnings.bars.map((b) => b.value) : undefined}
-        />
-        <StatCard
-          label="Machines online"
-          value={nodes.loading ? "" : `${online.length} / ${list.length}`}
-          sub={
-            list.length === 0
-              ? "None registered yet"
-              : online.length === list.length
-                ? "All connected"
-                : `${list.length - online.length} offline`
-          }
-          icon={Wifi}
-          tone={online.length > 0 ? "accent" : "neutral"}
-          loading={nodes.loading}
-        />
-        <StatCard
-          label="Capacity on offer"
-          value={cpu(onlineCores)}
-          sub={`${memory(onlineMem)} RAM, online now`}
-          icon={Cpu}
-          loading={nodes.loading}
-        />
-        <StatCard
-          label={
-            <>
-              Average trust <TrustInfo />
-            </>
-          }
-          value={avgTrust === null ? "—" : avgTrust.toFixed(2)}
-          sub={avgTrust === null ? "Builds as machines complete work" : "Out of 1.00"}
-          icon={ShieldCheck}
-          tone={avgTrust === null ? "neutral" : avgTrust >= 0.8 ? "success" : "warning"}
-          loading={nodes.loading}
-        />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card className="flex flex-col">
+          <CardBody className="grid flex-1 gap-6 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+            <div className="min-w-0 space-y-4">
+              <div>
+                <p className="text-xs font-medium text-muted">Lifetime earnings</p>
+                {me.loading ? (
+                  <Skeleton className="mt-2 h-10 w-40" />
+                ) : (
+                  <p className="mt-1 truncate text-4xl font-semibold tracking-tight text-fg" data-tnum>
+                    {money(me.data?.lifetime_earnings_micros)}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted">Across all machines</p>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Wallet className="size-4 text-success" aria-hidden />
+                <span className="text-muted">Earned, last 14 days</span>
+                <span className="ml-auto font-semibold text-fg" data-tnum>
+                  {ledger.loading ? "…" : money(earnings.total)}
+                </span>
+              </div>
+            </div>
+            <div className="min-w-0">
+              {ledger.loading ? (
+                <Skeleton className="h-36 w-full" />
+              ) : (
+                <BarChart
+                  data={earnings.bars}
+                  tone="success"
+                  heightClass="h-36"
+                  summary={`Earnings over the last 14 days, ${money(earnings.total)} in total`}
+                />
+              )}
+            </div>
+          </CardBody>
+          <CardFooter>
+            <span className="text-xs text-muted">Credited when a task finishes on one of your machines</span>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/earnings">Earnings</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardBody className="flex flex-1 flex-wrap items-center gap-x-8 gap-y-4">
+            {nodes.loading ? (
+              <Skeleton className="size-28 rounded-full" />
+            ) : (
+              <RingGauge
+                value={list.length ? online.length / list.length : null}
+                tone={
+                  list.length === 0 ? "neutral" : online.length === list.length ? "success" : online.length === 0 ? "danger" : "warning"
+                }
+                center={
+                  <div>
+                    <p className="text-2xl font-semibold leading-7 text-fg" data-tnum>
+                      {online.length} / {list.length}
+                    </p>
+                    <p className="text-2xs text-muted">online</p>
+                  </div>
+                }
+                summary={`${online.length} of ${list.length} machines online`}
+              />
+            )}
+            <dl className="min-w-0 flex-1 space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="flex items-center gap-2 text-muted">
+                  <Wifi className="size-4 text-accent" aria-hidden />
+                  Machines
+                </dt>
+                <dd className="text-fg" data-tnum>
+                  {nodes.loading
+                    ? "…"
+                    : list.length === 0
+                      ? "None registered"
+                      : online.length === list.length
+                        ? "All connected"
+                        : `${list.length - online.length} offline`}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="flex items-center gap-2 text-muted">
+                  <Cpu className="size-4" aria-hidden />
+                  On offer now
+                </dt>
+                <dd className="text-fg" data-tnum>
+                  {nodes.loading ? "…" : `${cpu(onlineCores)} · ${memory(onlineMem)}`}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="flex items-center gap-2 text-muted">
+                  <ShieldCheck className="size-4 text-success" aria-hidden />
+                  <span className="inline-flex items-center gap-1.5">
+                    Average trust <TrustInfo />
+                  </span>
+                </dt>
+                <dd className="font-semibold text-fg" data-tnum>
+                  {nodes.loading ? "…" : avgTrust === null ? "—" : `${avgTrust.toFixed(2)} / 1.00`}
+                </dd>
+              </div>
+            </dl>
+          </CardBody>
+        </Card>
       </div>
 
       <section className="space-y-3" aria-labelledby="machines-h">
@@ -227,32 +288,6 @@ export function Overview() {
           </ul>
         )}
       </section>
-
-      {list.length > 0 && (
-        <Card>
-          <CardHeader
-            title="Earnings"
-            description="Last 14 days"
-            action={
-              <span className="text-sm font-semibold text-fg" data-tnum>
-                {money(earnings.total)}
-              </span>
-            }
-          />
-          <CardBody>
-            {ledger.loading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : (
-              <BarChart
-                data={earnings.bars}
-                tone="success"
-                heightClass="h-44"
-                summary={`Earnings over the last 14 days, ${money(earnings.total)} in total`}
-              />
-            )}
-          </CardBody>
-        </Card>
-      )}
     </div>
   );
 }

@@ -3,6 +3,16 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.10 — 2026-10-11
+
+Dashboard only (the coordinator carries it); agents and gateways are unchanged, so they are not rebuilt or restarted for this release.
+
+### Changed
+- **The provider Overview gets the same treatment as the customer one.** The four tiles become two cards: lifetime earnings, the last 14 days and the earnings chart together (the chart moves up from the bottom), and a fleet card with a ring of how many machines are online, what is on offer right now and the average trust. The machines follow at full width.
+
+### Added
+- **The Gateways page opens with analytics.** A traffic card shows everything received from and sent to tasks through all gateways, with a bar per gateway ranking the busiest ones (only gateways that moved data are listed, the rest are summed up in one line); a status card shows a ring of how many gateways are connected, how many services they publish and how many unfinished tasks are using them right now.
+
 ## v0.4.9 — 2026-10-11
 
 Dashboard only (the coordinator carries it); agents and gateways are unchanged, so they are not rebuilt or restarted for this release and will read "Update available" until the next release that changes them.
