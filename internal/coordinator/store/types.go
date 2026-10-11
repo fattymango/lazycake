@@ -321,6 +321,29 @@ type TrafficPoint struct {
 	BytesToTask  int64
 }
 
+// TaskSummary is an account's task counts over ALL of its tasks, not just the newest page: the dashboard's Overview and gateway pages
+// must not compute "running" or "finished" from a capped list (a backlog of 200 queued tasks hid every running and finished one).
+type TaskSummary struct {
+	// ByState counts every task by state.
+	ByState map[TaskState]int
+	// RunningCores is the cores held by tasks that are dispatched or running.
+	RunningCores float64
+	// Finished is the outcome of the newest tasks that are no longer active, newest first (at most the requested number).
+	Finished []TaskState
+	// UsingGateways counts unfinished tasks that use at least one gateway.
+	UsingGateways int
+	// Gateways holds, per gateway the account's tasks ever used: unfinished tasks by kind and the newest task that used it.
+	Gateways map[string]GatewayTaskSummary
+}
+
+// GatewayTaskSummary is what the account's tasks are doing with one gateway.
+type GatewayTaskSummary struct {
+	Running      int // dispatched or running
+	Queued       int // queued or reserved
+	LastTaskID   string
+	LastTaskAtMS int64 // when that task was submitted
+}
+
 // GatewaySamplePoint is what one gateway moved in one 10-second bin, summed over the tasks that used it.
 type GatewaySamplePoint struct {
 	GatewayID    string

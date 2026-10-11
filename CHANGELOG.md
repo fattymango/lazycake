@@ -3,6 +3,20 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.14 — 2026-10-11
+
+Coordinator only; agents and gateways are unchanged and are not rebuilt or restarted.
+
+### Fixed
+- **A machine is filled faster and is no longer sent work it has no room for.** The scheduler learned a machine's free capacity only from the agent's next report, so it kept sending work to a machine it had just filled and the agent turned it away ("does not fit free capacity"): in the production load test about a quarter of all dispatches (29 of 107 in six minutes) were rejected and put back in the queue with a 30-second cool-down. It also gave a machine one task per second, so a machine that freed many cores at once refilled slowly. The scheduler now subtracts every task it dispatches from the machine's free capacity straight away (the agent's next report still corrects it) and keeps placing tasks on a machine within the same second for as long as they fit.
+
+- **The Overview counted tasks from the newest 200 only.** With a long queue the "Running now", "In the queue" and "Finished" figures and the success ring were wrong: 200 queued tasks filled the list, so it read "0 running, nothing finished" and a queue of "200" however long it really was (288 queued, 12 running and 455 finished in the load test). The counts now come from the server over all of an account's tasks. The same fix applies on the Gateways pages: tasks using gateways now, a gateway's running and queued tasks, its last task, and whether it can be deleted.
+
+- The load-test tool's report called "tasks created in the last 3 hours" `db_errors`; it is now `tasks_created_last_3h`. The run itself is written up in `docs/LOAD_TEST_2026-10-11.md`.
+
+### Good to know (not a change)
+- Cores are reserved by what a task asked for, not by how much CPU it uses at that moment, so a machine can be "full" for the scheduler while the CPU graphs show spare room: tasks that sleep, wait for the network or are mostly idle reserve more than they burn. In the load test the PC had 8 of 8 cores reserved while its tasks used 5.0, and the VM 3.5 of 4 reserved for 1.0 used.
+
 ## v0.4.13 — 2026-10-11
 
 Coordinator only; agents and gateways are unchanged and are not rebuilt or restarted.

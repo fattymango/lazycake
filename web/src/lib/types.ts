@@ -132,6 +132,22 @@ export interface GatewayRate {
   gateways: ({ id: string; max_mbps: number | null } & BandwidthPair)[];
 }
 
+/** GET /customer/tasks/summary: counts over ALL of the account's tasks (the task list is only the newest 200). */
+export interface TaskSummary {
+  by_state: Record<string, number>;
+  /** Dispatched plus running. */
+  running: number;
+  /** Queued plus reserved. */
+  queued: number;
+  running_cores: number;
+  /** How many of the newest finished tasks were looked at (at most 50) and how many of them succeeded. */
+  finished: number;
+  finished_succeeded: number;
+  /** Unfinished tasks that use at least one gateway. */
+  using_gateways: number;
+  gateways: Record<string, { running: number; queued: number; last_task_id?: string; last_task_at_ms?: number }>;
+}
+
 export interface GatewayTraffic {
   range: "7d" | "30d";
   step: "hour" | "day";

@@ -86,6 +86,8 @@ type Tasks interface {
 	// task 7.3's customer portal task history - nobody sees another
 	// account's tasks through it.
 	ListTasksByAccount(ctx context.Context, accountID string, limit int) ([]Task, error)
+	// AccountTaskSummary counts accountID's tasks over all of them (see TaskSummary); finishedWindow bounds how many recent outcomes it returns.
+	AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (TaskSummary, error)
 
 	// ClaimQueuedTask atomically picks one queued task matching filter,
 	// moves it to 'reserved' with the given node and lease, and returns it.

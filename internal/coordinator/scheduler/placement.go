@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/fattymango/lazycake/internal/coordinator/events"
@@ -63,9 +64,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if s.maybeDispatchCanary(ctx, n) {
 			continue
 		}
-		if err := s.tryPlaceOne(ctx, n); err != nil && err != store.ErrNoTask {
-			s.Log.Error("placing task", "node_id", n.ID, "error", err)
-		}
+		s.fillNode(ctx, n)
 	}
 }
 
@@ -83,7 +82,44 @@ func (s *Scheduler) noteBan(nodeID string, banned bool) (changed bool) {
 	return true
 }
 
-func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
+// maxPlacementsPerTick bounds how many tasks one node is given in a single tick. A node that has just freed many cores (a batch of short
+// tasks ending together) was refilled at one task a second; now it is refilled as fast as tasks fit, within this bound.
+const maxPlacementsPerTick = 16
+
+// fillNode places queued tasks on one node until none fits or the per-tick bound is reached. Each dispatch is subtracted from the node's
+// free capacity as it goes (see reserveFree), so this never offers the node more than it has.
+func (s *Scheduler) fillNode(ctx context.Context, n store.Node) {
+	for i := 0; i < maxPlacementsPerTick; i++ {
+		placed, err := s.tryPlaceOne(ctx, n)
+		if err != nil && err != store.ErrNoTask {
+			s.Log.Error("placing task", "node_id", n.ID, "error", err)
+			return
+		}
+		if !placed {
+			return
+		}
+	}
+}
+
+// reserveFree takes a dispatched task's limits off the node's free capacity right away. Until now the scheduler only learned a node's free
+// capacity from the agent's next report, so it kept dispatching to a node it had just filled and the agent turned the work away ("does not fit
+// free capacity"): about a quarter of dispatches in the production load test. The agent's next report overwrites this with the truth.
+func (s *Scheduler) reserveFree(n store.Node, lim store.Limits) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.freeCap[n.ID]
+	if !ok {
+		f = store.CapacityFilter{FreeCores: n.OfferCores, FreeMemoryMB: n.OfferMemoryMB, FreeDiskMB: n.OfferDiskMB}
+	}
+	f.FreeCores = math.Max(0, f.FreeCores-lim.CPUCores)
+	f.FreeMemoryMB = max(0, f.FreeMemoryMB-lim.MemoryMB)
+	f.FreeDiskMB = max(0, f.FreeDiskMB-lim.DiskMB)
+	s.freeCap[n.ID] = f
+}
+
+// tryPlaceOne claims one queued task that fits the node and dispatches it. It reports whether a task was actually dispatched: a task that
+// was put back (cooldown, cold-pull cap, hold or send failure) is not a placement, and the caller must not keep claiming after it.
+func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) (bool, error) {
 	filter := store.CapacityFilter{
 		Arch:         n.Arch,
 		Isolations:   isolationsFor(n),
@@ -95,11 +131,11 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	requeueAfter := s.now().Add(time.Duration(s.LeaseS)*time.Second + leaseMargin)
 	task, err := s.Store.ClaimQueuedTask(ctx, n.ID, filter, requeueAfter)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if s.inCooldown(n.ID, task.ID) {
-		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
+		return false, s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	// Fleet-wide cold-pull cap (task 5.4): if this node doesn't already
@@ -114,7 +150,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 	}
 	if !warm && !s.ColdPull.TryStart(digest, n.ID) {
 		s.Log.Info("deferring dispatch, fleet-wide cold-pull cap reached", "node_id", n.ID, "task_id", task.ID, "digest", digest)
-		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
+		return false, s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	// Deduct a hold at dispatch (task 4.5), before the task is actually
@@ -129,7 +165,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		if !warm {
 			s.ColdPull.Finish(digest, n.ID)
 		}
-		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
+		return false, s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	msg, err := s.dispatchMessage(ctx, task, requeueAfter.Add(-leaseMargin))
@@ -138,7 +174,7 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		if !warm {
 			s.ColdPull.Finish(digest, n.ID)
 		}
-		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
+		return false, s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 	if err := s.Dispatch.Send(n.ID, msg); err != nil {
 		s.Log.Warn("dispatch send failed, requeueing", "node_id", n.ID, "task_id", task.ID, "error", err)
@@ -159,15 +195,16 @@ func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) error {
 		if err := s.Store.SetNodeConnected(ctx, n.ID, false); err != nil {
 			s.Log.Warn("marking stale node disconnected", "node_id", n.ID, "error", err)
 		}
-		return s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
+		return false, s.Store.ReleaseReservedTask(ctx, task.ID, []store.TaskState{store.TaskReserved})
 	}
 
 	if err := s.Store.TransitionTask(ctx, task.ID, []store.TaskState{store.TaskReserved}, store.TaskDispatched, store.TaskUpdate{}); err != nil {
-		return fmt.Errorf("marking task dispatched: %w", err)
+		return false, fmt.Errorf("marking task dispatched: %w", err)
 	}
 	s.Log.Info("task dispatched", "task_id", task.ID, "node_id", n.ID, "image", task.Image)
 	s.Bus.Publish(events.Event{Type: "task_state", AtMS: s.now().UnixMilli(), AccountID: task.AccountID, TaskID: task.ID, NodeID: n.ID, State: string(store.TaskDispatched)})
-	return nil
+	s.reserveFree(n, task.Limits)
+	return true, nil
 }
 
 // maybeDispatchCanary implements task 5.2's injection half: with

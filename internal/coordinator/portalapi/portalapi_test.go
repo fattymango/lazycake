@@ -1272,3 +1272,68 @@ func TestGatewayRateEndpointReadsTheRecordedBinsAndStaysInTheAccount(t *testing.
 	require.Equal(t, http.StatusNotFound, c.do(http.MethodGet, "/api/portal/customer/gateways/rate?gateway=gw_other", nil).StatusCode)
 	_ = mine
 }
+
+// A backlog hid everything older from the dashboard: the task list is the newest 200, so with 250 queued tasks the Overview showed "0 running" and
+// "no finished tasks". The summary counts all of the account's tasks.
+func TestTaskSummaryCountsEveryTaskNotJustTheNewestPage(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	me := signUpCustomer(t, c, "backlog")
+	gw := createGatewayForTest(t, c, "gw", gatewayServiceView{Name: "db", Port: 5432})
+	require.NoError(t, st.CreateAccount(context.Background(), store.Account{ID: "act_other", Name: "other"}))
+
+	n := 0
+	mk := func(account string, state store.TaskState, cores float64, gateways ...string) string {
+		n++
+		id := fmt.Sprintf("tsk_sum_%04d", n)
+		require.NoError(t, st.CreateTask(context.Background(), store.Task{
+			ID: id, AccountID: account, State: state, Image: "x", GatewayIDs: gateways,
+			Limits:       store.Limits{CPUCores: cores, MemoryMB: 128, DiskMB: 500},
+			Requirements: store.Requirements{Arch: "amd64", Isolation: "podman"},
+			Delivery:     store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+		}))
+		return id
+	}
+	// oldest first: 10 failed (outside the last-50 window), 50 succeeded, then 3 running (2 on the gateway), 1 dispatched, then a 250-task backlog on top
+	for i := 0; i < 10; i++ {
+		mk(me.AccountID, store.TaskFailed, 1)
+	}
+	for i := 0; i < 50; i++ {
+		mk(me.AccountID, store.TaskSucceeded, 1)
+	}
+	mk(me.AccountID, store.TaskRunning, 1, gw)
+	mk(me.AccountID, store.TaskRunning, 2, gw)
+	mk(me.AccountID, store.TaskRunning, 0.5)
+	mk(me.AccountID, store.TaskDispatched, 0.25)
+	var lastOnGW string
+	for i := 0; i < 250; i++ {
+		if i == 249 {
+			lastOnGW = mk(me.AccountID, store.TaskQueued, 1, gw)
+		} else {
+			mk(me.AccountID, store.TaskQueued, 1)
+		}
+	}
+	mk("act_other", store.TaskRunning, 8, gw) // someone else's: never counted
+
+	// The cause: the list is the newest 200, and every one of them is queued.
+	list := decodeBody[[]taskView](t, c.do(http.MethodGet, "/api/portal/customer/tasks", nil))
+	require.Len(t, list, 200)
+	for _, tv := range list {
+		require.Equal(t, "queued", tv.State)
+	}
+
+	resp := c.do(http.MethodGet, "/api/portal/customer/tasks/summary", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	sum := decodeBody[taskSummaryResponse](t, resp)
+	require.Equal(t, 4, sum.Running, "3 running + 1 dispatched, although none is in the newest 200")
+	require.Equal(t, 250, sum.Queued)
+	require.InDelta(t, 3.75, sum.RunningCores, 0.001)
+	require.Equal(t, 10, sum.ByState["failed"])
+	require.Equal(t, 50, sum.ByState["succeeded"])
+	require.Equal(t, 50, sum.Finished, "the success rate looks at the newest 50 finished tasks")
+	require.Equal(t, 50, sum.FinishedSucceeded, "the 10 older failures are outside that window")
+	require.Equal(t, 3, sum.UsingGateways, "2 running + 1 queued task use the gateway among unfinished ones")
+	g := sum.Gateways[gw]
+	require.Equal(t, 2, g.Running)
+	require.Equal(t, 1, g.Queued)
+	require.Equal(t, lastOnGW, g.LastTaskID, "the newest task that used the gateway, even one far from the list")
+}

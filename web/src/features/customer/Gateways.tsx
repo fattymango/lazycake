@@ -3,13 +3,12 @@ import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, Network, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
-import { gatewayActivity } from "@/lib/gatewayActivity";
 import { bandwidthLimit } from "@/lib/gatewayLimit";
 import { bytes, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
-import type { CreateGatewayResponse, Gateway, Task } from "@/lib/types";
+import type { CreateGatewayResponse, Gateway } from "@/lib/types";
 import { Alert } from "@/ui/Alert";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
@@ -26,6 +25,7 @@ import { GatewayInstallSteps } from "./GatewayInstallSteps";
 import { GatewaysOverview } from "./GatewaysOverview";
 import { bitrate } from "@/lib/bitrate";
 import { useGatewayRate } from "@/lib/hooks/useGatewayRate";
+import { useTaskSummary } from "@/lib/hooks/useTaskSummary";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
@@ -203,19 +203,7 @@ function CreateGatewayDialog({
 }
 
 /** Delete is offered only while nothing unfinished uses the gateway (the server enforces it too). */
-export function DeleteGatewayButton({
-  gatewayId,
-  label,
-  tasks,
-  onClick,
-}: {
-  gatewayId: string;
-  label: string;
-  tasks: Task[] | null | undefined;
-  onClick: () => void;
-}) {
-  const a = gatewayActivity(tasks ?? [], gatewayId);
-  const inUse = a.running.length + a.queued.length;
+export function DeleteGatewayButton({ label, inUse, onClick }: { label: string; inUse: number; onClick: () => void }) {
   const reason = inUse > 0 ? `${inUse} task${inUse === 1 ? "" : "s"} running or queued on it` : null;
   return (
     <Button
@@ -236,13 +224,12 @@ export function Gateways() {
   const gateways = useAsync((s) => apiGet<Gateway[]>("/api/portal/customer/gateways", s), []);
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState<Gateway | null>(null);
-  const tasks = useAsync((s) => apiGet<Task[]>("/api/portal/customer/tasks", s), []);
   const rate = useGatewayRate();
+  const summary = useTaskSummary();
   // Poll faster while the setup dialog is open so "Connected" appears as soon as the gateway calls in.
   useInterval(
     () => {
       gateways.reload();
-      tasks.reload();
     },
     open ? 3_000 : 15_000
   );
@@ -284,7 +271,7 @@ export function Gateways() {
         </Card>
       ) : (
         <>
-          <GatewaysOverview gateways={list} tasks={tasks.data ?? undefined} rate={rate.data} />
+          <GatewaysOverview gateways={list} using={summary.data?.using_gateways} rate={rate.data} />
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-4">
             {list.map((g) => (
               <li key={g.id} className="min-w-0">
@@ -379,7 +366,11 @@ export function Gateways() {
                     <Identifier value={g.id} className="text-muted" />
                     <span className="flex shrink-0 items-center gap-2">
                       <span className="text-xs text-subtle">{relativeTime(g.created_at_ms)}</span>
-                      <DeleteGatewayButton gatewayId={g.id} label={g.label} tasks={tasks.data} onClick={() => setDeleting(g)} />
+                      <DeleteGatewayButton
+                        label={g.label}
+                        inUse={(summary.data?.gateways[g.id]?.running ?? 0) + (summary.data?.gateways[g.id]?.queued ?? 0)}
+                        onClick={() => setDeleting(g)}
+                      />
                     </span>
                   </CardFooter>
                 </Card>

@@ -4,6 +4,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Plug } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import { bytes, count, dateTime, relativeTime, shortDateTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
+import { useTaskSummary } from "@/lib/hooks/useTaskSummary";
 import { useInterval } from "@/lib/hooks/useInterval";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { gatewayActivity, lastTrafficAtMs } from "@/lib/gatewayActivity";
@@ -51,6 +52,7 @@ export function GatewayDetail() {
     [id, range]
   );
   const tasks = useAsync((s) => apiGet<Task[]>("/api/portal/customer/tasks", s), []);
+  const summary = useTaskSummary();
   useInterval(() => {
     // Once deleted the gateway disappears from the list: don't let a refresh swap this page for "not found" under the open dialog.
     if (deleting) return;
@@ -85,6 +87,7 @@ export function GatewayDetail() {
   if (traffic.error && !traffic.data)
     return <ErrorState title="Couldn't load this gateway's traffic" message={traffic.error} onRetry={traffic.reload} />;
 
+  const mine = summary.data?.gateways[id]; // counts and "last task" come from the server over all tasks, not from the capped newest-200 list
   const active = [...activity.running, ...activity.queued];
   const lastTraffic = lastTrafficAtMs(traffic.data?.series);
   const totals = traffic.data?.totals ?? gw?.traffic;
@@ -145,7 +148,9 @@ export function GatewayDetail() {
         }
         actions={
           <div className="flex items-center gap-2">
-            {gw && <DeleteGatewayButton gatewayId={gw.id} label={gw.label} tasks={tasks.data} onClick={() => setDeleting(true)} />}
+            {gw && (
+              <DeleteGatewayButton label={gw.label} inUse={(mine?.running ?? 0) + (mine?.queued ?? 0)} onClick={() => setDeleting(true)} />
+            )}
             <Segmented<Range>
               label="Period"
               value={range}
@@ -295,21 +300,21 @@ export function GatewayDetail() {
                       },
                       {
                         label: "Last task",
-                        value: tasks.loading ? (
+                        value: summary.loading ? (
                           "…"
-                        ) : activity.lastTask ? (
+                        ) : mine?.last_task_id ? (
                           <span className="flex flex-wrap items-center gap-2">
-                            <Link to={`/tasks/${activity.lastTask.id}`} className="text-accent hover:underline">
-                              <Identifier value={activity.lastTask.id} />
+                            <Link to={`/tasks/${mine.last_task_id}`} className="text-accent hover:underline">
+                              <Identifier value={mine.last_task_id} />
                             </Link>
-                            <span className="text-muted">{relativeTime(activity.lastTaskAtMs)}</span>
+                            <span className="text-muted">{relativeTime(mine.last_task_at_ms)}</span>
                           </span>
                         ) : (
-                          "None among your recent tasks"
+                          "No task has used it yet"
                         ),
                       },
-                      { label: "Running tasks", value: <span data-tnum>{tasks.loading ? "…" : count(activity.running.length)}</span> },
-                      { label: "Queued tasks", value: <span data-tnum>{tasks.loading ? "…" : count(activity.queued.length)}</span> },
+                      { label: "Running tasks", value: <span data-tnum>{summary.loading ? "…" : count(mine?.running ?? 0)}</span> },
+                      { label: "Queued tasks", value: <span data-tnum>{summary.loading ? "…" : count(mine?.queued ?? 0)}</span> },
                     ]}
                   />
                 </CardBody>

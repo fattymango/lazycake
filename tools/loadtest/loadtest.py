@@ -383,7 +383,7 @@ def main():
     report["unexpected_failure_count"] = len(unexpected)
     snapshot("after")
     report["trust_after"] = node_trust()
-    report["db_errors"] = db("select count(*) from tasks where created_at > now() - interval '3 hours'")
+    report["tasks_created_last_3h"] = db("select count(*) from tasks where created_at > now() - interval '3 hours'")  # (this was misnamed "db_errors")
     report["coordinator_log_warn_error_counts"] = ssh(
         "journalctl -u lazycake-coordinator --since '70 minutes ago' --no-pager -o cat 2>/dev/null | grep -oE 'level=(WARN|ERROR)' | sort | uniq -c | tr '\\n' ' '", 60
     )

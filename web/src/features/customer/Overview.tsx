@@ -4,6 +4,7 @@ import { apiGet } from "@/lib/api";
 import { count, cpu, money } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useLiveReload } from "@/lib/hooks/useLiveReload";
+import { useTaskSummary } from "@/lib/hooks/useTaskSummary";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { dailySpend } from "@/lib/spend";
 import { costByTask } from "@/lib/tasks";
@@ -16,7 +17,6 @@ import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
 import { RingGauge } from "@/ui/RingGauge";
-import { isActiveState } from "@/ui/status";
 
 export function Overview() {
   usePageTitle("Overview");
@@ -33,17 +33,22 @@ export function Overview() {
     (e) => e.type === "task_state" || e.type === "balance"
   );
 
+  // The card counts come from the server over every task: the list above is only the newest 200 and, with a backlog, holds no running or
+  // finished task at all.
+  const summary = useTaskSummary();
   const all = tasks.data ?? [];
-  const running = all.filter((t) => t.state === "running" || t.state === "dispatched");
-  const queued = all.filter((t) => t.state === "queued" || t.state === "reserved");
-  const finished = all.filter((t) => !isActiveState(t.state)).slice(0, 50);
-  const succeeded = finished.filter((t) => t.state === "succeeded").length;
-  const rate = finished.length ? Math.round((succeeded / finished.length) * 100) : null;
-  const coresInUse = running.reduce((n, t) => n + t.cores, 0);
+  const sm = summary.data;
+  const running = sm?.running ?? 0;
+  const queued = sm?.queued ?? 0;
+  const finishedCount = sm?.finished ?? 0;
+  const succeeded = sm?.finished_succeeded ?? 0;
+  const rate = finishedCount ? Math.round((succeeded / finishedCount) * 100) : null;
+  const coresInUse = sm?.running_cores ?? 0;
   const costs = costByTask(ledger.data);
   const spend = dailySpend(ledger.data, 7);
 
   const loading = tasks.loading;
+  const countsLoading = summary.loading;
   const hasError = tasks.error && !tasks.data;
 
   return (
@@ -111,7 +116,7 @@ export function Overview() {
 
         <Card className="flex flex-col">
           <CardBody className="flex flex-1 flex-wrap items-center gap-x-8 gap-y-4">
-            {loading ? (
+            {countsLoading ? (
               <Skeleton className="size-28 rounded-full" />
             ) : (
               <RingGauge
@@ -125,9 +130,7 @@ export function Overview() {
                     <p className="text-2xs text-muted">succeeded</p>
                   </div>
                 }
-                summary={
-                  rate === null ? "No finished tasks yet" : `${rate} percent of the last ${finished.length} finished tasks succeeded`
-                }
+                summary={rate === null ? "No finished tasks yet" : `${rate} percent of the last ${finishedCount} finished tasks succeeded`}
               />
             )}
             <dl className="min-w-0 flex-1 space-y-3 text-sm">
@@ -137,8 +140,8 @@ export function Overview() {
                   Running now
                 </dt>
                 <dd className="font-semibold text-fg" data-tnum>
-                  {loading ? "…" : count(running.length)}
-                  {running.length > 0 && <span className="ml-2 text-xs font-normal text-muted">{cpu(coresInUse)} in use</span>}
+                  {countsLoading ? "…" : count(running)}
+                  {running > 0 && <span className="ml-2 text-xs font-normal text-muted">{cpu(coresInUse)} in use</span>}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-3">
@@ -147,7 +150,7 @@ export function Overview() {
                   In the queue
                 </dt>
                 <dd className="font-semibold text-fg" data-tnum>
-                  {loading ? "…" : count(queued.length)}
+                  {countsLoading ? "…" : count(queued)}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-3">
@@ -156,7 +159,7 @@ export function Overview() {
                   Finished
                 </dt>
                 <dd className="text-fg" data-tnum>
-                  {loading ? "…" : rate === null ? "None yet" : `${succeeded} of last ${finished.length}`}
+                  {countsLoading ? "…" : rate === null ? "None yet" : `${succeeded} of last ${finishedCount}`}
                 </dd>
               </div>
             </dl>

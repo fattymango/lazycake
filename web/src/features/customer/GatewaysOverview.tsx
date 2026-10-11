@@ -4,7 +4,7 @@ import { bytes, count } from "@/lib/format";
 import { gatewayTotals } from "@/lib/gatewayTotals";
 import { bitrate } from "@/lib/bitrate";
 import { LiveDot } from "@/components/LiveBandwidth";
-import type { Gateway, GatewayRate, Task } from "@/lib/types";
+import type { Gateway, GatewayRate } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { RingGauge } from "@/ui/RingGauge";
 import { Truncate } from "@/ui/Identifier";
@@ -12,15 +12,16 @@ import { Truncate } from "@/ui/Identifier";
 /** What the gateways page opens with: how much moved through them and which carry it, and how many are up. */
 export function GatewaysOverview({
   gateways,
-  tasks,
+  using,
   rate,
 }: {
   gateways: Gateway[];
-  tasks: Task[] | undefined;
+  /** Unfinished tasks using any gateway, counted by the server over all tasks. */
+  using: number | undefined;
   rate: GatewayRate | undefined;
 }) {
   const nowBps = rate ? rate.now.received_from_tasks_bps + rate.now.sent_to_tasks_bps : null;
-  const t = gatewayTotals(gateways, tasks ?? []);
+  const t = gatewayTotals(gateways);
   const max = t.ranked[0]?.total ?? 0;
   const withTraffic = t.ranked.filter((r) => r.total > 0);
   const top = withTraffic.slice(0, 6);
@@ -151,7 +152,7 @@ export function GatewaysOverview({
                 Tasks using them now
               </dt>
               <dd className="font-semibold text-fg" data-tnum>
-                {tasks ? count(t.using) : "…"}
+                {using === undefined ? "…" : count(using)}
               </dd>
             </div>
           </dl>

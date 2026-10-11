@@ -368,3 +368,79 @@ func (s *PostgresStore) ListCancelRequested(ctx context.Context) ([]Task, error)
 	}
 	return out, rows.Err()
 }
+
+func (s *PostgresStore) AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (TaskSummary, error) {
+	sum := TaskSummary{ByState: map[TaskState]int{}, Gateways: map[string]GatewayTaskSummary{}}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT state::text, count(*), COALESCE(sum(cpu_cores) FILTER (WHERE state IN ('dispatched','running')), 0)::float8
+		FROM tasks WHERE account_id = $1 GROUP BY state`, accountID)
+	if err != nil {
+		return sum, fmt.Errorf("counting tasks: %w", err)
+	}
+	for rows.Next() {
+		var st string
+		var n int
+		var cores float64
+		if err := rows.Scan(&st, &n, &cores); err != nil {
+			rows.Close()
+			return sum, fmt.Errorf("scanning task counts: %w", err)
+		}
+		sum.ByState[TaskState(st)] = n
+		sum.RunningCores += cores
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return sum, err
+	}
+
+	frows, err := s.pool.Query(ctx, `
+		SELECT state::text FROM tasks
+		WHERE account_id = $1 AND state NOT IN ('queued','reserved','dispatched','running')
+		ORDER BY created_at DESC LIMIT $2`, accountID, finishedWindow)
+	if err != nil {
+		return sum, fmt.Errorf("reading recent outcomes: %w", err)
+	}
+	for frows.Next() {
+		var st string
+		if err := frows.Scan(&st); err != nil {
+			frows.Close()
+			return sum, err
+		}
+		sum.Finished = append(sum.Finished, TaskState(st))
+	}
+	frows.Close()
+	if err := frows.Err(); err != nil {
+		return sum, err
+	}
+
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM tasks
+		WHERE account_id = $1 AND cardinality(gateway_ids) > 0 AND state IN ('queued','reserved','dispatched','running')`,
+		accountID).Scan(&sum.UsingGateways); err != nil {
+		return sum, fmt.Errorf("counting tasks using gateways: %w", err)
+	}
+
+	grows, err := s.pool.Query(ctx, `
+		SELECT gid,
+		       count(*) FILTER (WHERE state IN ('dispatched','running')),
+		       count(*) FILTER (WHERE state IN ('queued','reserved')),
+		       (array_agg(id ORDER BY created_at DESC))[1],
+		       (extract(epoch FROM max(created_at)) * 1000)::bigint
+		FROM tasks, unnest(gateway_ids) AS gid
+		WHERE account_id = $1
+		GROUP BY gid`, accountID)
+	if err != nil {
+		return sum, fmt.Errorf("summarising gateway use: %w", err)
+	}
+	defer grows.Close()
+	for grows.Next() {
+		var gid string
+		var g GatewayTaskSummary
+		if err := grows.Scan(&gid, &g.Running, &g.Queued, &g.LastTaskID, &g.LastTaskAtMS); err != nil {
+			return sum, fmt.Errorf("scanning gateway use: %w", err)
+		}
+		sum.Gateways[gid] = g
+	}
+	return sum, grows.Err()
+}
