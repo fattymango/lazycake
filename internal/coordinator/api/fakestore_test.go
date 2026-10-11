@@ -812,6 +812,10 @@ func (f *fakeStore) GatewayBusiestTasks(ctx context.Context, gatewayID string, s
 	return nil, nil
 }
 
+func (f *fakeStore) GatewaySamples(ctx context.Context, accountID, gatewayID string, since time.Time) ([]store.GatewaySamplePoint, error) {
+	return nil, nil
+}
+
 func (f *fakeStore) TaskGatewayUsage(ctx context.Context, taskID string) ([]store.TaskGatewayTraffic, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

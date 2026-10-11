@@ -25,6 +25,7 @@ import { ConnectionPill, TaskStatusPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
 import { LineChart, type ChartSeries } from "@/ui/LineChart";
 import { Split, StatRail } from "@/ui/Split";
+import { LiveBandwidthCard } from "@/components/LiveBandwidth";
 import { TrafficLegend } from "./TrafficLegend";
 import { DeleteGatewayDialog } from "./DeleteGatewayDialog";
 import { DeleteGatewayButton } from "./Gateways";
@@ -161,6 +162,8 @@ export function GatewayDetail() {
       <Split
         main={
           <>
+            {gw && <LiveBandwidthCard gatewayId={gw.id} />}
+
             <Card>
               <CardHeader
                 title="Traffic over time"

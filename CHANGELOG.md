@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.13 — 2026-10-11
+
+Coordinator only; agents and gateways are unchanged and are not rebuilt or restarted.
+
+### Added
+- **Live bandwidth for gateways.** The gateway page opens with a Live bandwidth card: how much the gateway is moving right now (both directions together, and each on its own), the busiest 10 seconds of the last five minutes, a gauge against the gateway's own limit when it has one, and a five-minute chart with the limit drawn as a dashed line. The Gateways page shows the total moving right now in its overview card and a "Right now" line on every gateway card. It refreshes every five seconds. The figures are the gateways' own byte counts, so they are exact, but they are averaged over the last 30 seconds and run about 10 to 15 seconds behind real time; the card says so. No change to the gateway or the agent: it reads the 10-second samples the coordinator already keeps.
+
 ## v0.4.12 — 2026-10-11
 
 Needs migration 026 (before the coordinator) and an updated gateway. Agents are unchanged and are not rebuilt or restarted.

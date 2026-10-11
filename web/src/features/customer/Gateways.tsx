@@ -24,6 +24,8 @@ import { GatewayTester } from "./GatewayTest";
 import { DeleteGatewayDialog } from "./DeleteGatewayDialog";
 import { GatewayInstallSteps } from "./GatewayInstallSteps";
 import { GatewaysOverview } from "./GatewaysOverview";
+import { bitrate } from "@/lib/bitrate";
+import { useGatewayRate } from "@/lib/hooks/useGatewayRate";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
@@ -235,6 +237,7 @@ export function Gateways() {
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState<Gateway | null>(null);
   const tasks = useAsync((s) => apiGet<Task[]>("/api/portal/customer/tasks", s), []);
+  const rate = useGatewayRate();
   // Poll faster while the setup dialog is open so "Connected" appears as soon as the gateway calls in.
   useInterval(
     () => {
@@ -281,7 +284,7 @@ export function Gateways() {
         </Card>
       ) : (
         <>
-          <GatewaysOverview gateways={list} tasks={tasks.data ?? undefined} />
+          <GatewaysOverview gateways={list} tasks={tasks.data ?? undefined} rate={rate.data} />
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-4">
             {list.map((g) => (
               <li key={g.id} className="min-w-0">
@@ -320,6 +323,19 @@ export function Gateways() {
                         </ul>
                       )}
                     </div>
+
+                    <p className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-muted">Right now</span>
+                      <span className="font-medium text-fg" data-tnum>
+                        {(() => {
+                          const r = rate.data?.gateways.find((x) => x.id === g.id);
+                          if (!g.connected) return "—";
+                          if (!r) return "…";
+                          const total = r.received_from_tasks_bps + r.sent_to_tasks_bps;
+                          return total > 0 ? bitrate(total) : "Idle";
+                        })()}
+                      </span>
+                    </p>
 
                     <p className="flex items-center justify-between gap-3 text-xs">
                       <span className="text-muted">Bandwidth limit</span>

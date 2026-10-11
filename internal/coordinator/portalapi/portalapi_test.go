@@ -1229,3 +1229,46 @@ func TestGatewayListShowsTheReportedBandwidthLimit(t *testing.T) {
 	list = decodeBody[[]map[string]any](t, c.do(http.MethodGet, "/api/portal/customer/gateways", nil))
 	require.EqualValues(t, 50, list[0]["max_mbps"])
 }
+
+// The live bandwidth endpoint reads what gateways reported (stored in 10-second bins), averages the last 30 s, scopes to the account's own
+// gateways, and answers 404 for someone else's.
+func TestGatewayRateEndpointReadsTheRecordedBinsAndStaysInTheAccount(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	mine := signUpCustomer(t, c, "ratey")
+	mineID := createGatewayForTest(t, c, "mine", gatewayServiceView{Name: "db", Port: 5432})
+	quiet := createGatewayForTest(t, c, "quiet", gatewayServiceView{Name: "db", Port: 5433})
+	require.NoError(t, st.CreateAccount(context.Background(), store.Account{ID: "act_other", Name: "other"}))
+	require.NoError(t, st.CreateGateway(context.Background(), store.Gateway{ID: "gw_other", AccountID: "act_other", Label: "theirs"}))
+
+	now := time.Now()
+	rec := func(gw string, ago time.Duration, rx, tx int64) {
+		require.NoError(t, st.RecordGatewayTraffic(context.Background(), store.GatewayTrafficReport{
+			GatewayID: gw, TaskID: "tsk_x", Service: "db", BytesToLocal: rx, BytesToTask: tx, At: now.Add(-ago), RecordTask: true,
+		}))
+	}
+	rec(mineID, 25*time.Second, 3_000_000, 0)
+	rec(mineID, 15*time.Second, 3_000_000, 1_500_000)
+	rec("gw_other", 15*time.Second, 999_000_000, 999_000_000) // someone else's traffic must never show
+
+	resp := c.do(http.MethodGet, "/api/portal/customer/gateways/rate", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	r := decodeBody[gatewayRateResponse](t, resp)
+	require.EqualValues(t, 1_600_000, r.Now.ReceivedFromTasksBps, "6 MB over the 30 s window")
+	require.EqualValues(t, 400_000, r.Now.SentToTasksBps, "1.5 MB over the 30 s window")
+	require.Len(t, r.Series, 30)
+	require.Len(t, r.Gateways, 2, "both of my gateways, the idle one included, and not theirs")
+	byID := map[string]gatewayRateView{}
+	for _, g := range r.Gateways {
+		byID[g.ID] = g
+	}
+	require.EqualValues(t, 1_600_000, byID[mineID].ReceivedFromTasksBps)
+	require.EqualValues(t, 0, byID[quiet].ReceivedFromTasksBps)
+	require.NotContains(t, byID, "gw_other")
+
+	// One gateway only; someone else's is "not found", like every other gateway route.
+	r1 := decodeBody[gatewayRateResponse](t, c.do(http.MethodGet, "/api/portal/customer/gateways/rate?gateway="+mineID, nil))
+	require.Len(t, r1.Gateways, 1)
+	require.EqualValues(t, 1_600_000, r1.Now.ReceivedFromTasksBps)
+	require.Equal(t, http.StatusNotFound, c.do(http.MethodGet, "/api/portal/customer/gateways/rate?gateway=gw_other", nil).StatusCode)
+	_ = mine
+}

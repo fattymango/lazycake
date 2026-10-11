@@ -112,6 +112,26 @@ export interface TrafficTotals {
   connections: number;
 }
 
+/** GET /customer/gateways/rate: what the gateways are moving right now, from the gateways' own byte counts (about 10-15 s behind). */
+export interface BandwidthPair {
+  /** Bits per second the gateway handed to your local service (what tasks sent). */
+  received_from_tasks_bps: number;
+  /** Bits per second that came back from it to tasks. */
+  sent_to_tasks_bps: number;
+}
+
+export interface GatewayRate {
+  bin_s: number;
+  window_s: number;
+  /** End of the newest complete bin, epoch ms: the reading is of the time before this. */
+  as_of_ms: number;
+  now: BandwidthPair;
+  /** The busiest single bin in the series. */
+  peak: BandwidthPair;
+  series: ({ at_ms: number } & BandwidthPair)[];
+  gateways: ({ id: string; max_mbps: number | null } & BandwidthPair)[];
+}
+
 export interface GatewayTraffic {
   range: "7d" | "30d";
   step: "hour" | "day";

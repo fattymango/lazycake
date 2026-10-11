@@ -221,6 +221,9 @@ type GatewayTraffic interface {
 	// GatewayBusiestTasks returns the tasks that moved the most through the
 	// gateway since `since`, biggest first.
 	GatewayBusiestTasks(ctx context.Context, gatewayID string, since time.Time, limit int) ([]TaskTraffic, error)
+	// GatewaySamples returns what the account's gateways moved since `since`, per gateway per 10-second bin, summed over tasks (oldest
+	// first). gatewayID narrows it to one gateway ("" = all of the account's). It backs the live bandwidth reading.
+	GatewaySamples(ctx context.Context, accountID, gatewayID string, since time.Time) ([]GatewaySamplePoint, error)
 	// TaskGatewayUsage returns what one task moved through each gateway service.
 	TaskGatewayUsage(ctx context.Context, taskID string) ([]TaskGatewayTraffic, error)
 	// PruneGatewayTraffic deletes 5-minute buckets older than `before`. The

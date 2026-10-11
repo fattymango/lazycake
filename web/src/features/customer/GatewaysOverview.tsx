@@ -2,13 +2,24 @@ import { Link } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, Plug, Layers, Network } from "lucide-react";
 import { bytes, count } from "@/lib/format";
 import { gatewayTotals } from "@/lib/gatewayTotals";
-import type { Gateway, Task } from "@/lib/types";
+import { bitrate } from "@/lib/bitrate";
+import { LiveDot } from "@/components/LiveBandwidth";
+import type { Gateway, GatewayRate, Task } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/ui/Card";
 import { RingGauge } from "@/ui/RingGauge";
 import { Truncate } from "@/ui/Identifier";
 
 /** What the gateways page opens with: how much moved through them and which carry it, and how many are up. */
-export function GatewaysOverview({ gateways, tasks }: { gateways: Gateway[]; tasks: Task[] | undefined }) {
+export function GatewaysOverview({
+  gateways,
+  tasks,
+  rate,
+}: {
+  gateways: Gateway[];
+  tasks: Task[] | undefined;
+  rate: GatewayRate | undefined;
+}) {
+  const nowBps = rate ? rate.now.received_from_tasks_bps + rate.now.sent_to_tasks_bps : null;
   const t = gatewayTotals(gateways, tasks ?? []);
   const max = t.ranked[0]?.total ?? 0;
   const withTraffic = t.ranked.filter((r) => r.total > 0);
@@ -22,6 +33,14 @@ export function GatewaysOverview({ gateways, tasks }: { gateways: Gateway[]; tas
         <CardHeader title="Traffic through your gateways" description="All time, as counted by your own gateways." />
         <CardBody className="grid gap-6 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
           <dl className="min-w-0 space-y-4">
+            <div>
+              <dt className="flex items-center gap-2 text-xs font-medium text-muted">
+                Right now <LiveDot />
+              </dt>
+              <dd className="mt-0.5 truncate text-2xl font-semibold tracking-tight text-fg" data-tnum>
+                {nowBps === null ? "…" : nowBps > 0 ? bitrate(nowBps) : "Idle"}
+              </dd>
+            </div>
             <div>
               <dt className="flex items-center gap-2 text-xs font-medium text-muted">
                 <ArrowDownToLine className="size-3.5 text-accent" aria-hidden />

@@ -321,6 +321,14 @@ type TrafficPoint struct {
 	BytesToTask  int64
 }
 
+// GatewaySamplePoint is what one gateway moved in one 10-second bin, summed over the tasks that used it.
+type GatewaySamplePoint struct {
+	GatewayID    string
+	At           time.Time
+	BytesToLocal int64
+	BytesToTask  int64
+}
+
 // TaskGatewayPoint is what one task moved through one gateway in one period.
 type TaskGatewayPoint struct {
 	At           time.Time

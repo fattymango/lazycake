@@ -170,3 +170,25 @@ func (s *PostgresStore) PruneGatewayTraffic(ctx context.Context, before time.Tim
 	}
 	return tag.RowsAffected() + fine.RowsAffected(), nil
 }
+
+func (s *PostgresStore) GatewaySamples(ctx context.Context, accountID, gatewayID string, since time.Time) ([]GatewaySamplePoint, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.gateway_id, s.at, SUM(s.bytes_to_local)::bigint, SUM(s.bytes_to_task)::bigint
+		FROM task_gateway_samples s JOIN gateways g ON g.id = s.gateway_id
+		WHERE g.account_id = $1 AND ($2 = '' OR s.gateway_id = $2) AND s.at >= $3
+		GROUP BY s.gateway_id, s.at
+		ORDER BY s.at, s.gateway_id`, accountID, gatewayID, since)
+	if err != nil {
+		return nil, fmt.Errorf("reading gateway samples: %w", err)
+	}
+	defer rows.Close()
+	var out []GatewaySamplePoint
+	for rows.Next() {
+		var p GatewaySamplePoint
+		if err := rows.Scan(&p.GatewayID, &p.At, &p.BytesToLocal, &p.BytesToTask); err != nil {
+			return nil, fmt.Errorf("scanning gateway sample: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
