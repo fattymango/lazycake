@@ -3,7 +3,7 @@
 Read `PLAN.md` in this directory first. Same rules as
 `docs/00-core-platform/IMPLEMENTATION.md` §0: one task at a time, verify
 before moving on, commit as `8.<task>: <description>` (plain messages, no
-`Co-Authored-By` trailer — see repo `HANDOVER.md`), keep `PROGRESS.md`
+`Co-Authored-By` trailer — see `CLAUDE.md`), keep `PROGRESS.md`
 updated, log judgment calls in `OPEN_QUESTIONS.md`. Visual tasks are not done
 until screenshots of the result have been inspected (task 8.10's script).
 

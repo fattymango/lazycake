@@ -59,7 +59,7 @@ verified.
   - The "check the machine is ready" command on the Add machine page failed on the owner's podman (`can't evaluate field
     CgroupVersion`): the field is `CgroupsVersion`, and it differs across podman versions. The page now greps the stable JSON
     keys instead (`podman info --format json | grep -E '"(cgroupVersion|rootless)"'`), tested on podman 5.7; the same wrong
-    name in `HANDOVER.md` is corrected.
+    name in the (since deleted) handover note was corrected.
 
 - Owner feedback, 2026-10-07: (1) the dark theme was too dark: backgrounds, panels, borders and muted text lifted one small step
   (`--bg` 9 11 16 -> 17 20 29, etc. in `ui/tokens.css`), contrast unchanged in practice. (2) "Add a machine" never showed connected: the

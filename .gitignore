@@ -17,3 +17,15 @@
 /lcinit
 /lcbench
 /refworkload
+
+# No binaries on GitHub, ever: compiled output stays local. (`make build` writes to /bin/.)
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.prev
+*.new
+/bin/
+/dist/

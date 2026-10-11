@@ -27,7 +27,7 @@ Back to [README](README.md). Read before touching the connection, trust, billing
 ## Environment quirks
 - The test VM hangs when idle and must be restarted by the owner; containers there come back by themselves.
 - Rootless podman only; the agent container needs `--pid=host --cap-add=SYS_ADMIN` and its host's podman socket.
-- WSL2 kernels don't enforce tmpfs memory limits (historical reason for the VM; see `HANDOVER.md`, a one-time document that can be deleted).
+- WSL2 kernels don't enforce tmpfs memory limits (historical reason the test VM exists).
 
 ## Open follow-ups (from the 2026-10 sessions)
-Task 8.19 (identity), 8.18 (HTTPS), persisted trust, other pages could use the wide layout, optional scrub of the "Claude Code session" mentions in `HANDOVER.md`/one commit message. Backlog lives in `docs/02-frontend-overhaul/IMPLEMENTATION.md` (tasks 8.12–8.19) and `PROGRESS.md`.
+Task 8.19 (identity), 8.18 (HTTPS), persisted trust, other pages could use the wide layout. Backlog lives in `docs/02-frontend-overhaul/IMPLEMENTATION.md` (tasks 8.12–8.19) and `PROGRESS.md`.
