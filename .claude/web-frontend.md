@@ -20,6 +20,8 @@ web/e2e/             puppeteer-core browser checks (*.mjs) + seed.py demo data
 - Update flow (`lib/update.ts`, `ui/UpdateNotice.tsx`): `updateCommand(kind)` generates `podman pull <image>:latest` + recreate-from-recorded-command (removes the old container *after* reading the command). Changing it means updating `CLAUDE.md` §5 and its test.
 - Deep-link refresh must work (SPA fallback in Go).
 
+- Gateways: `Gateways.tsx` create dialog → `GatewayInstallSteps.tsx` (4-step setup; commands from `lib/gatewayInstall.ts`, incl. the optional `LAZYCAKE_MAX_MBPS`). `GatewayDetail.tsx` "Targets and activity" card uses `lib/gatewayActivity.ts`, which works from `/customer/tasks` (capped at 200 newest) and the traffic series, so "last task" can miss older use.
+
 ## Commands
 `cd web && npm ci`; `npm run dev` (set `LAZYCAKE_PROXY`); `npm run build`; `npm test`; `make web-check` from the repo root (build + eslint + prettier + vitest); `make web-embed` builds into the Go embed dir. Node is not on PATH here: `export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"`. Browser scripts: `BASE=… SHOTS=/tmp/shots node e2e/<name>.mjs` (Chrome at `/usr/bin/google-chrome`; run `behaviour.mjs` against the embedded production build).
 

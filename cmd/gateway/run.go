@@ -70,6 +70,7 @@ func serveOnce(ctx context.Context, cfg config.Config, keypair noise.Keypair, se
 				"bytes_to_local", s.BytesToLocal, "bytes_to_task", s.BytesToTask)
 		},
 		OnReport: reportBytes,
+		Limit:    listener.NewBandwidthLimiter(cfg.MaxMbps),
 	}
 	return l.Run(ctx)
 }

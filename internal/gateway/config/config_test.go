@@ -36,3 +36,24 @@ func TestParseServicesMalformed(t *testing.T) {
 		t.Fatal("expected error for missing port")
 	}
 }
+
+func TestLoadMaxMbps(t *testing.T) {
+	env := map[string]string{
+		"LAZYCAKE_COORDINATOR_ADDR": "c:7444", "LAZYCAKE_TOKEN": "t", "LAZYCAKE_GATEWAY_ID": "gw_1", "LAZYCAKE_SERVICES": "db:5432",
+	}
+	load := func(v string) (Config, error) {
+		env["LAZYCAKE_MAX_MBPS"] = v
+		return Load(func(k string) string { return env[k] })
+	}
+	if c, err := load(""); err != nil || c.MaxMbps != 0 {
+		t.Fatalf("unset: %+v %v", c, err)
+	}
+	if c, err := load("50"); err != nil || c.MaxMbps != 50 {
+		t.Fatalf("50: %+v %v", c, err)
+	}
+	for _, bad := range []string{"fast", "-5"} {
+		if _, err := load(bad); err == nil {
+			t.Fatalf("%q should be rejected", bad)
+		}
+	}
+}

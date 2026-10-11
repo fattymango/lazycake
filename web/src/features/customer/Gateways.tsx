@@ -3,7 +3,6 @@ import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, Network, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
-import { gatewayInstallCommand } from "@/lib/gatewayInstall";
 import { bytes, relativeTime } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useInterval } from "@/lib/hooks/useInterval";
@@ -13,13 +12,14 @@ import { Alert } from "@/ui/Alert";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
 import { Card, CardBody, CardFooter } from "@/ui/Card";
-import { CodeBlock } from "@/ui/CodeBlock";
 import { Dialog, DialogContent } from "@/ui/Dialog";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { Identifier } from "@/ui/Identifier";
 import { Field, Input } from "@/ui/Input";
+import { Segmented } from "@/ui/Segmented";
 import { PageHeader } from "@/ui/PageHeader";
 import { GatewayTester } from "./GatewayTest";
+import { GatewayInstallSteps } from "./GatewayInstallSteps";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
@@ -34,14 +34,17 @@ function CreateGatewayDialog({
   open,
   onOpenChange,
   onCreated,
+  connectedIds,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onCreated: () => void;
+  connectedIds: Set<string>;
 }) {
   const toast = useToast();
   const [label, setLabel] = useState("");
   const [rows, setRows] = useState<ServiceRow[]>([{ name: "", port: "" }]);
+  const [mbps, setMbps] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreateGatewayResponse | null>(null);
@@ -53,6 +56,7 @@ function CreateGatewayDialog({
       window.setTimeout(() => {
         setLabel("");
         setRows([{ name: "", port: "" }]);
+        setMbps("");
         setError(null);
         setCreated(null);
       }, 200);
@@ -82,22 +86,17 @@ function CreateGatewayDialog({
     <Dialog open={open} onOpenChange={close}>
       {created ? (
         <DialogContent
-          title="Install your gateway"
-          description="Run this on the machine that can reach your service (it needs podman). It connects out to LazyCake, so no inbound ports are needed."
-          className="max-w-xl"
+          title="Set up your gateway"
+          description={`Four steps on the machine that runs next to ${created.label}'s services.`}
+          className="max-w-2xl"
           footer={<Button onClick={() => close(false)}>Done</Button>}
         >
-          <div className="space-y-4 pb-2">
-            <Alert tone="warning" title="Copy the token now">
-              It's only shown once. If you lose it, delete this gateway and create a new one.
-            </Alert>
-            <CodeBlock label="Shell" code={gatewayInstallCommand(created, window.location.hostname)} />
-            <p className="text-xs leading-5 text-muted">
-              The gateway runs as a container with host networking, so it can reach your services on that machine's own localhost. Ports{" "}
-              <span className="font-mono">7443</span> (gRPC) and <span className="font-mono">7444</span> (UDP, QUIC) on the coordinator must
-              be reachable from that machine.
-            </p>
-          </div>
+          <GatewayInstallSteps
+            gateway={created}
+            host={window.location.hostname}
+            maxMbps={Number(mbps) || 0}
+            connected={connectedIds.has(created.id)}
+          />
         </DialogContent>
       ) : (
         <DialogContent
@@ -158,6 +157,38 @@ function CreateGatewayDialog({
               </Button>
               <p className="text-xs leading-5 text-muted">The port is where the service listens on the gateway's own machine.</p>
             </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-fg">Bandwidth limit</p>
+              <div className="space-y-2">
+                <Segmented<string>
+                  label="Bandwidth limit"
+                  value={mbps}
+                  onChange={setMbps}
+                  options={[
+                    { value: "", label: "Unlimited" },
+                    { value: "10", label: "10 Mbps" },
+                    { value: "50", label: "50 Mbps" },
+                    { value: "100", label: "100 Mbps" },
+                    { value: "500", label: "500 Mbps" },
+                  ]}
+                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    aria-label="Custom bandwidth limit in Mbps"
+                    value={mbps}
+                    inputMode="numeric"
+                    onChange={(e) => setMbps(e.target.value.replace(/\D/g, ""))}
+                    placeholder="Custom"
+                    mono
+                    className="w-28"
+                  />
+                  <span className="text-xs text-muted">Mbps (megabits per second)</span>
+                </div>
+              </div>
+              <p className="text-xs leading-5 text-muted">
+                Enforced by the gateway itself: all tasks and both directions share it. Unlimited uses the machine's full link.
+              </p>
+            </div>
           </form>
         </DialogContent>
       )}
@@ -169,7 +200,8 @@ export function Gateways() {
   usePageTitle("Gateways");
   const gateways = useAsync((s) => apiGet<Gateway[]>("/api/portal/customer/gateways", s), []);
   const [open, setOpen] = useState(false);
-  useInterval(() => gateways.reload(), 15_000);
+  // Poll faster while the setup dialog is open so "Connected" appears as soon as the gateway calls in.
+  useInterval(() => gateways.reload(), open ? 3_000 : 15_000);
 
   const list = gateways.data ?? [];
   const newButton = (
@@ -295,7 +327,12 @@ export function Gateways() {
         .
       </p>
 
-      <CreateGatewayDialog open={open} onOpenChange={setOpen} onCreated={gateways.reload} />
+      <CreateGatewayDialog
+        open={open}
+        onOpenChange={setOpen}
+        onCreated={gateways.reload}
+        connectedIds={new Set(list.filter((g) => g.connected).map((g) => g.id))}
+      />
     </div>
   );
 }

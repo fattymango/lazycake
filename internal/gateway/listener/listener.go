@@ -17,6 +17,7 @@ import (
 	"time"
 
 	quicgo "github.com/quic-go/quic-go"
+	"golang.org/x/time/rate"
 
 	"github.com/fattymango/lazycake/internal/tunnel/noise"
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
@@ -79,6 +80,10 @@ type Listener struct {
 	// OnReport, if set, receives each connection's byte-count deltas while it
 	// is open and a final one when it closes (see ForwardReport).
 	OnReport func(ForwardReport)
+
+	// Limit, if set, caps the bandwidth of every forwarded connection together,
+	// both directions counted (see NewBandwidthLimiter).
+	Limit *rate.Limiter
 }
 
 func (l *Listener) dial(network, addr string) (net.Conn, error) {
@@ -192,7 +197,7 @@ func (l *Listener) handleStream(taskID string, stream *quicgo.Stream) {
 	var toLocal, toTask atomic.Int64
 	done := make(chan struct{}, 2)
 	go func() {
-		io.Copy(countingWriter{w: local, n: &toLocal}, session)
+		io.Copy(countingWriter{w: limitedWriter{ctx: context.Background(), w: local, lim: l.Limit}, n: &toLocal}, session)
 		// Unblock the reverse copy: once the task side has nothing more
 		// to send, closing the local connection makes its next Read
 		// return so the other goroutine below can finish too.
@@ -200,7 +205,7 @@ func (l *Listener) handleStream(taskID string, stream *quicgo.Stream) {
 		done <- struct{}{}
 	}()
 	go func() {
-		io.Copy(countingWriter{w: session, n: &toTask}, local)
+		io.Copy(countingWriter{w: limitedWriter{ctx: context.Background(), w: session, lim: l.Limit}, n: &toTask}, local)
 		stream.Close()
 		done <- struct{}{}
 	}()

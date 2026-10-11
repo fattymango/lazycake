@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GATEWAY_IMAGE, gatewayInstallCommand } from "./gatewayInstall";
+import { GATEWAY_IMAGE, gatewayCheckCommand, gatewayInstallCommand } from "./gatewayInstall";
 
 const gw = {
   id: "gw_123",
@@ -44,6 +44,20 @@ describe("gatewayInstallCommand", () => {
     expect(cmd).toContain("-v lazycake-gateway-data:/data");
     expect(cmd).toContain("LAZYCAKE_GATEWAY_KEY_PATH=/data/noise.key");
     expect(cmd).toContain("--restart=always");
-    expect(cmd).toContain("podman-restart.service");
+  });
+
+  it("sets the bandwidth limit only when one is chosen", () => {
+    expect(cmd).not.toContain("LAZYCAKE_MAX_MBPS");
+    expect(gatewayInstallCommand(gw, "h", 0)).not.toContain("LAZYCAKE_MAX_MBPS");
+    const limited = gatewayInstallCommand(gw, "h", 50);
+    expect(limited).toContain("-e LAZYCAKE_MAX_MBPS=50 \\\n");
+    expect(limited.trimEnd().endsWith(GATEWAY_IMAGE)).toBe(true);
+  });
+
+  it("checks each service port and the coordinator before installing", () => {
+    const check = gatewayCheckCommand(gw, "coord.example.com");
+    expect(check).toContain("nc -zv 127.0.0.1 5432");
+    expect(check).toContain("nc -zv 127.0.0.1 6379");
+    expect(check).toContain("nc -zv coord.example.com 7443");
   });
 });

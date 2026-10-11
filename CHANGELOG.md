@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.1 — 2026-10-11
+
+### Added
+- **Gateway page shows what it targets and what is using it:** published services, status, version, last traffic, the newest task that used it, and running and queued tasks (with links). Derived in the browser from the account's recent tasks (the newest 200) and the gateway's traffic series; no API change.
+- **Guided gateway setup:** creating a gateway now ends in four steps like the machine setup (check the machine, start the container, survive reboots, wait for it to connect, which turns green by itself).
+- **Optional bandwidth limit**, chosen at creation and enforced by the gateway itself (`LAZYCAKE_MAX_MBPS`, whole Mbps, 0 or unset = unlimited): all tasks and both directions share it. It is a setting of the container, not stored by the coordinator, so the dashboard cannot show it afterwards; change it by recreating the container. Needs an updated gateway.
+
 ## v0.4.0 — 2026-10-11
 
 The backlog from the production load test, and the version indicator (task 8.16). Needs migration 023, a coordinator deploy, and updated agents and gateways.

@@ -45,6 +45,9 @@ type Config struct {
 	// Services are the local services this gateway will forward to, e.g.
 	// "db:5432,cache:6379". Required, at least one.
 	Services []Service
+	// MaxMbps caps the bandwidth of all forwarded traffic together (both
+	// directions), in megabits per second. 0 means unlimited.
+	MaxMbps int
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 }
@@ -61,6 +64,12 @@ func Load(getenv func(string) string) (Config, error) {
 		Token:           getenv("LAZYCAKE_TOKEN"),
 		GatewayID:       getenv("LAZYCAKE_GATEWAY_ID"),
 		Dev:             getenv("LAZYCAKE_DEV") == "1",
+	}
+
+	if v := strings.TrimSpace(getenv("LAZYCAKE_MAX_MBPS")); v != "" {
+		if _, err := fmt.Sscanf(v, "%d", &cfg.MaxMbps); err != nil || cfg.MaxMbps < 0 {
+			return Config{}, fmt.Errorf("LAZYCAKE_MAX_MBPS: want a whole number of Mbps (0 = unlimited), got %q", v)
+		}
 	}
 
 	svcs, err := parseServices(getenv("LAZYCAKE_SERVICES"))
@@ -130,6 +139,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("token", redact(c.Token)),
 		slog.String("gateway_id", c.GatewayID),
 		slog.String("services", strings.Join(names, ",")),
+		slog.Int("max_mbps", c.MaxMbps),
 		slog.Bool("dev", c.Dev),
 	)
 }
