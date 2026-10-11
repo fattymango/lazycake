@@ -29,3 +29,6 @@
 *.new
 /bin/
 /dist/
+
+# machine-specific access details (hosts/users); never commit
+/CLAUDE.local.md
