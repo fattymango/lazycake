@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.8 — 2026-10-11
+
+Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.
+
+### Changed
+- **The Overview pages have no side column any more.** The stat tiles run across the top and the main list takes the full width: the recent-tasks table for customers (the compact list from the last release is gone), the machine cards in a grid for providers. The charts and gateways sit underneath: Spend and Gateways side by side, and the Earnings chart full width. Tasks, machines and gateways are the point of those pages, so they are never pushed into a narrow column.
+
 ## v0.4.7 — 2026-10-11
 
 Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.
