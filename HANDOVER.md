@@ -69,7 +69,7 @@ just "fail" the way a write syscall can).
 environment excuse: `internal/agent/probe/checks_podman.go`'s
 `CheckMemoryLimit` only recognised success via `OOMKilled == true`, so it
 reported `fail` even though enforcement genuinely worked. Fixed already,
-committed and pushed (commit `7580a9e`, "fix: probe.CheckMemoryLimit false
+committed and pushed (commit `213da4c`, "fix: probe.CheckMemoryLimit false
 negative on real kernels (ENOSPC vs OOM-kill)") - **the VM needs a `git
 pull` to pick this up**, see next section.
 

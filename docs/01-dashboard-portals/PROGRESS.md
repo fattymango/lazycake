@@ -201,7 +201,7 @@ which has not been done yet; task 7.10 (retire landing page, relocate
 `/ops`, serve the built frontend from the coordinator binary) is not
 started.
 
-- **Live verification pass (2026-09-25, commit `03a9c0c`) - the two
+- **Live verification pass (2026-09-25, commit `6f1a4ef`) - the two
   halves actually run together, on real infrastructure, for the first
   time.** Checked out this branch on a VM with a working rootless podman
   engine (the same one `docs/00-core-platform/PROGRESS.md`'s VM-side
