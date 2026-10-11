@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.9 — 2026-10-11
+
+Dashboard only (the coordinator carries it); agents and gateways are unchanged, so they are not rebuilt or restarted for this release and will read "Update available" until the next release that changes them.
+
+### Changed
+- **The customer Overview's four tiles are two cards.** The balance, what was spent in the last 7 days and the spend chart are one card (the chart moves up from the bottom), and the success rate becomes a ring with the running, queued and finished counts beside it. The Gateways card at the bottom is gone (the Gateways page has them). The recent-tasks table follows directly.
+
 ## v0.4.8 — 2026-10-11
 
 Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.

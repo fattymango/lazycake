@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Activity, ArrowRight, CheckCircle2, Clock3, Layers, Network, Plus, Wallet } from "lucide-react";
+import { Activity, ArrowRight, CheckCircle2, Clock3, Layers, Plus, Wallet } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import { count, cpu, money } from "@/lib/format";
 import { useAsync } from "@/lib/hooks/useAsync";
@@ -7,17 +7,15 @@ import { useLiveReload } from "@/lib/hooks/useLiveReload";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { dailySpend } from "@/lib/spend";
 import { costByTask } from "@/lib/tasks";
-import type { Gateway, LedgerEntry, Me, Task } from "@/lib/types";
+import type { LedgerEntry, Me, Task } from "@/lib/types";
 import { TaskTable } from "@/components/TaskTable";
 import { BarChart } from "@/ui/BarChart";
 import { Button } from "@/ui/Button";
 import { Card, CardBody, CardFooter, CardHeader } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
-import { Identifier } from "@/ui/Identifier";
 import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
-import { StatCard } from "@/ui/StatCard";
-import { ConnectionPill } from "@/ui/StatusPill";
+import { RingGauge } from "@/ui/RingGauge";
 import { isActiveState } from "@/ui/status";
 
 export function Overview() {
@@ -25,7 +23,6 @@ export function Overview() {
   const me = useAsync((s) => apiGet<Me>("/api/portal/customer/me", s), []);
   const tasks = useAsync((s) => apiGet<Task[]>("/api/portal/customer/tasks", s), []);
   const ledger = useAsync((s) => apiGet<LedgerEntry[]>("/api/portal/customer/ledger", s), []);
-  const gateways = useAsync((s) => apiGet<Gateway[]>("/api/portal/customer/gateways", s), []);
 
   useLiveReload(
     () => {
@@ -64,42 +61,107 @@ export function Overview() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Available balance"
-          value={money(me.data?.available_balance_micros)}
-          sub={
-            me.data && me.data.balance_micros !== me.data.available_balance_micros
-              ? `${money(me.data.balance_micros)} total, rest is held`
-              : "Ready to spend"
-          }
-          icon={Wallet}
-          tone="success"
-          loading={me.loading}
-        />
-        <StatCard
-          label="Running now"
-          value={count(running.length)}
-          sub={running.length ? `${cpu(coresInUse)} in use` : "Nothing running"}
-          icon={Activity}
-          tone="accent"
-          loading={loading}
-        />
-        <StatCard
-          label="In the queue"
-          value={count(queued.length)}
-          sub={queued.length ? "Waiting for capacity" : "Queue is empty"}
-          icon={Clock3}
-          loading={loading}
-        />
-        <StatCard
-          label="Success rate"
-          value={rate === null ? "—" : `${rate}%`}
-          sub={rate === null ? "No finished tasks yet" : `${succeeded} of last ${finished.length} finished`}
-          icon={CheckCircle2}
-          tone={rate === null || rate >= 80 ? "success" : "warning"}
-          loading={loading}
-        />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card className="flex flex-col">
+          <CardBody className="grid flex-1 gap-6 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+            <div className="min-w-0 space-y-4">
+              <div>
+                <p className="text-xs font-medium text-muted">Available balance</p>
+                {me.loading ? (
+                  <Skeleton className="mt-2 h-10 w-40" />
+                ) : (
+                  <p className="mt-1 truncate text-4xl font-semibold tracking-tight text-fg" data-tnum>
+                    {money(me.data?.available_balance_micros)}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted">
+                  {me.data && me.data.balance_micros !== me.data.available_balance_micros
+                    ? `${money(me.data.balance_micros)} total, the rest is held for running tasks`
+                    : "Ready to spend"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Wallet className="size-4 text-success" aria-hidden />
+                <span className="text-muted">Spent, last 7 days</span>
+                <span className="ml-auto font-semibold text-fg" data-tnum>
+                  {ledger.loading ? "…" : money(spend.total)}
+                </span>
+              </div>
+            </div>
+            <div className="min-w-0">
+              {ledger.loading ? (
+                <Skeleton className="h-36 w-full" />
+              ) : (
+                <BarChart
+                  data={spend.bars}
+                  tone="accent"
+                  heightClass="h-36"
+                  summary={`Spend over the last 7 days, ${money(spend.total)} in total`}
+                />
+              )}
+            </div>
+          </CardBody>
+          <CardFooter>
+            <span className="text-xs text-muted">Charged when a task finishes</span>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/billing">Billing</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardBody className="flex flex-1 flex-wrap items-center gap-x-8 gap-y-4">
+            {loading ? (
+              <Skeleton className="size-28 rounded-full" />
+            ) : (
+              <RingGauge
+                value={rate === null ? null : rate / 100}
+                tone={rate === null || rate >= 80 ? "success" : "warning"}
+                center={
+                  <div>
+                    <p className="text-2xl font-semibold leading-7 text-fg" data-tnum>
+                      {rate === null ? "—" : `${rate}%`}
+                    </p>
+                    <p className="text-2xs text-muted">succeeded</p>
+                  </div>
+                }
+                summary={
+                  rate === null ? "No finished tasks yet" : `${rate} percent of the last ${finished.length} finished tasks succeeded`
+                }
+              />
+            )}
+            <dl className="min-w-0 flex-1 space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="flex items-center gap-2 text-muted">
+                  <Activity className="size-4 text-accent" aria-hidden />
+                  Running now
+                </dt>
+                <dd className="font-semibold text-fg" data-tnum>
+                  {loading ? "…" : count(running.length)}
+                  {running.length > 0 && <span className="ml-2 text-xs font-normal text-muted">{cpu(coresInUse)} in use</span>}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="flex items-center gap-2 text-muted">
+                  <Clock3 className="size-4" aria-hidden />
+                  In the queue
+                </dt>
+                <dd className="font-semibold text-fg" data-tnum>
+                  {loading ? "…" : count(queued.length)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="flex items-center gap-2 text-muted">
+                  <CheckCircle2 className="size-4 text-success" aria-hidden />
+                  Finished
+                </dt>
+                <dd className="text-fg" data-tnum>
+                  {loading ? "…" : rate === null ? "None yet" : `${succeeded} of last ${finished.length}`}
+                </dd>
+              </div>
+            </dl>
+          </CardBody>
+        </Card>
       </div>
 
       <Card className="overflow-hidden">
@@ -144,81 +206,6 @@ export function Overview() {
           )}
         </div>
       </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Spend"
-            description="Last 7 days"
-            action={
-              <span className="text-sm font-semibold text-fg" data-tnum>
-                {ledger.loading ? "" : money(spend.total)}
-              </span>
-            }
-          />
-          <CardBody>
-            {ledger.loading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : (
-              <BarChart
-                data={spend.bars}
-                heightClass="h-40"
-                tone="accent"
-                summary={`Spend over the last 7 days, ${money(spend.total)} in total`}
-              />
-            )}
-          </CardBody>
-          <CardFooter>
-            <span className="text-xs text-muted">Charged when a task finishes</span>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/billing">Billing</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-        <Card>
-          <CardHeader
-            title="Gateways"
-            description="Your doors into your own infrastructure."
-            action={
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/gateways">Manage</Link>
-              </Button>
-            }
-          />
-          <CardBody className="pt-3">
-            {gateways.loading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : (gateways.data ?? []).length === 0 ? (
-              <EmptyState
-                compact
-                icon={Network}
-                title="No gateways"
-                description="Install one next to your data to let tasks reach it."
-                action={
-                  <Button asChild variant="secondary" size="sm">
-                    <Link to="/gateways">Add a gateway</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <ul className="space-y-2.5">
-                {(gateways.data ?? []).slice(0, 4).map((g) => (
-                  <li key={g.id} className="flex min-w-0 items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-fg">{g.label}</p>
-                      <Identifier value={g.id} copy={false} className="text-muted" />
-                    </div>
-                    <ConnectionPill connected={g.connected} size="sm" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-      </div>
     </div>
   );
 }
