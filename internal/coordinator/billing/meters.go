@@ -12,6 +12,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -72,6 +73,17 @@ func (m *Meters) OnTaskFinished(ctx context.Context, nodeID string, ev api.TaskF
 	}
 
 	meter, err := m.Store.GetMeter(ctx, taskID)
+	if errors.Is(err, store.ErrNotFound) {
+		// The task never started (its image couldn't be pulled, the node rejected it, ...), so there was nothing
+		// to meter and nothing to bill. It must still give back the balance hold placed when it was dispatched:
+		// returning here without doing so left every such task's worst-case hold on the customer's balance for
+		// good (34 of them, found by a production load test).
+		if err := m.Store.ReleaseHold(ctx, taskID); err != nil {
+			m.Log.Warn("releasing the hold of a task that never started", "task_id", taskID, "error", err)
+		}
+		m.Log.Debug("task finished without ever starting: nothing to meter", "task_id", taskID, "node_id", nodeID, "exit_reason", ev.ExitReason)
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("looking up meter for %s: %w", taskID, err)
 	}

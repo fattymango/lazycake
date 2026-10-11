@@ -359,9 +359,9 @@ an old agent shows the "update" message; heartbeat size with the cap hit; migrat
 
 ### Task 8.16 — Gateway (and agent) version indicator with a guided update
 
-**Status: idea, to be discussed (suggested 2026-10-07); not scheduled.**
+**Status: DONE 2026-10-11 (v0.4.0), see "As built" below.** Suggested 2026-10-07; the owner asked for the backlog on 2026-10-11.
 
-**Decision so far: do not build a button that pushes an update.** The gateway runs on the customer's machine and only connects out; it is the customer's own
+**Decision: do not build a button that pushes an update.** The gateway runs on the customer's machine and only connects out; it is the customer's own
 security boundary. A coordinator-initiated code replacement would put the platform in charge of what runs inside customers' networks (a compromised coordinator
 could push a bad binary to every gateway), and would need signed releases plus permission to replace the running program.
 
@@ -376,7 +376,19 @@ could push a bad binary to every gateway), and would need signed releases plus p
 
 **Later, opt-in only:** a gateway that updates itself when the customer turns it on (checks for releases, verifies a signature, replaces itself). Needs a signed-release pipeline.
 
-**Order:** after 8.15, or ahead of 8.14 if solving updates first matters more.
+**As built**
+- **Reporting.** The agent's `Register` carries `version` (field 11, stored in `nodes.agent_version`). The gateway had no message of its own to carry one, so there is a new unary call `Hello{gateway_id, version}` that a
+  gateway makes after it connects to the relay (stored in `gateways.version`, capped at 64 bytes, with the same token and ownership checks as its other calls). A gateway built before this never calls it, and a
+  gateway talking to an older coordinator gets "unimplemented" and carries on (logged at debug). Migration 023.
+- **Comparing.** `internal/version` takes the numeric `MAJOR.MINOR.PATCH` base of a version (a `-dirty` or `+build` suffix is ignored) and says whether one is older than the other; a version it can't read is "unknown", never
+  "older". The coordinator's own version is the "latest": no lookup of any outside service. The API returns `version`, `latest_version` and `update_state` (`current`, `outdated` or `unknown`) on every machine and gateway.
+- **Dashboard.** `ui/UpdateNotice` is a badge ("Update available" / "Version unknown") that opens a dialog: the current and latest version, what the update does, and one command to copy. The command pulls
+  `docker.io/fattymango/lazycake-agent:latest` (or `-gateway`) and recreates the container from `podman inspect <name> --format '{{json .Config.CreateCommand}}'`, so the ports, token, volumes and restart policy
+  it was installed with are kept. It is shown on the machine page, in the machine list (a static label), on the gateway cards, and in the gateway test's grey result (the case that started this: "services not verified,
+  update your gateway").
+- **Verified:** unit tests for the comparison, the portal fields and the store; the Hello call with a wrong token, a gateway of another account, and an over-long version; 15 browser checks (`web/e2e/update.mjs`) against a
+  coordinator built as a newer version than its machines.
+- **Not done:** the self-updating gateway (it needs a signed-release pipeline); the command assumes the container still has the name it was installed with (`lazycake-agent` / `lazycake-gateway`).
 
 ### Task 8.17 — Choose what to lend when adding a machine, and the agent refuses an offer bigger than the machine
 

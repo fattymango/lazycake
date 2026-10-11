@@ -98,3 +98,7 @@ verified.
 - Follow-up to 8.15, 2026-10-07: network over time per machine (Network tab), and a "Resource use" chart on the customer's task page (CPU/memory vs the requested limits, tunnel
   traffic, gateway traffic). Migration 019. Found and fixed a real bug on the way: the agent never reported bytes at task end, so tunnel tasks cost their machine trust. See
   "Follow-up" in 8.15 of `IMPLEMENTATION.md`. Needs an agent update.
+
+- Task 8.16 (version indicator and guided update) done, 2026-10-11: see "As built" in `IMPLEMENTATION.md`. Agents and gateways report their version, the dashboard shows "Update available" with a copy-and-paste
+  command, nothing is pushed. Migration 023. Shipped in v0.4.0 with the load-test backlog (free-capacity reports, leaked balance holds, disk check) and a real agent bug found by the self-fence test (the report of a
+  task that finished between connections was dropped). Needs migration 023, a coordinator deploy and updated agents and gateways.

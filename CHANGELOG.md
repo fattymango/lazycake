@@ -3,6 +3,28 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.0 — 2026-10-11
+
+The backlog from the production load test, and the version indicator (task 8.16). Needs migration 023, a coordinator deploy, and updated agents and gateways.
+
+### Added
+- **Every machine and gateway shows the version it runs, and updating is a guided copy-and-paste.** The agent sends its version when it registers; a gateway says hello with its version after it connects (an older gateway
+  never does, so it shows "version unknown"). The dashboard compares it with this coordinator's own release and shows an **Update available** badge on the machine page, the machines list, the gateway cards and the
+  gateway test's grey result. The badge opens a dialog with the current and the latest version and one command that pulls the new image and recreates the container with the settings it already has (restart policy
+  included). Nothing is pushed to anyone's computer: the program runs on the owner's machine and stays under their control. Migration 023 adds `nodes.agent_version` and `gateways.version`.
+- **The agent tells the coordinator how much it has free** (cores, memory, disk), on start, whenever it changes and every 30 seconds, and the scheduler only dispatches a task to a machine with room for it. In the load
+  test 357 tasks were handed to a machine that had no room, refused by the agent, and each refusal cost a cooldown.
+
+### Fixed
+- **A task that never started no longer keeps the customer's money on hold.** A task that could not start (a nonexistent image, a refusal) placed its worst-case hold when it was dispatched and never released it: the
+  coordinator logged "meter not found" and returned. The load test left 34 of these on customers' balances. The hold is now released when such a task finishes.
+- **The report of a task that finished while the agent was reconnecting is no longer lost.** The agent kept its final reports to resend after a reconnect, but the connection was only ready to send after that resend ran, so
+  the report was dropped and the coordinator went on believing the task was running. That includes the "fenced" report of a task the agent stopped itself after losing the coordinator. A report is now kept until a connection has
+  taken it. Needs the updated agent.
+- **An offer's disk size is checked against the disk's size, not against how much is free that day.** A machine that started fine yesterday could be refused today because a few MB of unrelated files appeared. The agent now
+  warns when the offer is more than what is currently free.
+- A repeated capacity report no longer rewrites the machine's offer in the database.
+
 ## v0.3.13 — 2026-10-11
 
 ### Fixed

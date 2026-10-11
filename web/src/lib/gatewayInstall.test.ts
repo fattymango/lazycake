@@ -12,6 +12,9 @@ const gw = {
     { name: "cache", port: 6379 },
   ],
   install_token: "tok_abc",
+  version: "",
+  latest_version: "v0.3.13",
+  update_state: "unknown" as const,
 };
 
 // The command is pasted by customers, so what each real failure needed must stay in it.

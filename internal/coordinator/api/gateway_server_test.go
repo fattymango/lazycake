@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 
@@ -215,5 +216,36 @@ func TestGatewayReportBytesCountsBatchedConnections(t *testing.T) {
 	}
 	if got := totals["gw_1"].BytesToLocal; got != 13 {
 		t.Fatalf("bytes must still add up: %d", got)
+	}
+}
+
+// A gateway says which release it is (task 8.16): recorded for its own gateway, refused for anyone else's, and bounded in size.
+func TestGatewayHelloRecordsTheVersionAndRefusesOthers(t *testing.T) {
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("gw-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenGateway})
+	fs.addToken(string(auth.Hash("agent-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenAgent})
+	_ = fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_1", AccountID: "act_1"})
+	_ = fs.CreateGateway(context.Background(), store.Gateway{ID: "gw_other", AccountID: "act_2"})
+	client := startGatewayTestServer(t, fs, &fakeGatewayEvents{})
+
+	if _, err := client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", Version: "v0.3.13"}); err != nil {
+		t.Fatalf("Hello: %v", err)
+	}
+	if got := fs.gateways["gw_1"].Version; got != "v0.3.13" {
+		t.Fatalf("version = %q", got)
+	}
+	long := strings.Repeat("x", 5000)
+	_, _ = client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", Version: long})
+	if got := len(fs.gateways["gw_1"].Version); got != 64 {
+		t.Fatalf("an oversized version must be cut to 64 bytes, got %d", got)
+	}
+	if _, err := client.Hello(authedCtx("gw-token"), &lazycakev1.GatewayHello{GatewayId: "gw_other", Version: "v9"}); err == nil {
+		t.Fatal("a gateway must not set another account's gateway version")
+	}
+	if _, err := client.Hello(authedCtx("agent-token"), &lazycakev1.GatewayHello{GatewayId: "gw_1", Version: "v9"}); err == nil {
+		t.Fatal("an agent token is not a gateway token")
+	}
+	if _, err := client.Hello(context.Background(), &lazycakev1.GatewayHello{GatewayId: "gw_1", Version: "v9"}); err == nil {
+		t.Fatal("no token, no version")
 	}
 }

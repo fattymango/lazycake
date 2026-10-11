@@ -24,12 +24,12 @@ func (s *PostgresStore) CreateGateway(ctx context.Context, g Gateway) error {
 	return nil
 }
 
-const gatewayColumns = `id, account_id, label, noise_pubkey, services, connected, created_at`
+const gatewayColumns = `id, account_id, label, noise_pubkey, services, connected, created_at, version`
 
 func scanGateway(row rowScanner) (Gateway, error) {
 	var g Gateway
 	var servicesRaw []byte
-	err := row.Scan(&g.ID, &g.AccountID, &g.Label, &g.NoisePubkey, &servicesRaw, &g.Connected, &g.CreatedAt)
+	err := row.Scan(&g.ID, &g.AccountID, &g.Label, &g.NoisePubkey, &servicesRaw, &g.Connected, &g.CreatedAt, &g.Version)
 	if err != nil {
 		return Gateway{}, err
 	}
@@ -90,6 +90,14 @@ func (s *PostgresStore) SetGatewayConnected(ctx context.Context, id string, conn
 func (s *PostgresStore) ResetGatewaysConnected(ctx context.Context) error {
 	if _, err := s.pool.Exec(ctx, `UPDATE gateways SET connected = false WHERE connected`); err != nil {
 		return fmt.Errorf("resetting gateways connected: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) SetGatewayVersion(ctx context.Context, id, version string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE gateways SET version = $2 WHERE id = $1 AND version <> $2`, id, version)
+	if err != nil {
+		return fmt.Errorf("setting gateway version: %w", err)
 	}
 	return nil
 }

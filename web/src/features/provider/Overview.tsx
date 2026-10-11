@@ -19,6 +19,7 @@ import { Skeleton } from "@/ui/Skeleton";
 import { StatCard } from "@/ui/StatCard";
 import { ConnectionPill } from "@/ui/StatusPill";
 import { Truncate } from "@/ui/Identifier";
+import { updateLabel } from "@/lib/update";
 
 function Spec({ icon: Icon, label, value }: { icon: typeof Cpu; label: string; value: string }) {
   return (
@@ -74,7 +75,14 @@ export function MachineCard({ node }: { node: Node }) {
               </Badge>
             </div>
           </div>
-          <ConnectionPill connected={node.connected} size="sm" />
+          <span className="flex shrink-0 flex-col items-end gap-1.5">
+            <ConnectionPill connected={node.connected} size="sm" />
+            {updateLabel(node.update_state) && (
+              <Badge tone="warning" size="sm">
+                {updateLabel(node.update_state)}
+              </Badge>
+            )}
+          </span>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -227,3 +227,46 @@ func TestRunnerKeepsAStreamThatIsAnswering(t *testing.T) {
 		}
 	}
 }
+
+// What the agent could not report while it had no connection is sent from OnRegistered, and a Send made then must not be
+// dropped: the send channel has to exist before that handler runs.
+func TestAMessageSentFromOnRegisteredReachesTheCoordinator(t *testing.T) {
+	streams := make(chan *fakeStream, 4)
+	client := &fakeClient{next: func(ctx context.Context) *fakeStream {
+		s := newFakeStream(ctx)
+		streams <- s
+		return s
+	}}
+	report := &lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_Finished{
+		Finished: &lazycakev1.TaskFinished{TaskId: "tsk_1", ExitReason: "fenced"},
+	}}
+	queued := make(chan bool, 1)
+	var r *Runner
+	r = &Runner{
+		Client:   client,
+		Identity: Identity{Token: "tok", Hostname: "h1", Arch: "amd64"},
+		Log:      discardLogger(),
+		Handlers: Handlers{OnRegistered: func(*lazycakev1.RegisterAck) { queued <- r.TrySend(report) }},
+	}
+	if r.TrySend(report) {
+		t.Fatal("a message sent with no connection at all cannot have been queued")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	s := waitFor(t, streams, time.Second, "connect")
+	waitFor(t, s.out, time.Second, "register")
+	s.in <- &lazycakev1.CoordinatorMessage{Body: &lazycakev1.CoordinatorMessage_RegisterAck{
+		RegisterAck: &lazycakev1.RegisterAck{NodeId: "nod_1", HeartbeatS: 1, LeaseS: 5},
+	}}
+
+	if !waitFor(t, queued, time.Second, "OnRegistered") {
+		t.Fatal("a message sent from OnRegistered was not queued: the runner called the handler before it could take messages")
+	}
+	got := waitFor(t, s.out, 2*time.Second, "the message sent from OnRegistered")
+	if got.GetFinished().GetTaskId() != "tsk_1" {
+		t.Fatalf("expected the finished report, got %+v", got)
+	}
+}

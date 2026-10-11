@@ -177,6 +177,8 @@ type ImageCache interface {
 
 type Gateways interface {
 	CreateGateway(ctx context.Context, g Gateway) error
+	// SetGatewayVersion records the release a gateway reported (a no-op when unchanged).
+	SetGatewayVersion(ctx context.Context, id, version string) error
 	GetGateway(ctx context.Context, id string) (Gateway, error)
 	ListGatewaysByAccount(ctx context.Context, accountID string) ([]Gateway, error)
 	// SetGatewayConnected records connectedness and, when connected is

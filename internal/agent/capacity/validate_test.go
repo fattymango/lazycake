@@ -23,7 +23,7 @@ func TestValidateOfferRejectsAnythingBiggerThanTheMachine(t *testing.T) {
 	}{
 		{"cores", Resources{Cores: 8.5, MemoryMB: 1, DiskMB: 1}, "LAZYCAKE_OFFER_CORES=8.5 is more than this machine has (8 CPU cores)"},
 		{"memory", Resources{Cores: 1, MemoryMB: 16385, DiskMB: 1}, "LAZYCAKE_OFFER_MEMORY_MB=16385 is more than this machine has (16384 MB"},
-		{"disk", Resources{Cores: 1, MemoryMB: 1, DiskMB: 500001}, "LAZYCAKE_OFFER_DISK_MB=500001 is more than the free disk space here (500000 MB)"},
+		{"disk", Resources{Cores: 1, MemoryMB: 1, DiskMB: 500001}, "LAZYCAKE_OFFER_DISK_MB=500001 is more than the free disk space here (500000 MB)"}, // size unknown: falls back to free space
 		{"network", Resources{Cores: 1, MemoryMB: 1, DiskMB: 1, NetworkMbps: 1001}, "LAZYCAKE_OFFER_NETWORK_MBPS=1001 is more than this machine's fastest network link (1000 Mbps)"},
 	} {
 		err := ValidateOffer(physical, tc.over)
@@ -49,5 +49,18 @@ func TestAnUnreadableLinkSpeedIsNotCheckedButAKnownOneIs(t *testing.T) {
 	// A VM or wifi adapter that doesn't report a speed: nothing to compare against.
 	if err := ValidateOffer(Resources{Cores: 4, MemoryMB: 8000, DiskMB: 8000}, Resources{Cores: 1, MemoryMB: 1, DiskMB: 1, NetworkMbps: 5000}); err != nil {
 		t.Fatalf("an unknown link speed must not reject the offer: %v", err)
+	}
+}
+
+// The disk limit is the disk's size: an offer that exceeds today's free space but fits the disk is accepted (and warned about
+// by the caller), so a few unrelated files appearing can't stop an agent that started fine yesterday.
+func TestTheDiskLimitIsTheDisksSizeNotItsFreeSpace(t *testing.T) {
+	physical := Resources{Cores: 4, MemoryMB: 8000, DiskMB: 56_000, DiskTotalMB: 100_000}
+	if err := ValidateOffer(physical, Resources{Cores: 1, MemoryMB: 1, DiskMB: 57_000}); err != nil {
+		t.Fatalf("an offer a little above the current free space but within the disk must be accepted: %v", err)
+	}
+	err := ValidateOffer(physical, Resources{Cores: 1, MemoryMB: 1, DiskMB: 100_001})
+	if err == nil || !strings.Contains(err.Error(), "more than the size of the disk here (100000 MB)") {
+		t.Fatalf("an offer bigger than the disk itself must be refused, got %v", err)
 	}
 }

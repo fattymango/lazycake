@@ -19,6 +19,7 @@ import (
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
 	"github.com/fattymango/lazycake/internal/tunnel/noise"
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
+	"github.com/fattymango/lazycake/internal/version"
 )
 
 func run() error {
@@ -44,22 +45,23 @@ func run() error {
 		services[s.Name] = s.Addr()
 	}
 
-	reportBytes := newByteReporter(ctx, cfg, log)
+	reportBytes, hello := newByteReporter(ctx, cfg, log)
 	return serveForever(ctx, log, func(ctx context.Context) error {
-		return serveOnce(ctx, cfg, keypair, services, log, reportBytes)
+		return serveOnce(ctx, cfg, keypair, services, log, reportBytes, hello)
 	})
 }
 
 // serveOnce holds one relay connection: dials, then accepts tunnelled
 // streams until the connection or ctx ends.
 func serveOnce(ctx context.Context, cfg config.Config, keypair noise.Keypair, services map[string]string,
-	log *slog.Logger, reportBytes func(listener.ForwardReport)) error {
+	log *slog.Logger, reportBytes func(listener.ForwardReport), hello func(context.Context)) error {
 	conn, err := quic.DialGateway(ctx, cfg.CoordinatorAddr, cfg.Token, cfg.GatewayID, keypair.Public)
 	if err != nil {
 		return fmt.Errorf("connecting to relay: %w", err)
 	}
 	defer conn.CloseWithError(0, "gateway disconnecting")
 	log.Info("connected to relay", "addr", cfg.CoordinatorAddr)
+	go hello(ctx) // tell the coordinator which release this is (best effort)
 
 	l := &listener.Listener{
 		Conn: conn, Keypair: keypair, Services: services, Log: log,
@@ -151,16 +153,16 @@ func loadOrCreateKeypair(path string) (noise.Keypair, error) {
 // no-op if cfg.GRPCAddr wasn't set - reporting is defense in depth, not
 // something the gateway's actual job depends on, so it degrades gracefully
 // rather than failing startup.
-func newByteReporter(ctx context.Context, cfg config.Config, log *slog.Logger) func(listener.ForwardReport) {
+func newByteReporter(ctx context.Context, cfg config.Config, log *slog.Logger) (func(listener.ForwardReport), func(context.Context)) {
 	if cfg.GRPCAddr == "" {
 		log.Warn("LAZYCAKE_GRPC_ADDR not set, byte reconciliation reports disabled")
-		return func(listener.ForwardReport) {}
+		return func(listener.ForwardReport) {}, func(context.Context) {}
 	}
 
 	conn, err := grpc.NewClient(cfg.GRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Warn("dialing coordinator gRPC for byte reports, disabling them", "addr", cfg.GRPCAddr, "error", err)
-		return func(listener.ForwardReport) {}
+		return func(listener.ForwardReport) {}, func(context.Context) {}
 	}
 	client := lazycakev1.NewGatewayServiceClient(conn)
 
@@ -173,5 +175,13 @@ func newByteReporter(ctx context.Context, cfg config.Config, log *slog.Logger) f
 		return err
 	})
 	go rp.Run(ctx)
-	return rp.Report
+	hello := func(hctx context.Context) {
+		callCtx, cancel := context.WithTimeout(
+			metadata.NewOutgoingContext(hctx, metadata.Pairs("authorization", "Bearer "+cfg.Token)), 10*time.Second)
+		defer cancel()
+		if _, err := client.Hello(callCtx, &lazycakev1.GatewayHello{GatewayId: cfg.GatewayID, Version: version.Version}); err != nil {
+			log.Debug("telling the coordinator this gateway's version", "error", err) // an older coordinator has no such call
+		}
+	}
+	return rp.Report, hello
 }

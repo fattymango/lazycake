@@ -21,6 +21,94 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type GatewayHello struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GatewayId     string                 `protobuf:"bytes,1,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GatewayHello) Reset() {
+	*x = GatewayHello{}
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatewayHello) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatewayHello) ProtoMessage() {}
+
+func (x *GatewayHello) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatewayHello.ProtoReflect.Descriptor instead.
+func (*GatewayHello) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_gateway_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *GatewayHello) GetGatewayId() string {
+	if x != nil {
+		return x.GatewayId
+	}
+	return ""
+}
+
+func (x *GatewayHello) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+type GatewayHelloAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GatewayHelloAck) Reset() {
+	*x = GatewayHelloAck{}
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatewayHelloAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatewayHelloAck) ProtoMessage() {}
+
+func (x *GatewayHelloAck) ProtoReflect() protoreflect.Message {
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatewayHelloAck.ProtoReflect.Descriptor instead.
+func (*GatewayHelloAck) Descriptor() ([]byte, []int) {
+	return file_lazycake_v1_gateway_proto_rawDescGZIP(), []int{1}
+}
+
 // ByteReport carries the bytes one forwarded connection moved since its previous report
 // (a delta, not a running total), so a connection that stays open for hours shows up over
 // time instead of as one spike when it finally closes, and the deltas of one connection sum
@@ -44,7 +132,7 @@ type ByteReport struct {
 
 func (x *ByteReport) Reset() {
 	*x = ByteReport{}
-	mi := &file_lazycake_v1_gateway_proto_msgTypes[0]
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -56,7 +144,7 @@ func (x *ByteReport) String() string {
 func (*ByteReport) ProtoMessage() {}
 
 func (x *ByteReport) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_gateway_proto_msgTypes[0]
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -69,7 +157,7 @@ func (x *ByteReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ByteReport.ProtoReflect.Descriptor instead.
 func (*ByteReport) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_gateway_proto_rawDescGZIP(), []int{0}
+	return file_lazycake_v1_gateway_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ByteReport) GetGatewayId() string {
@@ -129,7 +217,7 @@ type ByteReportAck struct {
 
 func (x *ByteReportAck) Reset() {
 	*x = ByteReportAck{}
-	mi := &file_lazycake_v1_gateway_proto_msgTypes[1]
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -141,7 +229,7 @@ func (x *ByteReportAck) String() string {
 func (*ByteReportAck) ProtoMessage() {}
 
 func (x *ByteReportAck) ProtoReflect() protoreflect.Message {
-	mi := &file_lazycake_v1_gateway_proto_msgTypes[1]
+	mi := &file_lazycake_v1_gateway_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -154,14 +242,19 @@ func (x *ByteReportAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ByteReportAck.ProtoReflect.Descriptor instead.
 func (*ByteReportAck) Descriptor() ([]byte, []int) {
-	return file_lazycake_v1_gateway_proto_rawDescGZIP(), []int{1}
+	return file_lazycake_v1_gateway_proto_rawDescGZIP(), []int{3}
 }
 
 var File_lazycake_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_lazycake_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"\xe0\x01\n" +
+	"\x19lazycake/v1/gateway.proto\x12\vlazycake.v1\"G\n" +
+	"\fGatewayHello\x12\x1d\n" +
+	"\n" +
+	"gateway_id\x18\x01 \x01(\tR\tgatewayId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"\x11\n" +
+	"\x0fGatewayHelloAck\"\xe0\x01\n" +
 	"\n" +
 	"ByteReport\x12\x1d\n" +
 	"\n" +
@@ -172,9 +265,10 @@ const file_lazycake_v1_gateway_proto_rawDesc = "" +
 	"\aservice\x18\x05 \x01(\tR\aservice\x12\x14\n" +
 	"\x05final\x18\x06 \x01(\bR\x05final\x12 \n" +
 	"\vconnections\x18\a \x01(\x05R\vconnections\"\x0f\n" +
-	"\rByteReportAck2T\n" +
+	"\rByteReportAck2\x96\x01\n" +
 	"\x0eGatewayService\x12B\n" +
-	"\vReportBytes\x12\x17.lazycake.v1.ByteReport\x1a\x1a.lazycake.v1.ByteReportAckB:Z8github.com/fattymango/lazycake/internal/proto/lazycakev1b\x06proto3"
+	"\vReportBytes\x12\x17.lazycake.v1.ByteReport\x1a\x1a.lazycake.v1.ByteReportAck\x12@\n" +
+	"\x05Hello\x12\x19.lazycake.v1.GatewayHello\x1a\x1c.lazycake.v1.GatewayHelloAckB:Z8github.com/fattymango/lazycake/internal/proto/lazycakev1b\x06proto3"
 
 var (
 	file_lazycake_v1_gateway_proto_rawDescOnce sync.Once
@@ -188,16 +282,20 @@ func file_lazycake_v1_gateway_proto_rawDescGZIP() []byte {
 	return file_lazycake_v1_gateway_proto_rawDescData
 }
 
-var file_lazycake_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_lazycake_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_lazycake_v1_gateway_proto_goTypes = []any{
-	(*ByteReport)(nil),    // 0: lazycake.v1.ByteReport
-	(*ByteReportAck)(nil), // 1: lazycake.v1.ByteReportAck
+	(*GatewayHello)(nil),    // 0: lazycake.v1.GatewayHello
+	(*GatewayHelloAck)(nil), // 1: lazycake.v1.GatewayHelloAck
+	(*ByteReport)(nil),      // 2: lazycake.v1.ByteReport
+	(*ByteReportAck)(nil),   // 3: lazycake.v1.ByteReportAck
 }
 var file_lazycake_v1_gateway_proto_depIdxs = []int32{
-	0, // 0: lazycake.v1.GatewayService.ReportBytes:input_type -> lazycake.v1.ByteReport
-	1, // 1: lazycake.v1.GatewayService.ReportBytes:output_type -> lazycake.v1.ByteReportAck
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 0: lazycake.v1.GatewayService.ReportBytes:input_type -> lazycake.v1.ByteReport
+	0, // 1: lazycake.v1.GatewayService.Hello:input_type -> lazycake.v1.GatewayHello
+	3, // 2: lazycake.v1.GatewayService.ReportBytes:output_type -> lazycake.v1.ByteReportAck
+	1, // 3: lazycake.v1.GatewayService.Hello:output_type -> lazycake.v1.GatewayHelloAck
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -214,7 +312,7 @@ func file_lazycake_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lazycake_v1_gateway_proto_rawDesc), len(file_lazycake_v1_gateway_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

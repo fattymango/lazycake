@@ -64,14 +64,15 @@ func (s *Server) lifetimeEarnings(ctx context.Context, accountID string) (int64,
 
 // nodeView mirrors web/src/shared/types.ts's Node.
 type nodeView struct {
-	ID                string  `json:"id"`
-	Hostname          string  `json:"hostname"`
-	Arch              string  `json:"arch"`
-	Connected         bool    `json:"connected"`
-	OfferCores        float64 `json:"offer_cores"`
-	OfferMemoryMB     int     `json:"offer_memory_mb"`
-	OfferDiskMB       int     `json:"offer_disk_mb"`
-	OfferNetworkMbps  int     `json:"offer_network_mbps"`
+	ID               string  `json:"id"`
+	Hostname         string  `json:"hostname"`
+	Arch             string  `json:"arch"`
+	Connected        bool    `json:"connected"`
+	OfferCores       float64 `json:"offer_cores"`
+	OfferMemoryMB    int     `json:"offer_memory_mb"`
+	OfferDiskMB      int     `json:"offer_disk_mb"`
+	OfferNetworkMbps int     `json:"offer_network_mbps"`
+	versionView
 	TrustScore        float64 `json:"trust_score"`
 	LastHeartbeatAtMS int64   `json:"last_heartbeat_at_ms,omitempty"`
 	CreatedAtMS       int64   `json:"created_at_ms"`
@@ -80,7 +81,7 @@ type nodeView struct {
 func toNodeView(n store.Node) nodeView {
 	nv := nodeView{
 		ID: n.ID, Hostname: n.Hostname, Arch: n.Arch, Connected: n.Connected,
-		OfferCores: n.OfferCores, OfferMemoryMB: n.OfferMemoryMB, OfferDiskMB: n.OfferDiskMB, OfferNetworkMbps: n.OfferNetworkMbps,
+		OfferCores: n.OfferCores, OfferMemoryMB: n.OfferMemoryMB, OfferDiskMB: n.OfferDiskMB, OfferNetworkMbps: n.OfferNetworkMbps, versionView: versionInfo(n.AgentVersion),
 		TrustScore: n.TrustScore, CreatedAtMS: n.CreatedAt.UnixMilli(),
 	}
 	if n.LastHeartbeatAt != nil {

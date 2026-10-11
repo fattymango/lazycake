@@ -814,3 +814,15 @@ func (f *fakeStore) TaskUsageSeries(ctx context.Context, taskID string) ([]store
 func (f *fakeStore) TaskGatewaySeries(ctx context.Context, taskID string) ([]store.TaskGatewayPoint, error) {
 	return nil, nil
 }
+
+func (f *fakeStore) SetGatewayVersion(ctx context.Context, id, version string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.gateways[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	g.Version = version
+	f.gateways[id] = g
+	return nil
+}

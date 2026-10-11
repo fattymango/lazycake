@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { Activity, CheckCircle2, HelpCircle, XCircle } from "lucide-react";
 import { apiPost, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -82,7 +83,7 @@ function ServiceRow({ s }: { s: GatewayServiceTest }) {
   );
 }
 
-function Result({ r, now }: { r: GatewayTestResult; now: number }) {
+function Result({ r, now, update }: { r: GatewayTestResult; now: number; update?: ReactNode }) {
   const m = gatewayTestStatuses[r.status];
   const t = toneClasses[m.tone];
   const failing = r.services.filter((s) => !s.ok && s.answered).length;
@@ -99,6 +100,8 @@ function Result({ r, now }: { r: GatewayTestResult; now: number }) {
               : ""}
             {m.hint}
           </p>
+          {/* An older gateway can't verify services (grey): the way out is updating it. */}
+          {r.status === "grey" && update && <div className="mt-2">{update}</div>}
         </div>
       </div>
       {r.connected && r.services.length > 0 && (
@@ -114,7 +117,7 @@ function Result({ r, now }: { r: GatewayTestResult; now: number }) {
 }
 
 /** "Test connection" for one gateway: button, cooldown, legend and the last result. */
-export function GatewayTester({ gatewayId }: { gatewayId: string }) {
+export function GatewayTester({ gatewayId, update }: { gatewayId: string; update?: ReactNode }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<GatewayTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +153,7 @@ export function GatewayTester({ gatewayId }: { gatewayId: string }) {
           {error}
         </Alert>
       )}
-      {result && <Result r={result} now={now} />}
+      {result && <Result r={result} now={now} update={update} />}
     </div>
   );
 }

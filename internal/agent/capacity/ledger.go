@@ -19,6 +19,10 @@ type Resources struct {
 	// capacity) its fastest physical link, 0 when that can't be read. It is enforced as a rate
 	// limit on tunnel traffic, not by admission, so Fits and the ledger ignore it.
 	NetworkMbps float64
+	// DiskTotalMB is the size of the disk holding the agent's data (for a machine's physical capacity). An offer is
+	// refused only when it is bigger than the disk itself; free space comes and goes with unrelated files, so
+	// refusing on it made a machine that started fine yesterday fail today. 0 when unknown.
+	DiskTotalMB int
 }
 
 // Fits reports whether want fits within have on every dimension.

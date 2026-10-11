@@ -124,8 +124,8 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO nodes (id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
-			offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, connected)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+			offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, agent_version, connected)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
 		ON CONFLICT (id) DO UPDATE SET
 			instance_id = EXCLUDED.instance_id,
 			hostname = EXCLUDED.hostname,
@@ -136,9 +136,10 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 			offer_memory_mb = EXCLUDED.offer_memory_mb,
 			offer_disk_mb = EXCLUDED.offer_disk_mb,
 			offer_network_mbps = EXCLUDED.offer_network_mbps,
+			agent_version = EXCLUDED.agent_version,
 			connected = true`,
 		n.ID, n.AccountID, nullIfEmpty(n.InstanceID), n.Hostname, n.Arch, orEmpty(n.CPUFlags), caps,
-		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB, n.OfferNetworkMbps)
+		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB, n.OfferNetworkMbps, n.AgentVersion)
 	if err != nil {
 		return fmt.Errorf("upserting node: %w", err)
 	}
@@ -146,7 +147,7 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 }
 
 const nodeColumns = `id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
-	offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, bench_score, trust_score,
+	offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, agent_version, bench_score, trust_score,
 	connected, last_heartbeat_at, created_at`
 
 func (s *PostgresStore) GetNode(ctx context.Context, id string) (Node, error) {
@@ -220,7 +221,7 @@ func scanNode(row rowScanner) (Node, error) {
 	var capsRaw []byte
 	var instanceID *string
 	err := row.Scan(&n.ID, &n.AccountID, &instanceID, &n.Hostname, &n.Arch, &n.CPUFlags, &capsRaw,
-		&n.OfferCores, &n.OfferMemoryMB, &n.OfferDiskMB, &n.OfferNetworkMbps, &n.BenchScore, &n.TrustScore,
+		&n.OfferCores, &n.OfferMemoryMB, &n.OfferDiskMB, &n.OfferNetworkMbps, &n.AgentVersion, &n.BenchScore, &n.TrustScore,
 		&n.Connected, &n.LastHeartbeatAt, &n.CreatedAt)
 	if err != nil {
 		return Node{}, err

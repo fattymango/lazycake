@@ -21,6 +21,7 @@ import { NotFound } from "@/ui/NotFound";
 import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
+import { UpdateNotice } from "@/ui/UpdateNotice";
 import { useToast } from "@/ui/Toast";
 import { Layers } from "lucide-react";
 
@@ -86,7 +87,12 @@ export function MachineDetail() {
     <div className="space-y-6">
       <PageHeader
         title={<Truncate className="max-w-[calc(100vw-4rem)] sm:max-w-xl">{n.hostname}</Truncate>}
-        meta={<ConnectionPill connected={n.connected} />}
+        meta={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <ConnectionPill connected={n.connected} />
+            <UpdateNotice kind="agent" info={n} name={n.hostname} />
+          </span>
+        }
         description={
           <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
             <Identifier value={n.id} full />
@@ -116,13 +122,18 @@ export function MachineDetail() {
       )}
 
       <Card className="overflow-hidden">
-        <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-5">
           <Stat label="Status">{n.connected ? "Online" : "Offline"}</Stat>
           <Stat label="Trust score">
             <TrustMeter score={n.trust_score} />
           </Stat>
           <Stat label="Last heartbeat">
             <span data-tnum>{relativeTime(n.last_heartbeat_at_ms)}</span>
+          </Stat>
+          <Stat label="Agent version">
+            <span className="font-mono text-[0.8125rem]" data-tnum>
+              {n.version === "" ? "not reported" : n.version}
+            </span>
           </Stat>
           <Stat label="Registered">
             <span data-tnum>{dateTime(n.created_at_ms)}</span>

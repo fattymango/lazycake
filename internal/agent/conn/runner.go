@@ -28,6 +28,8 @@ type Identity struct {
 	BootID     string
 	InstanceID string
 	Images     []*lazycakev1.CachedImage
+	// Version is the agent's release, reported at every registration so the portal can show it.
+	Version string
 }
 
 // Handlers are called as messages arrive from the coordinator. Any of them
@@ -135,16 +137,24 @@ func (r *Runner) clockNow() time.Time {
 // retry onto - the caller's own state (task status in the store-of-record)
 // is what reconnection re-announces.
 func (r *Runner) Send(msg *lazycakev1.AgentMessage) {
+	r.TrySend(msg)
+}
+
+// TrySend is Send that says whether the message was queued. A caller whose message must not be lost (a task's final report) keeps
+// it when this is false and sends it again once the agent has registered.
+func (r *Runner) TrySend(msg *lazycakev1.AgentMessage) bool {
 	r.mu.Lock()
 	ch := r.sendCh
 	r.mu.Unlock()
 	if ch == nil {
-		return
+		return false
 	}
 	select {
 	case ch <- msg:
+		return true
 	default:
 		r.Log.Warn("agent send buffer full, dropping message")
+		return false
 	}
 }
 
@@ -197,6 +207,7 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			BootId:         r.Identity.BootID,
 			InstanceId:     r.Identity.InstanceID,
 			Images:         r.Identity.Images,
+			Version:        r.Identity.Version,
 			RunningTaskIds: running,
 		},
 	}}); err != nil {
@@ -222,9 +233,6 @@ func (r *Runner) runOnce(ctx context.Context) error {
 	r.fenceDeadline = r.clockNow().Add(time.Duration(r.leaseS) * time.Second)
 	r.lastAck = r.clockNow()
 	r.mu.Unlock()
-	if r.Handlers.OnRegistered != nil {
-		r.Handlers.OnRegistered(ack)
-	}
 
 	// 64 slots at up to a 64KB log batch each bounds outstanding send
 	// backlog to roughly the 4MB task 1.9 asks for when the coordinator is
@@ -238,6 +246,12 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		r.sendCh = nil
 		r.mu.Unlock()
 	}()
+
+	// The channel is up before OnRegistered runs: its first job is to resend what could not be sent while there was no
+	// connection, and a Send made with no channel is dropped. What it queues waits in the buffer until sendLoop starts.
+	if r.Handlers.OnRegistered != nil {
+		r.Handlers.OnRegistered(ack)
+	}
 
 	heartbeatEvery := time.Duration(ack.GetHeartbeatS()) * time.Second
 	if heartbeatEvery <= 0 {

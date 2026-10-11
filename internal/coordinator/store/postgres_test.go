@@ -801,3 +801,25 @@ func TestFineGrainedSeriesForShortTasksAndFreshMachines(t *testing.T) {
 	require.NoError(t, s.pool.QueryRow(ctx, `SELECT count(*) FROM node_usage_samples WHERE at < now() - interval '48 hours'`).Scan(&n))
 	require.Zero(t, n)
 }
+
+// Versions (task 8.16): an agent's release is stored when it registers and refreshed on re-registration; a gateway's when it says hello.
+func TestVersionsAreStoredForAgentsAndGateways(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	require.NoError(t, s.UpsertNode(ctx, Node{ID: "nod_1", AccountID: "act_1", Hostname: "h", Arch: "amd64", AgentVersion: "v0.3.12"}))
+	n, err := s.GetNode(ctx, "nod_1")
+	require.NoError(t, err)
+	require.Equal(t, "v0.3.12", n.AgentVersion)
+	require.NoError(t, s.UpsertNode(ctx, Node{ID: "nod_1", AccountID: "act_1", Hostname: "h", Arch: "amd64", AgentVersion: "v0.3.13"}))
+	n, _ = s.GetNode(ctx, "nod_1")
+	require.Equal(t, "v0.3.13", n.AgentVersion, "an update shows up at the next registration")
+
+	mustGateway(t, s, "gw_1", "act_1")
+	g, _ := s.GetGateway(ctx, "gw_1")
+	require.Equal(t, "", g.Version, "a gateway that never said hello has no version")
+	require.NoError(t, s.SetGatewayVersion(ctx, "gw_1", "v0.3.13"))
+	require.NoError(t, s.SetGatewayVersion(ctx, "gw_1", "v0.3.13")) // unchanged: harmless
+	g, _ = s.GetGateway(ctx, "gw_1")
+	require.Equal(t, "v0.3.13", g.Version)
+}

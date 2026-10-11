@@ -6,8 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -180,5 +182,70 @@ func TestHeartbeatUsageIsStoredSanitisedAndNeverBreaksTheHeartbeat(t *testing.T)
 	}
 	if got.Tasks[0].CPUCores != 0 || got.Tasks[0].MemoryBytes != 0 {
 		t.Fatalf("negative task figures not clamped: %+v", got.Tasks[0])
+	}
+}
+
+// registerWithVersion connects an agent that reports the given version and returns the node it was given.
+func registerWithVersion(t *testing.T, version string) (store.Node, *fakeStore) {
+	t.Helper()
+	fs := newFakeStore()
+	fs.addToken(string(auth.Hash("good-token")), store.APIToken{AccountID: "act_1", Kind: store.TokenAgent})
+	client, _ := startTestServer(t, fs)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := client.Connect(ctx)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if err := stream.Send(&lazycakev1.AgentMessage{Body: &lazycakev1.AgentMessage_Register{
+		Register: &lazycakev1.Register{Token: "good-token", Hostname: "host1", Arch: "amd64", Version: version},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	msg, err := stream.Recv()
+	if err != nil || msg.GetRegisterAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v, %v", msg, err)
+	}
+	n, err := fs.GetNode(context.Background(), msg.GetRegisterAck().GetNodeId())
+	if err != nil {
+		t.Fatalf("GetNode: %v", err)
+	}
+	return n, fs
+}
+
+// The release an agent runs is recorded when it registers (task 8.16), and whatever it sends is bounded: it is its own to write, and
+// it is shown on a page.
+func TestRegisterStoresTheAgentVersion(t *testing.T) {
+	n, _ := registerWithVersion(t, "v0.4.0")
+	if n.AgentVersion != "v0.4.0" {
+		t.Fatalf("AgentVersion = %q, want v0.4.0", n.AgentVersion)
+	}
+	n, _ = registerWithVersion(t, "")
+	if n.AgentVersion != "" {
+		t.Fatalf("an agent that sends no version must read as unknown, got %q", n.AgentVersion)
+	}
+}
+
+func TestRegisterCapsAnAbsurdAgentVersion(t *testing.T) {
+	n, _ := registerWithVersion(t, strings.Repeat("€", 4000)) // 3 bytes each: the cut lands inside a character
+	if len(n.AgentVersion) > maxVersionLen || !utf8.ValidString(n.AgentVersion) {
+		t.Fatalf("stored %d bytes, valid UTF-8 = %v", len(n.AgentVersion), utf8.ValidString(n.AgentVersion))
+	}
+	if n.AgentVersion == "" {
+		t.Fatal("an over-long version is cut, not discarded")
+	}
+}
+
+func TestCapVersion(t *testing.T) {
+	if got := capVersion("v0.4.0-12-gabc1234-dirty"); got != "v0.4.0-12-gabc1234-dirty" {
+		t.Fatalf("a normal version must be left alone, got %q", got)
+	}
+	exact := strings.Repeat("x", maxVersionLen)
+	if got := capVersion(exact); got != exact {
+		t.Fatal("a version of exactly the limit must be left alone")
+	}
+	if got := capVersion(exact + "y"); len(got) != maxVersionLen {
+		t.Fatalf("one byte over is cut to the limit, got %d", len(got))
 	}
 }

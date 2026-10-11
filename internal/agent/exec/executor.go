@@ -31,6 +31,12 @@ type Sender interface {
 	Send(msg *lazycakev1.AgentMessage)
 }
 
+// trySender is a Sender that can say whether the message went onto a live connection, which *conn.Runner can. A Sender that
+// can't is taken to have delivered everything.
+type trySender interface {
+	TrySend(msg *lazycakev1.AgentMessage) bool
+}
+
 // Executor runs dispatched tasks against a Runtime under a capacity.Ledger.
 type Executor struct {
 	Runtime    runtime.Runtime
@@ -67,7 +73,7 @@ type Executor struct {
 
 	mu      sync.Mutex
 	active  map[string]*activeTask              // task_id -> running container
-	pending map[string]*lazycakev1.AgentMessage // task_id -> not-yet-confirmed TaskFinished, for replay on reconnect
+	pending map[string]*lazycakev1.AgentMessage // task_id -> TaskFinished that has not gone out on a connection yet, for replay on reconnect
 }
 
 type activeTask struct {
@@ -147,10 +153,11 @@ func (e *Executor) CancelTask(ctx context.Context, taskID string) {
 	}
 }
 
-// ReplayPending resends every TaskFinished the agent couldn't confirm was
-// delivered (most notably a fenced task's report, sent while disconnected
-// - PLAN.md "report it on reconnect"). Call this from
-// conn.Handlers.OnRegistered.
+// ReplayPending resends every TaskFinished that has not yet gone out on a
+// connection (most notably a fenced task's report, finished while
+// disconnected - PLAN.md "report it on reconnect"). Call this from
+// conn.Handlers.OnRegistered. A report that goes out is forgotten; one that
+// still can't (the send buffer is full) stays for the next registration.
 func (e *Executor) ReplayPending() {
 	e.mu.Lock()
 	pending := e.pending
@@ -159,7 +166,37 @@ func (e *Executor) ReplayPending() {
 
 	for taskID, msg := range pending {
 		e.Log.Info("replaying finished report after reconnect", "task_id", taskID)
-		e.Send.Send(msg)
+		if !e.deliver(msg) {
+			e.mu.Lock()
+			e.pending[taskID] = msg
+			e.mu.Unlock()
+		}
+	}
+}
+
+// deliver hands msg to the connection and says whether it went out.
+func (e *Executor) deliver(msg *lazycakev1.AgentMessage) bool {
+	if ts, ok := e.Send.(trySender); ok {
+		return ts.TrySend(msg)
+	}
+	e.Send.Send(msg)
+	return true
+}
+
+// reportFinished sends a task's final report. It is kept until a connection has taken it: the coordinator still believes a task
+// is running until it hears otherwise, so a report dropped because the agent happened to be between connections would leave the
+// task running, and its customer's balance held, until the lease ran out.
+func (e *Executor) reportFinished(taskID string, msg *lazycakev1.AgentMessage) {
+	e.mu.Lock()
+	if e.pending == nil {
+		e.pending = make(map[string]*lazycakev1.AgentMessage)
+	}
+	e.pending[taskID] = msg
+	e.mu.Unlock()
+	if e.deliver(msg) {
+		e.mu.Lock()
+		delete(e.pending, taskID)
+		e.mu.Unlock()
 	}
 }
 
@@ -217,13 +254,7 @@ func (e *Executor) run(ctx context.Context, d *lazycakev1.Dispatch) {
 			if read := tunnelTraffic.Load(); read != nil {
 				msg.GetFinished().BytesSent, msg.GetFinished().BytesRecv = (*read)()
 			}
-			e.mu.Lock()
-			if e.pending == nil {
-				e.pending = make(map[string]*lazycakev1.AgentMessage)
-			}
-			e.pending[d.GetTaskId()] = msg
-			e.mu.Unlock()
-			e.Send.Send(msg)
+			e.reportFinished(d.GetTaskId(), msg)
 		})
 	}
 

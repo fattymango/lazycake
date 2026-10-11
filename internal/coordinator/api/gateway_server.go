@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -100,4 +101,43 @@ func (s *GatewayServer) ReportBytes(ctx context.Context, req *lazycakev1.ByteRep
 		slog.Warn("recording gateway traffic", "gateway_id", gw.ID, "task_id", req.GetTaskId(), "error", err)
 	}
 	return &lazycakev1.ByteReportAck{}, nil
+}
+
+// Hello records the release a gateway runs, sent whenever it (re)connects. Display only: it only ever tells the customer whether
+// their gateway is behind. A gateway built before this simply never calls it, and its version reads as unknown.
+func (s *GatewayServer) Hello(ctx context.Context, req *lazycakev1.GatewayHello) (*lazycakev1.GatewayHelloAck, error) {
+	token, ok := bearerToken(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing bearer token")
+	}
+	tok, err := s.Store.Authenticate(ctx, auth.Hash(token))
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid token")
+	}
+	if tok.Kind != store.TokenGateway {
+		return nil, status.Error(codes.PermissionDenied, "token is not a gateway token")
+	}
+	gw, err := s.Store.GetGateway(ctx, req.GetGatewayId())
+	if err != nil {
+		return nil, status.Error(codes.NotFound, "unknown gateway")
+	}
+	if gw.AccountID != tok.AccountID {
+		return nil, status.Error(codes.PermissionDenied, "gateway does not belong to this token's account")
+	}
+	if err := s.Store.SetGatewayVersion(ctx, gw.ID, capVersion(req.GetVersion())); err != nil {
+		slog.Warn("recording gateway version", "gateway_id", gw.ID, "error", err)
+	}
+	return &lazycakev1.GatewayHelloAck{}, nil
+}
+
+// maxVersionLen bounds a version string an agent or gateway reports about itself. A real one is a dozen bytes ("v0.4.0-12-gabc1234-dirty"); the
+// rest of the field is only there for whoever sends something else.
+const maxVersionLen = 64
+
+// capVersion cuts a reported version to maxVersionLen bytes without leaving half a character at the end, which the database would refuse.
+func capVersion(v string) string {
+	if len(v) <= maxVersionLen {
+		return v
+	}
+	return strings.ToValidUTF8(v[:maxVersionLen], "")
 }

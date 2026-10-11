@@ -90,11 +90,13 @@ type Node struct {
 	OfferMemoryMB    int
 	OfferDiskMB      int
 	OfferNetworkMbps int
-	BenchScore       *float64
-	TrustScore       float64
-	Connected        bool
-	LastHeartbeatAt  *time.Time
-	CreatedAt        time.Time
+	// AgentVersion is the release the agent last reported ("" if it predates version reporting).
+	AgentVersion    string
+	BenchScore      *float64
+	TrustScore      float64
+	Connected       bool
+	LastHeartbeatAt *time.Time
+	CreatedAt       time.Time
 }
 
 // Limits mirrors the task descriptor's "limits" object in PLAN.md.
@@ -271,6 +273,8 @@ type Gateway struct {
 	Services    []GatewayService
 	Connected   bool
 	CreatedAt   time.Time
+	// Version is the release the gateway last reported ("" if it predates version reporting).
+	Version string
 }
 
 // GatewayTrafficReport is one byte report from a gateway about one forwarded

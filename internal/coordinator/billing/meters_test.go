@@ -22,10 +22,17 @@ type fakeMeterStore struct {
 	store.Store
 	nodes  map[string]store.Node
 	meters map[string]store.TaskMeter
+	// released records which tasks had their balance hold released.
+	released []string
 }
 
 func newFakeMeterStore() *fakeMeterStore {
 	return &fakeMeterStore{nodes: map[string]store.Node{}, meters: map[string]store.TaskMeter{}}
+}
+
+func (f *fakeMeterStore) ReleaseHold(ctx context.Context, taskID string) error {
+	f.released = append(f.released, taskID)
+	return nil
 }
 
 func (f *fakeMeterStore) GetNode(ctx context.Context, id string) (store.Node, error) {
@@ -118,5 +125,24 @@ func TestNodeWithoutBenchScoreDefaultsToOne(t *testing.T) {
 	meter, _ := fs.GetMeter(context.Background(), "tsk_1")
 	if meter.NormalisedS == nil || *meter.NormalisedS != 7 {
 		t.Fatalf("normalised_s = %v, want 7 (duration_s * default bench_score 1.0)", meter.NormalisedS)
+	}
+}
+
+// A task that never started has no meter, but it did place a balance hold at dispatch: finishing it must give the hold back
+// (and must not be reported as an error). Found by a production load test: failed-before-start tasks leaked their holds.
+func TestATaskThatNeverStartedStillReleasesItsHold(t *testing.T) {
+	fs := newFakeMeterStore()
+	fs.nodes["nod_1"] = store.Node{ID: "nod_1"}
+	m := &Meters{Store: fs, Clock: clock.NewFake(time.Unix(0, 0)), Log: discardLog()}
+
+	err := m.OnTaskFinished(context.Background(), "nod_1", api.TaskFinishedEvent{TaskID: "tsk_never", ExitReason: "error", ExitCode: -1})
+	if err != nil {
+		t.Fatalf("a task that never started is not an error: %v", err)
+	}
+	if len(fs.released) != 1 || fs.released[0] != "tsk_never" {
+		t.Fatalf("the hold must be released exactly once, got %v", fs.released)
+	}
+	if _, ok := fs.meters["tsk_never"]; ok {
+		t.Fatal("no meter should be invented for a task that never ran")
 	}
 }

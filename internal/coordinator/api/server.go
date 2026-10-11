@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -79,6 +80,9 @@ type Server struct {
 	// agent's own fence deadline (PLAN.md "Lease and fencing", task 3.1's
 	// invariant). Defaults to 15s if zero.
 	LeaseMargin time.Duration
+
+	offerMu   sync.Mutex
+	offerSeen map[string]string // node id -> the offer last written, so repeated capacity reports cost no write
 }
 
 func (s *Server) leaseMargin() time.Duration {
@@ -231,12 +235,13 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 	caps := reg.GetCaps()
 	offer := reg.GetOffer()
 	n := store.Node{
-		ID:         nodeID,
-		AccountID:  tok.AccountID,
-		InstanceID: reg.GetInstanceId(),
-		Hostname:   reg.GetHostname(),
-		Arch:       reg.GetArch(),
-		CPUFlags:   reg.GetCpuFlags(),
+		ID:           nodeID,
+		AccountID:    tok.AccountID,
+		InstanceID:   reg.GetInstanceId(),
+		Hostname:     reg.GetHostname(),
+		AgentVersion: capVersion(reg.GetVersion()),
+		Arch:         reg.GetArch(),
+		CPUFlags:     reg.GetCpuFlags(),
 		Capabilities: store.Capabilities{
 			MemoryLimit:   caps.GetMemoryLimit(),
 			CPUQuota:      caps.GetCpuQuota(),
@@ -353,8 +358,21 @@ func (s *Server) handleHeartbeat(ctx context.Context, nodeID string, hb *lazycak
 
 func (s *Server) handleCapacity(ctx context.Context, nodeID, accountID string, cap *lazycakev1.CapacityReport) error {
 	if offer := cap.GetOffer(); offer != nil {
-		if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb()), int(offer.GetNetworkMbps())); err != nil {
-			return fmt.Errorf("setting node offer: %w", err)
+		// Agents repeat their offer with every capacity report (every few seconds under load); only write it when it changed.
+		key := fmt.Sprintf("%g/%d/%d/%d", offer.GetCores(), offer.GetMemoryMb(), offer.GetDiskMb(), offer.GetNetworkMbps())
+		s.offerMu.Lock()
+		unchanged := s.offerSeen[nodeID] == key
+		s.offerMu.Unlock()
+		if !unchanged {
+			if err := s.Store.SetNodeOffer(ctx, nodeID, offer.GetCores(), int(offer.GetMemoryMb()), int(offer.GetDiskMb()), int(offer.GetNetworkMbps())); err != nil {
+				return fmt.Errorf("setting node offer: %w", err)
+			}
+			s.offerMu.Lock()
+			if s.offerSeen == nil {
+				s.offerSeen = map[string]string{}
+			}
+			s.offerSeen[nodeID] = key
+			s.offerMu.Unlock()
 		}
 	}
 	s.Bus.Publish(events.Event{

@@ -279,6 +279,7 @@ type gatewayView struct {
 	CreatedAtMS int64                `json:"created_at_ms"`
 	// Lifetime traffic (task 8.14); zero for a gateway that has moved nothing.
 	Traffic trafficTotalsView `json:"traffic"`
+	versionView
 }
 
 type gatewayServiceView struct {
@@ -291,7 +292,7 @@ func toGatewayView(g store.Gateway) gatewayView {
 	for i, svc := range g.Services {
 		services[i] = gatewayServiceView{Name: svc.Name, Port: svc.Port}
 	}
-	return gatewayView{ID: g.ID, Label: g.Label, Connected: g.Connected, Services: services, CreatedAtMS: g.CreatedAt.UnixMilli()}
+	return gatewayView{ID: g.ID, Label: g.Label, Connected: g.Connected, Services: services, CreatedAtMS: g.CreatedAt.UnixMilli(), versionView: versionInfo(g.Version)}
 }
 
 func (s *Server) handleListGateways(w http.ResponseWriter, r *http.Request) {

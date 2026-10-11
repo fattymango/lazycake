@@ -27,6 +27,6 @@ func runCapacity() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("cores=%g memory_mb=%d disk_mb=%d network_mbps=%g\n", p.Cores, p.MemoryMB, p.DiskMB, p.NetworkMbps)
+	fmt.Printf("cores=%g memory_mb=%d disk_mb=%d network_mbps=%g disk_total_mb=%d\n", p.Cores, p.MemoryMB, p.DiskMB, p.NetworkMbps, p.DiskTotalMB)
 	return nil
 }

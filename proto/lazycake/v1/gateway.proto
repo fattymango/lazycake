@@ -10,7 +10,16 @@ option go_package = "github.com/fattymango/lazycake/internal/proto/lazycakev1";
 // the same one it already uses to connect to the relay.
 service GatewayService {
   rpc ReportBytes(ByteReport) returns (ByteReportAck);
+  // Hello is how a gateway says which release it is whenever it (re)connects, so the portal can show it.
+  rpc Hello(GatewayHello) returns (GatewayHelloAck);
 }
+
+message GatewayHello {
+  string gateway_id = 1;
+  string version    = 2;
+}
+
+message GatewayHelloAck {}
 
 // ByteReport carries the bytes one forwarded connection moved since its previous report
 // (a delta, not a running total), so a connection that stays open for hours shows up over

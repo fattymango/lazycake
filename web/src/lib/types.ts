@@ -93,7 +93,7 @@ export interface GatewayService {
   port: number;
 }
 
-export interface Gateway {
+export interface Gateway extends VersionInfo {
   id: string;
   label: string;
   connected: boolean;
@@ -142,7 +142,15 @@ export interface LedgerEntry {
   created_at_ms: number;
 }
 
-export interface Node {
+/** Which release a machine or gateway runs, and whether it is behind the coordinator (task 8.16). */
+export interface VersionInfo {
+  version: string;
+  latest_version: string;
+  /** "unknown" means it never reported a release number: it predates version reporting. */
+  update_state: "current" | "outdated" | "unknown";
+}
+
+export interface Node extends VersionInfo {
   id: string;
   hostname: string;
   arch: string;

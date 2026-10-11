@@ -25,10 +25,15 @@ func Physical(dataDir string) (Resources, error) {
 	if err != nil {
 		return Resources{}, fmt.Errorf("reading free disk: %w", err)
 	}
+	totalMB, err := totalDiskMB(dataDir)
+	if err != nil {
+		return Resources{}, fmt.Errorf("reading disk size: %w", err)
+	}
 	return Resources{
 		Cores:       float64(goruntime.NumCPU()),
 		MemoryMB:    memMB,
 		DiskMB:      diskMB,
+		DiskTotalMB: totalMB,
 		NetworkMbps: fastestLinkMbps("/sys/class/net"),
 	}, nil
 }
@@ -87,4 +92,12 @@ func freeDiskMB(path string) (int, error) {
 		return 0, err
 	}
 	return int(st.Bavail * uint64(st.Bsize) / (1024 * 1024)), nil
+}
+
+func totalDiskMB(path string) (int, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0, err
+	}
+	return int(st.Blocks * uint64(st.Bsize) / (1024 * 1024)), nil
 }

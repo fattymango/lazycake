@@ -30,6 +30,7 @@ import (
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
 	"github.com/fattymango/lazycake/internal/tunnel/noise"
+	"github.com/fattymango/lazycake/internal/version"
 )
 
 func run() error {
@@ -59,6 +60,10 @@ func run() error {
 		return err
 	}
 	log.Info("offer accepted", "this_machine", physical, "offer", offer)
+	if offer.DiskMB > physical.DiskMB {
+		log.Warn("the storage on offer is more than the disk has free right now; tasks that need more than what is free will fail until space is freed",
+			"offered_mb", offer.DiskMB, "free_mb", physical.DiskMB)
+	}
 
 	probeCtx, cancelProbe := context.WithTimeout(ctx, 30*time.Second)
 	report, err := probe.Run(probeCtx, probe.DefaultOptions())
@@ -113,6 +118,7 @@ func run() error {
 			InstanceID: instanceID,
 			BootID:     bootID,
 			Caps:       report.Capabilities("podman"),
+			Version:    version.Version,
 			Offer: &lazycakev1.Offer{
 				NetworkMbps: int32(offer.NetworkMbps),
 				Cores:       offer.Cores,
@@ -183,6 +189,7 @@ func run() error {
 		},
 	}
 	go runBenchLoop(ctx, ledger, runner, log, benchTrigger)
+	go reportCapacity(ctx, ledger, runner)
 
 	watcher := &lease.Watcher{
 		Deadline: runner.FenceDeadline,

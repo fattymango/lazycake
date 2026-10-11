@@ -19,8 +19,14 @@ func ValidateOffer(physical, requested Resources) error {
 	if requested.MemoryMB > physical.MemoryMB {
 		problems = append(problems, fmt.Sprintf("LAZYCAKE_OFFER_MEMORY_MB=%d is more than this machine has (%d MB of memory)", requested.MemoryMB, physical.MemoryMB))
 	}
-	if requested.DiskMB > physical.DiskMB {
-		problems = append(problems, fmt.Sprintf("LAZYCAKE_OFFER_DISK_MB=%d is more than the free disk space here (%d MB)", requested.DiskMB, physical.DiskMB))
+	// The limit is the disk's size, not its free space: free space moves with unrelated files, and an offer that was
+	// fine yesterday must not stop the agent starting today (see DiskTotalMB). Callers warn when it exceeds free space.
+	diskLimit, what := physical.DiskTotalMB, "the size of the disk here"
+	if diskLimit <= 0 {
+		diskLimit, what = physical.DiskMB, "the free disk space here"
+	}
+	if requested.DiskMB > diskLimit {
+		problems = append(problems, fmt.Sprintf("LAZYCAKE_OFFER_DISK_MB=%d is more than %s (%d MB)", requested.DiskMB, what, diskLimit))
 	}
 	// A link speed that can't be read (virtual machines and wifi often don't report one) can't be
 	// checked, so it isn't: the offer is then enforced as a rate limit regardless.

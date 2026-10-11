@@ -62,6 +62,7 @@ message Register {
   string instance_id  = 8;
   repeated CachedImage images = 9;  // full reconciliation on connect
   repeated string running_task_ids = 10;  // re-announced on reconnect for adoption
+  string version      = 11; // the agent's release (empty from an agent built before this)
 }
 
 message Capabilities {

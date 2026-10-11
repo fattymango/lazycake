@@ -22,6 +22,7 @@ import { PageHeader } from "@/ui/PageHeader";
 import { GatewayTester } from "./GatewayTest";
 import { Skeleton } from "@/ui/Skeleton";
 import { ConnectionPill } from "@/ui/StatusPill";
+import { UpdateNotice } from "@/ui/UpdateNotice";
 import { useToast } from "@/ui/Toast";
 
 interface ServiceRow {
@@ -222,7 +223,10 @@ export function Gateways() {
                         </Link>
                       </h2>
                     </div>
-                    <ConnectionPill connected={g.connected} size="sm" />
+                    <span className="flex shrink-0 flex-col items-end gap-1.5">
+                      <ConnectionPill connected={g.connected} size="sm" />
+                      <UpdateNotice kind="gateway" info={g} name={g.label} />
+                    </span>
                   </div>
 
                   <div>
@@ -270,7 +274,7 @@ export function Gateways() {
                   </Link>
                 </CardBody>
                 <div className="border-t border-border px-5 py-4">
-                  <GatewayTester gatewayId={g.id} />
+                  <GatewayTester gatewayId={g.id} update={<UpdateNotice kind="gateway" info={g} name={g.label} />} />
                 </div>
                 <div className="flex-1" aria-hidden />
                 <CardFooter>
