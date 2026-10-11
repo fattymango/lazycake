@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.11 — 2026-10-11
+
+Coordinator only; agents and gateways are unchanged and are not rebuilt or restarted.
+
+### Changed
+- **"Update available" no longer depends on the coordinator's version.** The badge used to compare each agent and gateway with the coordinator's own release, so every dashboard or coordinator release marked all of them "outdated" even though nothing about them had changed. It now compares against the newest release in which the agent or gateway program itself changed (v0.4.4 today), so a machine or gateway on v0.4.4 or newer reads as up to date and the badges stay quiet through dashboard-only releases. A test fails whenever the agent or gateway code is edited without bumping that number, so a real agent change can't be released without the badge appearing.
+
 ## v0.4.10 — 2026-10-11
 
 Dashboard only (the coordinator carries it); agents and gateways are unchanged, so they are not rebuilt or restarted for this release.
