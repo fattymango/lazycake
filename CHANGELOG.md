@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.5 — 2026-10-11
+
+Dashboard only (the coordinator carries it); agents and gateways are unchanged apart from the version number.
+
+### Added
+- **An "i" next to every trust score** (machine cards, the machine page and the Average trust tile) opens a plain explanation of what trust is: the 0.50 start, what raises and lowers it and by how much, that below 0.20 a machine gets no work, how it recovers, and that scores restart at 0.50 when the coordinator restarts. It opens by click, tap or keyboard, and does not trigger the machine card it sits in.
+
 ## v0.4.4 — 2026-10-11
 
 Needs migration 025 (before the coordinator) and updated agents. Gateways are unchanged apart from the version number.

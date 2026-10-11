@@ -9,6 +9,7 @@ import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import type { Node, NodeTask } from "@/lib/types";
 import { TaskTable } from "@/components/TaskTable";
 import { TrustMeter } from "@/components/TrustMeter";
+import { TrustInfo } from "@/components/TrustInfo";
 import { MachineUsage } from "./MachineUsage";
 import { Alert } from "@/ui/Alert";
 import { Badge } from "@/ui/Badge";
@@ -25,10 +26,10 @@ import { UpdateNotice } from "@/ui/UpdateNotice";
 import { useToast } from "@/ui/Toast";
 import { Layers } from "lucide-react";
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+function Stat({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="min-w-0 bg-surface p-4">
-      <p className="text-xs font-medium text-muted">{label}</p>
+      <p className="flex items-center gap-1.5 text-xs font-medium text-muted">{label}</p>
       <div className="mt-1.5 min-w-0 text-sm font-medium text-fg">{children}</div>
     </div>
   );
@@ -124,7 +125,13 @@ export function MachineDetail() {
       <Card className="overflow-hidden">
         <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-5">
           <Stat label="Status">{n.connected ? "Online" : "Offline"}</Stat>
-          <Stat label="Trust score">
+          <Stat
+            label={
+              <>
+                Trust score <TrustInfo />
+              </>
+            }
+          >
             <TrustMeter score={n.trust_score} />
           </Stat>
           <Stat label="Last heartbeat">

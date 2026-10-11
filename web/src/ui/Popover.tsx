@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 
 export const Popover = RadixPopover.Root;
 export const PopoverTrigger = RadixPopover.Trigger;
+export const PopoverAnchor = RadixPopover.Anchor;
 
 export function PopoverContent({ className, children, align = "end", ...props }: ComponentPropsWithoutRef<typeof RadixPopover.Content>) {
   return (

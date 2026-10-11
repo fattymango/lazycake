@@ -17,7 +17,7 @@ export function StatCard({
   action,
   className,
 }: {
-  label: string;
+  label: ReactNode;
   value: ReactNode;
   /** Small line under the value (a unit, a comparison, a hint). */
   sub?: ReactNode;
@@ -32,7 +32,7 @@ export function StatCard({
   return (
     <Card className={cn("relative flex flex-col gap-3 overflow-hidden p-5", className)}>
       <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0 truncate text-xs font-medium text-muted">{label}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted">{label}</span>
         {Icon && (
           <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg border", t.bg, t.border, t.text)}>
             <Icon className="size-4" aria-hidden />

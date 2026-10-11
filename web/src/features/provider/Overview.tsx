@@ -8,6 +8,7 @@ import { usePageTitle } from "@/lib/hooks/usePageTitle";
 import { dailyEarnings } from "@/lib/spend";
 import type { LedgerEntry, Node, NodeUsage, ProviderMe } from "@/lib/types";
 import { TrustMeter } from "@/components/TrustMeter";
+import { TrustInfo } from "@/components/TrustInfo";
 import { BarChart } from "@/ui/BarChart";
 import { Badge } from "@/ui/Badge";
 import { Button } from "@/ui/Button";
@@ -96,7 +97,9 @@ export function MachineCard({ node }: { node: Node }) {
 
         <div className="mt-auto space-y-2">
           <div className="flex items-center justify-between text-xs text-muted">
-            <span>Trust</span>
+            <span className="flex items-center gap-1.5">
+              Trust <TrustInfo />
+            </span>
             <span>
               {node.connected ? "Heartbeat " : "Last seen "}
               {relativeTime(node.last_heartbeat_at_ms)}
@@ -175,7 +178,11 @@ export function Overview() {
           loading={nodes.loading}
         />
         <StatCard
-          label="Average trust"
+          label={
+            <>
+              Average trust <TrustInfo />
+            </>
+          }
           value={avgTrust === null ? "—" : avgTrust.toFixed(2)}
           sub={avgTrust === null ? "Builds as machines complete work" : "Out of 1.00"}
           icon={ShieldCheck}

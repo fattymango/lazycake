@@ -22,6 +22,7 @@ web/e2e/             puppeteer-core browser checks (*.mjs) + seed.py demo data
 
 - Gateways: `Gateways.tsx` create dialog → `GatewayInstallSteps.tsx` (4-step setup; commands from `lib/gatewayInstall.ts`, incl. the optional `LAZYCAKE_MAX_MBPS`). `GatewayDetail.tsx` "Targets and activity" card uses `lib/gatewayActivity.ts`, which works from `/customer/tasks` (capped at 200 newest) and the traffic series, so "last task" can miss older use.
 
+- `components/TrustInfo.tsx`: the "i" popover explaining trust, used next to every trust label (card, machine page, Average trust tile). Its numbers mirror `scheduler/trust.go`: change both together. It must stop click propagation (the machine card is a link).
 - Deleting a gateway: `DeleteGatewayDialog.tsx` (confirm, then the machine clean-up command), opened from the trash button on each card and on the detail page (`DeleteGatewayButton`, disabled with the reason while `gatewayActivity` shows running/queued tasks; the server enforces it anyway with 409). The page drops the gateway only when the dialog closes, otherwise a list refresh would unmount the dialog holding the command.
 
 ## Commands
