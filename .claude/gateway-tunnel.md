@@ -1,0 +1,22 @@
+# Gateway and tunnel (`cmd/gateway`, `internal/gateway`, `internal/tunnel`, `internal/agent/netns`)
+
+Lets a task container reach **private services in the customer's network** without the task having general network access. Back to [README](README.md). Flow summary: [architecture](architecture.md#tunnel-task-reaches-the-customers-private-services).
+
+## Gateway (`cmd/gateway`, `internal/gateway/*`)
+- A customer creates a gateway in the portal and gets a token + install command. The gateway **dials out** to the coordinator relay (QUIC) and publishes named services (`LAZYCAKE_SERVICES`, e.g. `files=127.0.0.1:8080`). Env: `LAZYCAKE_COORDINATOR_ADDR`, `LAZYCAKE_TOKEN`, `LAZYCAKE_GATEWAY_ID`, `LAZYCAKE_GRPC_ADDR`, `LAZYCAKE_SERVICES`, `LAZYCAKE_GATEWAY_KEY_PATH` (Noise private key file; mount a volume so the key survives container recreation — the server's gateway mounts `/opt/lazycake/gateway-noise.key`), `LAZYCAKE_DEV`. Run as a container with `--restart=always --network=host` (`deploy/Dockerfile --target gateway`).
+- `listener` terminates the inner Noise session per stream, reads which service the container wants, and forwards **only to services in its published list**; everything else is refused. It also answers the portal's connection test (per-service reachability; older gateways without it show grey).
+- `reporter.go`: coalesces byte reports **per task+service and flushes every 5 s** with a `connections` count (one DB transaction per connection once starved the coordinator — never go back). `run.go` `hello` calls `GatewayService.Hello` with the version after connecting to the relay (an old coordinator answers "unimplemented"; logged at debug, harmless).
+- Config/constraints in `internal/gateway/config`.
+
+## Transport (`internal/tunnel`)
+- `noise` — Noise_IK between the agent's proxy and the gateway (static keys; the gateway pubkey is in `Dispatch.targets[].noise_pubkey`). The private key never leaves the agent/gateway, so the relay (which terminates QUIC TLS) cannot read task traffic.
+- `quic` — outer transport relayed by the coordinator: `relay.go` pumps bytes between an agent stream and a gateway stream, reading only the small frame header (`frame.go`: length-prefixed strings saying which gateway and task the stream is for); `client.go` dial helpers for agent/gateway; `tls.go`; `probe.go` connectivity probe. Relay counts bytes (can only prove a claim too high; its count includes encryption overhead).
+- Coordinator side wiring: `internal/coordinator/relay` adapter.
+
+## Agent-side proxy (`internal/agent/netns`)
+For a task with targets the container runs `--network=none`. `target.go`/`proxy.go` enter the container's network namespace and run: a stub DNS server (`dns.go`) answering only declared hostnames, each on its own loopback IP (`bind.go`); a TCP listener per target (`serve.go`) that dials through QUIC+Noise to the right gateway; `egress.go` enforces the task's egress byte cap (reason `egress_exceeded`); `fds.go` handles namespace file descriptors (Linux-only). Unlisted hosts have no route at all. The agent counts bytes in both directions and reports them in `TaskFinished`; a shared rate limiter enforces the machine's network offer.
+
+## Caveats
+- Containers started for tunnel tests need the in-container tools to exist; network tests use `testdata/netns-spike.sh` ideas and `internal/e2e/tunnel_isolation_test.go`.
+- Gateways and agents must be updated by their owners (pull + recreate); the dashboard shows "Update available".
+- Gateway container recreation keeps its identity only if its Noise key is on a mounted volume.
