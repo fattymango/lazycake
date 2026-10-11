@@ -26,7 +26,7 @@ Back to [README](README.md). **This is part of every task**, not a favour: the n
 2. Verify facts against the code when you write them (grep the constant, read the function); do not copy from memory. Mark unknowns as unknown.
 3. Keep pages current-state and short; rationale/history belongs in `docs/`. Link rather than duplicate.
 4. Keep links relative and working (markdown links to sibling files, e.g. `agent.md`); every new page must be linked from [README.md](README.md).
-5. **Never put secrets or addresses in these files** (passwords, tokens, keys, DB passwords, the portal password, server IPs/users). Hosts live in the gitignored `CLAUDE.local.md`; write `$PROD_HOST` / `$VM_HOST` in docs.
+5. **Never put secrets or addresses in these files** (passwords, tokens, keys, DB passwords, the portal password, server IPs/users, open ports or weaknesses of the production host). Hosts live in the gitignored `CLAUDE.local.md`; write `$PROD_HOST` / `$VM_HOST` in docs.
 6. Record the owner's new rules in `CLAUDE.md` in their own words as soon as they are given, with the reason.
 7. Commit docs with the code change (`feat: … ` includes its doc updates) or, if separate, as `docs: …`. Same identity/trailer rules as any commit.
 

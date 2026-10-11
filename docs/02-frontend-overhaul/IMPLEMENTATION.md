@@ -425,7 +425,7 @@ use of the device may suffer. Browser checks: `web/e2e/addmachine.mjs` (33).
 ### Task 8.18 — HTTPS for the portal and TLS for the agent connection
 
 **Status: backlog, deferred by the owner (2026-10-11).** Found in a security check of the production server: the portal at `http://<ip>:8080` carries logins, session cookies and money over plain HTTP, and the
-agent's gRPC connection on 7443 sends its token unencrypted. Postgres is not exposed to the internet (details are kept privately).
+agent's gRPC connection on 7443 sends its token unencrypted. Postgres is not exposed to the internet (details in the local-only `CLAUDE.local.md`).
 
 **Idea to evaluate:** a Let's Encrypt certificate for the bare IP address (a newer feature: short-lived, about 6 days, validated over HTTP on port 80 or TLS-ALPN, no DNS needed). Not verified yet. Things found:
 - The server's Ubuntu 24.04 `certbot` is 2.9.0, probably too old for IP certificates: a newer client (certbot from snap/pip, `lego`, or Caddy) is needed.

@@ -6,7 +6,7 @@ Back to [README](README.md). Read before touching the connection, trust, billing
 1. **Machine identity = agent process instance.** `instance_id` is regenerated at every agent start, so every restart/reboot/update creates a new node row (production had 20 for 2 machines), leaves an offline ghost, and **resets that machine's trust to 0.5 — a banned machine can shed its ban by restarting.** Backlog **8.19** (`docs/02-frontend-overhaul/IMPLEMENTATION.md`); unscheduled, owner to decide.
 2. **Trust is in memory.** Coordinator restart → everyone 0.5; the DB column is write-only.
 3. **No HTTPS.** Portal on plain HTTP; agent gRPC token unencrypted. Backlog 8.18 (Let's Encrypt for an IP is an idea, unverified; needs a reverse proxy and agent TLS + a new agent release).
-4. **Server hygiene:** open items are kept privately.
+4. **Server hygiene:** open items about the production host are kept in the gitignored `CLAUDE.local.md` (do not write them in tracked files).
 5. **Docker Hub anonymous pulls** are rate-limited per IP; a machine pulling many different images will hit it (cached digests avoid it).
 6. **OOM is reported two ways** (`oom` vs `exited` 255 when the program dies on a failed allocation first) — program behaviour, left as is.
 7. `Offer.bandwidth_mb_month` exists in the proto but is not implemented.

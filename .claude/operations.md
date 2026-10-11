@@ -10,7 +10,7 @@ Back to [README](README.md). The authoritative release checklist is `CLAUDE.md` 
 | owner's PC | agent container connected to production; local test Postgres `lc-test-pg` (db `lcdemo`); where images are built and pushed |
 | Docker Hub | `docker.io/fattymango/lazycake-agent`, `…-gateway` (`:vX.Y.Z`, `:latest`) |
 
-Ports: portal/dashboard 8080 (HTTP), agent gRPC 7443, relay 7444. The server's other open ports are tracked privately.
+Ports: portal/dashboard 8080 (HTTP), agent gRPC 7443, relay 7444. The server's other open ports are tracked in `CLAUDE.local.md`.
 
 ## Build
 `make build` (to `bin/`), `make proto`, `make web-embed` (web → Go embed dir, then coordinator), images via `deploy/Dockerfile`. Version stamp = `-ldflags "-X github.com/fattymango/lazycake/internal/version.Version=vX.Y.Z"`; verify with `<binary> --version`. The coordinator version shown to users is what the dashboard compares agents/gateways against.
