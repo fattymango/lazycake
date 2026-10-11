@@ -27,7 +27,9 @@ type Identity struct {
 	Offer      *lazycakev1.Offer
 	BootID     string
 	InstanceID string
-	Images     []*lazycakev1.CachedImage
+	// MachineID identifies the physical machine across restarts and updates (see cmd/agent/machineid.go); "" if it couldn't be kept.
+	MachineID string
+	Images    []*lazycakev1.CachedImage
 	// Version is the agent's release, reported at every registration so the portal can show it.
 	Version string
 }
@@ -206,6 +208,7 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			Offer:          r.Identity.Offer,
 			BootId:         r.Identity.BootID,
 			InstanceId:     r.Identity.InstanceID,
+			MachineId:      r.Identity.MachineID,
 			Images:         r.Identity.Images,
 			Version:        r.Identity.Version,
 			RunningTaskIds: running,

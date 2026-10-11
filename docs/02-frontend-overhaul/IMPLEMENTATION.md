@@ -441,7 +441,7 @@ need the same.
 
 ### Task 8.19 — A machine keeps one identity across restarts and updates
 
-**Status: backlog, found 2026-10-11 while deploying v0.4.0; not decided.** A machine is identified by `(account, instance id)`, and the agent makes a new instance id every time it starts
+**Status: DONE in v0.4.4 (2026-10-11), owner asked for it ("I don't want a new entry each update"). Decided: the agent keeps a machine id in the host directory it already mounts; the coordinator keys the node by `(account, machine_id)`; a restarted agent reclaims the tasks it lost. Not done: persisting trust in the database, retiring old offline entries.** Original analysis, found 2026-10-11 while deploying v0.4.0: A machine is identified by `(account, instance id)`, and the agent makes a new instance id every time it starts
 (`cmd/agent/run.go`: `id.New("ins")`; it exists so a reconnect of the *same process* can adopt its running tasks, task 3.3). So a reboot, a crash, or an update (which recreates the container, including the
 guided update from 8.16) makes a **new machine entry** and leaves the old one offline. Production had 20 entries for 2 real machines after a week of testing. Two consequences:
 - **Clutter.** The provider's list fills with offline entries; each has to be removed by hand (`DELETE /provider/nodes/{id}`).

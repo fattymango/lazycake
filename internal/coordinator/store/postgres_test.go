@@ -874,3 +874,41 @@ func TestArchiveGateway(t *testing.T) {
 	require.ErrorIs(t, s.ArchiveGateway(ctx, "act_1", "gw_a"), ErrNotFound, "already archived")
 	require.NoError(t, s.ArchiveGateway(ctx, "act_1", "gw_old"), "a gateway with no linked token can still be archived")
 }
+
+// Task 8.19: one entry per (account, machine id); an agent without an id doesn't erase it; a legacy entry is found only when offline.
+func TestMachineIdentityLookups(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustAccount(t, s, "act_2")
+
+	require.NoError(t, s.UpsertNode(ctx, Node{ID: "nod_a", AccountID: "act_1", InstanceID: "ins_1", MachineID: "mch_A", Hostname: "box", Arch: "amd64"}))
+	got, err := s.GetNodeByMachineID(ctx, "act_1", "mch_A")
+	require.NoError(t, err)
+	require.Equal(t, "nod_a", got.ID)
+	_, err = s.GetNodeByMachineID(ctx, "act_2", "mch_A")
+	require.ErrorIs(t, err, ErrNotFound, "the same id in another account is another machine")
+
+	// A restart of that machine updates the same row; an upsert with no machine id keeps the one it has.
+	require.NoError(t, s.UpsertNode(ctx, Node{ID: "nod_a", AccountID: "act_1", InstanceID: "ins_2", Hostname: "box", Arch: "amd64"}))
+	got, err = s.GetNodeByMachineID(ctx, "act_1", "mch_A")
+	require.NoError(t, err)
+	require.Equal(t, "ins_2", got.InstanceID)
+
+	// Legacy lookup: no machine id, same host and arch, and not connected right now; the most recently seen wins.
+	require.NoError(t, s.UpsertNode(ctx, Node{ID: "nod_old1", AccountID: "act_1", InstanceID: "ins_o1", Hostname: "legacy", Arch: "amd64"}))
+	require.NoError(t, s.RecordHeartbeat(ctx, "nod_old1", time.Now().Add(-time.Hour)))
+	require.NoError(t, s.UpsertNode(ctx, Node{ID: "nod_old2", AccountID: "act_1", InstanceID: "ins_o2", Hostname: "legacy", Arch: "amd64"}))
+	require.NoError(t, s.RecordHeartbeat(ctx, "nod_old2", time.Now()))
+	_, err = s.FindLegacyNode(ctx, "act_1", "legacy", "amd64")
+	require.ErrorIs(t, err, ErrNotFound, "both are connected (UpsertNode marks connected)")
+	require.NoError(t, s.SetNodeConnected(ctx, "nod_old1", false))
+	require.NoError(t, s.SetNodeConnected(ctx, "nod_old2", false))
+	legacy, err := s.FindLegacyNode(ctx, "act_1", "legacy", "amd64")
+	require.NoError(t, err)
+	require.Equal(t, "nod_old2", legacy.ID, "the most recently seen one")
+	_, err = s.FindLegacyNode(ctx, "act_1", "legacy", "arm64")
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = s.FindLegacyNode(ctx, "act_1", "box", "amd64")
+	require.ErrorIs(t, err, ErrNotFound, "an entry that already has a machine id is not legacy")
+}

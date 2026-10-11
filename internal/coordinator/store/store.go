@@ -48,6 +48,12 @@ type Nodes interface {
 	// an agent presents on every Register, so a reconnect can be recognised
 	// as the same node (task 3.3). Returns ErrNotFound if none matches.
 	GetNodeByInstanceID(ctx context.Context, accountID, instanceID string) (Node, error)
+	// GetNodeByMachineID looks a machine up by the stable id its agent keeps on the host (ErrNotFound if none).
+	GetNodeByMachineID(ctx context.Context, accountID, machineID string) (Node, error)
+	// FindLegacyNode returns the most recently seen node of this account, hostname and arch that has no machine id and is
+	// not connected: the previous incarnation of a machine whose agent has just started reporting a machine id, so the
+	// entry it already has is adopted instead of a second one being created. ErrNotFound if none.
+	FindLegacyNode(ctx context.Context, accountID, hostname, arch string) (Node, error)
 	ListNodes(ctx context.Context) ([]Node, error)
 	// ListNodesByAccount returns only accountID's own nodes (task 7.3: the
 	// provider portal's own machine list - nobody sees another account's

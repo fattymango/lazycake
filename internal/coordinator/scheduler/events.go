@@ -164,3 +164,27 @@ func (s *Scheduler) OnCapacityReport(ctx context.Context, nodeID string, rep api
 	s.mu.Unlock()
 	return nil
 }
+
+// OnAgentRestarted runs when an agent registers as a machine it has been before, but as a new process: whatever it
+// was running died with the old process (its containers are swept at startup), so tasks still assigned to the node
+// that it doesn't list are reclaimed now instead of waiting out their lease - the node never looks lost, because it
+// is the same node and heartbeating again.
+func (s *Scheduler) OnAgentRestarted(ctx context.Context, nodeID string, runningTaskIDs []string) {
+	keep := make(map[string]bool, len(runningTaskIDs))
+	for _, id := range runningTaskIDs {
+		keep[id] = true
+	}
+	tasks, err := s.Store.ListTasksByNode(ctx, nodeID, []store.TaskState{store.TaskReserved, store.TaskDispatched, store.TaskRunning})
+	if err != nil {
+		s.Log.Error("listing a restarted agent's tasks", "node_id", nodeID, "error", err)
+		return
+	}
+	now := s.now()
+	for _, t := range tasks {
+		if keep[t.ID] {
+			continue
+		}
+		s.Log.Warn("agent restarted without this task, reclaiming it", "node_id", nodeID, "task_id", t.ID, "state", t.State)
+		s.reclaimTask(ctx, t, now)
+	}
+}

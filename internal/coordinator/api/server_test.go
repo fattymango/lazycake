@@ -22,11 +22,17 @@ import (
 
 func startTestServer(t *testing.T, fs *fakeStore) (lazycakev1.AgentServiceClient, func()) {
 	t.Helper()
+	return startTestServerWithEvents(t, fs, nil)
+}
+
+func startTestServerWithEvents(t *testing.T, fs *fakeStore, events TaskEvents) (lazycakev1.AgentServiceClient, func()) {
+	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
 	srv := &Server{
 		Store:      fs,
 		Registry:   NewRegistry(),
+		Events:     events,
 		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		HeartbeatS: 15,
 		LeaseS:     60,

@@ -74,6 +74,9 @@ func (f *fakeStore) UpsertNode(ctx context.Context, n store.Node) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n.Connected = true
+	if old, ok := f.nodes[n.ID]; ok && n.MachineID == "" {
+		n.MachineID = old.MachineID // like the real store: an agent without a machine id doesn't erase one
+	}
 	f.nodes[n.ID] = n
 	return nil
 }
@@ -93,6 +96,28 @@ func (f *fakeStore) GetNodeByInstanceID(ctx context.Context, accountID, instance
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
 		if n.AccountID == accountID && n.InstanceID == instanceID && instanceID != "" {
+			return n, nil
+		}
+	}
+	return store.Node{}, store.ErrNotFound
+}
+
+func (f *fakeStore) GetNodeByMachineID(ctx context.Context, accountID, machineID string) (store.Node, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.AccountID == accountID && n.MachineID == machineID && machineID != "" {
+			return n, nil
+		}
+	}
+	return store.Node{}, store.ErrNotFound
+}
+
+func (f *fakeStore) FindLegacyNode(ctx context.Context, accountID, hostname, arch string) (store.Node, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.AccountID == accountID && n.Hostname == hostname && n.Arch == arch && n.MachineID == "" && !n.Connected {
 			return n, nil
 		}
 	}

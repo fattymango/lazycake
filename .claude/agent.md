@@ -3,7 +3,7 @@
 Runs on a provider's machine, **as a container** (`--restart=always`), drives rootless podman through its socket, keeps one outbound gRPC stream to the coordinator. Back to [README](README.md). Flows: [architecture](architecture.md). Wire format: [protocol](protocol.md). Tunnel part: [gateway-tunnel](gateway-tunnel.md).
 
 ## `cmd/agent`
-- `run.go`: wiring. Order: config → probe → `ValidateOffer` (refuses an offer bigger than the machine; message names every oversize setting; exits) → `reconcile.Sweep` → create `Executor`, `Runner`, `lease.Watcher`, usage sampler, benchmark loop, `reportCapacity` → run. Sets `Identity.Version = version.Version`. `instanceID := id.New("ins")` **per start** (see caveats).
+- `run.go`: wiring. Order: config → probe → `ValidateOffer` (refuses an offer bigger than the machine; message names every oversize setting; exits) → `reconcile.Sweep` → create `Executor`, `Runner`, `lease.Watcher`, usage sampler, benchmark loop, `reportCapacity` → run. Sets `Identity.Version = version.Version`. `instanceID := id.New("ins")` **per start** (sweep/adoption bookkeeping), plus `machineID` from `machineid.go` (`loadOrCreateMachineID`: `<LCINIT_HOST_DIR>/machine-id`, else `<user config>/lazycake/machine-id`, written atomically; "" if unwritable) sent in `Register`.
 - `capacity.go`: `agent capacity` prints `cores= memory_mb= disk_mb= network_mbps= disk_total_mb=` (needs host networking to see real link speed); the dashboard asks providers to paste it.
 - `capacityreport.go`: `reportCapacity` sends a `CapacityReport{offer, free cores/memory/disk}` at start, on change (polled every 2 s) and every 30 s so the scheduler places by free capacity.
 - Subcommands: `agent probe` (capability report), `agent capacity`, `--version`.

@@ -112,3 +112,31 @@ func TestAtLeastOnceRetriedUntilAttemptsExhausted(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// Task 8.19: a machine keeps one node across agent restarts, so the node never looks lost; what the old agent process was running died
+// with it and must be reclaimed when the new process registers, except what the new process says it still has.
+func TestOnAgentRestartedReclaimsOnlyWhatTheAgentNoLongerHas(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+	require.NoError(t, st.CreateAccount(ctx, store.Account{ID: "act_1", Name: "act_1"}))
+	require.NoError(t, st.UpsertNode(ctx, store.Node{ID: "nod_1", AccountID: "act_1", Hostname: "h", Arch: "amd64"}))
+	require.NoError(t, st.UpsertNode(ctx, store.Node{ID: "nod_2", AccountID: "act_1", Hostname: "other", Arch: "amd64"}))
+
+	overdueTask(t, st, "tsk_lost", "act_1", "nod_1", store.AtMostOnce, 1, 0)
+	overdueTask(t, st, "tsk_kept", "act_1", "nod_1", store.AtMostOnce, 1, 0)
+	overdueTask(t, st, "tsk_retry", "act_1", "nod_1", store.AtLeastOnce, 2, 0)
+	overdueTask(t, st, "tsk_elsewhere", "act_1", "nod_2", store.AtMostOnce, 1, 0)
+
+	s := New(st, nil, clock.Real{}, discardLog(), 60)
+	s.OnAgentRestarted(ctx, "nod_1", []string{"tsk_kept"})
+
+	state := func(id string) store.TaskState {
+		task, err := st.GetTask(ctx, id)
+		require.NoError(t, err)
+		return task.State
+	}
+	require.Equal(t, store.TaskAbandoned, state("tsk_lost"), "an at-most-once task the restarted agent lost is abandoned at once")
+	require.Equal(t, store.TaskDispatched, state("tsk_kept"), "a task the new process still runs is left alone")
+	require.Equal(t, store.TaskQueued, state("tsk_retry"), "an at-least-once task goes back to the queue")
+	require.Equal(t, store.TaskDispatched, state("tsk_elsewhere"), "another machine's tasks are untouched")
+}

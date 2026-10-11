@@ -33,6 +33,9 @@ type TaskEvents interface {
 	OnTaskRejected(ctx context.Context, nodeID, taskID, reason string) error
 	OnTaskStarted(ctx context.Context, nodeID, taskID string, at time.Time) error
 	OnTaskFinished(ctx context.Context, nodeID string, ev TaskFinishedEvent) error
+	// OnAgentRestarted: a known machine registered again as a new agent process (a restart or an update). runningTaskIDs
+	// are the tasks it still has; any other task assigned to the node is lost.
+	OnAgentRestarted(ctx context.Context, nodeID string, runningTaskIDs []string)
 }
 
 // TaskFinishedEvent carries everything TaskFinished reports.
@@ -100,6 +103,7 @@ func (noopEvents) OnTaskAccepted(context.Context, string, string) error         
 func (noopEvents) OnTaskRejected(context.Context, string, string, string) error    { return nil }
 func (noopEvents) OnTaskStarted(context.Context, string, string, time.Time) error  { return nil }
 func (noopEvents) OnTaskFinished(context.Context, string, TaskFinishedEvent) error { return nil }
+func (noopEvents) OnAgentRestarted(context.Context, string, []string)              {}
 
 func (s *Server) events() TaskEvents {
 	if s.Events == nil {
@@ -141,7 +145,7 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "first message must be Register")
 	}
 
-	nodeID, accountID, needsBenchmark, err := s.handleRegister(ctx, reg)
+	nodeID, accountID, needsBenchmark, restarted, err := s.handleRegister(ctx, reg)
 	if err != nil {
 		return err
 	}
@@ -177,6 +181,9 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 	}
 	log.Info("agent registered", "hostname", reg.GetHostname(), "arch", reg.GetArch())
 	s.adoptOrCancel(ctx, nodeID, reg.GetRunningTaskIds())
+	if restarted {
+		s.events().OnAgentRestarted(ctx, nodeID, reg.GetRunningTaskIds())
+	}
 
 	// Pump outbound messages to the stream concurrently with the inbound
 	// receive loop below.
@@ -210,26 +217,44 @@ func (s *Server) Connect(stream lazycakev1.AgentService_ConnectServer) error {
 	}
 }
 
-func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (nodeID, accountID string, needsBenchmark bool, err error) {
+func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (nodeID, accountID string, needsBenchmark, restarted bool, err error) {
 	tok, err := s.Store.Authenticate(ctx, auth.Hash(reg.GetToken()))
 	if err != nil {
-		return "", "", false, status.Error(codes.Unauthenticated, "invalid token")
+		return "", "", false, false, status.Error(codes.Unauthenticated, "invalid token")
 	}
 	if tok.Kind != store.TokenAgent {
-		return "", "", false, status.Error(codes.PermissionDenied, "token is not an agent token")
+		return "", "", false, false, status.Error(codes.PermissionDenied, "token is not an agent token")
 	}
 
-	// Reuse the same node row across reconnects of the same agent process
-	// (task 3.3): a fresh node_id every time would mean a fresh, empty set
-	// of assigned tasks every time, making adoption impossible.
+	// One node row per machine: an agent that sends a machine id keeps the same node (and the trust, history and
+	// assigned tasks that go with it) across restarts, updates and recreated containers. An agent that predates the
+	// machine id is still recognised per process (task 3.3), as before.
 	nodeID = id.New(id.Node)
 	needsBenchmark = true // no prior node found = never benchmarked
-	if instanceID := reg.GetInstanceId(); instanceID != "" {
+	adopt := func(existing store.Node) {
+		nodeID = existing.ID
+		needsBenchmark = existing.BenchScore == nil
+		restarted = existing.InstanceID != reg.GetInstanceId()
+	}
+	if machineID := reg.GetMachineId(); machineID != "" {
+		existing, err := s.Store.GetNodeByMachineID(ctx, tok.AccountID, machineID)
+		if errors.Is(err, store.ErrNotFound) {
+			// First report of a machine id from a machine that already has an entry (from before agents had one): take it over
+			// instead of leaving that entry behind as a duplicate.
+			existing, err = s.Store.FindLegacyNode(ctx, tok.AccountID, reg.GetHostname(), reg.GetArch())
+		}
+		switch {
+		case err == nil:
+			adopt(existing)
+		case !errors.Is(err, store.ErrNotFound):
+			return "", "", false, false, fmt.Errorf("looking up node by machine id: %w", err)
+		}
+	} else if instanceID := reg.GetInstanceId(); instanceID != "" {
 		if existing, err := s.Store.GetNodeByInstanceID(ctx, tok.AccountID, instanceID); err == nil {
 			nodeID = existing.ID
 			needsBenchmark = existing.BenchScore == nil
 		} else if err != store.ErrNotFound {
-			return "", "", false, fmt.Errorf("looking up node by instance id: %w", err)
+			return "", "", false, false, fmt.Errorf("looking up node by instance id: %w", err)
 		}
 	}
 	caps := reg.GetCaps()
@@ -238,6 +263,7 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 		ID:           nodeID,
 		AccountID:    tok.AccountID,
 		InstanceID:   reg.GetInstanceId(),
+		MachineID:    reg.GetMachineId(),
 		Hostname:     reg.GetHostname(),
 		AgentVersion: capVersion(reg.GetVersion()),
 		Arch:         reg.GetArch(),
@@ -258,9 +284,9 @@ func (s *Server) handleRegister(ctx context.Context, reg *lazycakev1.Register) (
 		OfferNetworkMbps: int(offer.GetNetworkMbps()),
 	}
 	if err := s.Store.UpsertNode(ctx, n); err != nil {
-		return "", "", false, fmt.Errorf("upserting node: %w", err)
+		return "", "", false, false, fmt.Errorf("upserting node: %w", err)
 	}
-	return nodeID, tok.AccountID, needsBenchmark, nil
+	return nodeID, tok.AccountID, needsBenchmark, restarted, nil
 }
 
 // adoptOrCancel implements task 3.3's reconnect adoption: for every task ID

@@ -63,6 +63,10 @@ message Register {
   repeated CachedImage images = 9;  // full reconciliation on connect
   repeated string running_task_ids = 10;  // re-announced on reconnect for adoption
   string version      = 11; // the agent's release (empty from an agent built before this)
+  // Identifies this physical machine across agent restarts, updates and container recreation (the agent keeps it in
+  // the host directory it already mounts). The coordinator keeps one machine entry per (account, machine_id); empty
+  // from an agent built before this, which is then identified by instance_id as before.
+  string machine_id   = 12;
 }
 
 message Capabilities {

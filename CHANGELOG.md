@@ -3,6 +3,14 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.4 — 2026-10-11
+
+Needs migration 025 (before the coordinator) and updated agents. Gateways are unchanged apart from the version number.
+
+### Changed
+- **A machine keeps one entry across agent restarts, updates and reboots (task 8.19).** The agent keeps a machine id in the host directory it already mounts (the one that survives recreating the container), and the coordinator keeps one machine entry per account and machine id. Updating an agent no longer leaves an offline duplicate behind, and the machine keeps its trust, so restarting an agent can no longer be used to shed a low score. The first time an updated agent registers, it takes over the newest offline entry of the same host name instead of adding a new one; older duplicate entries stay until removed by hand. An agent that cannot write the directory, or one older than this release, behaves as before (an entry per start). Two computers cloned from one disk image would share an id.
+- **Tasks an agent lost in a restart are reclaimed at once.** Because the machine is now the same node, it never looks lost. When it registers as a new process, any task still assigned to it that it no longer runs is ended right away (abandoned for the default at-most-once delivery, requeued for at-least-once) instead of waiting for its lease to run out.
+
 ## v0.4.3 — 2026-10-11
 
 Coordinator only: no migration, agents and gateways unchanged.

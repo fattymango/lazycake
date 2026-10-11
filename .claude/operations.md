@@ -31,6 +31,6 @@ Agents and gateways are containers with `--restart=always`; the host needs `podm
 - *Agent shows offline after laptop suspend:* needs agent ≥ v0.3.13 (ack timeout + TCP user timeout). Check `podman logs lazycake-agent` for "reconnecting".
 - *Tasks stuck `running` on a live node:* the final report was lost (fixed in v0.4.0) — lease reclaim abandons it eventually.
 - *Balance lower than expected:* stray `task_holds` (see [billing](billing.md)).
-- *Dashboard shows many offline machines:* one entry per agent start (backlog 8.19); remove via the machine page.
+- *Dashboard shows many offline machines:* entries left by agents older than v0.4.4 (one per start); remove via the machine page. From v0.4.4 a machine keeps one entry (see caveats #1).
 - *Docker Hub 429 on a machine:* pull-through avoided by cached digests; otherwise `podman save | load`.
 - Do not take a goroutine dump of production with signals (denied by the owner's safety rules).

@@ -100,6 +100,7 @@ func run() error {
 	hostname, _ := os.Hostname()
 	instanceID := id.New("ins")
 	bootID := readBootID()
+	machineID := loadOrCreateMachineID(cfg.LcinitHostDir, log)
 
 	// Kill anything left behind by a previous run before accepting any new
 	// work (IMPLEMENTATION.md task 3.7, PLAN.md "Killing orphans") - this
@@ -116,6 +117,7 @@ func run() error {
 			Hostname:   hostname,
 			Arch:       runtime.GOARCH,
 			InstanceID: instanceID,
+			MachineID:  machineID,
 			BootID:     bootID,
 			Caps:       report.Capabilities("podman"),
 			Version:    version.Version,

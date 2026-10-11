@@ -477,8 +477,12 @@ type Register struct {
 	Images         []*CachedImage         `protobuf:"bytes,9,rep,name=images,proto3" json:"images,omitempty"`                                          // full reconciliation on connect
 	RunningTaskIds []string               `protobuf:"bytes,10,rep,name=running_task_ids,json=runningTaskIds,proto3" json:"running_task_ids,omitempty"` // re-announced on reconnect for adoption
 	Version        string                 `protobuf:"bytes,11,opt,name=version,proto3" json:"version,omitempty"`                                       // the agent's release (empty from an agent built before this)
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Identifies this physical machine across agent restarts, updates and container recreation (the agent keeps it in
+	// the host directory it already mounts). The coordinator keeps one machine entry per (account, machine_id); empty
+	// from an agent built before this, which is then identified by instance_id as before.
+	MachineId     string `protobuf:"bytes,12,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Register) Reset() {
@@ -584,6 +588,13 @@ func (x *Register) GetRunningTaskIds() []string {
 func (x *Register) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *Register) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
 	}
 	return ""
 }
@@ -2054,7 +2065,7 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\bshutdown\x18\x05 \x01(\v2\x15.lazycake.v1.ShutdownH\x00R\bshutdownB\x06\n" +
 	"\x04body\"\"\n" +
 	"\bShutdown\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xf6\x02\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x95\x03\n" +
 	"\bRegister\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x12\n" +
@@ -2068,7 +2079,9 @@ const file_lazycake_v1_agent_proto_rawDesc = "" +
 	"\x06images\x18\t \x03(\v2\x18.lazycake.v1.CachedImageR\x06images\x12(\n" +
 	"\x10running_task_ids\x18\n" +
 	" \x03(\tR\x0erunningTaskIds\x12\x18\n" +
-	"\aversion\x18\v \x01(\tR\aversion\"\x8a\x02\n" +
+	"\aversion\x18\v \x01(\tR\aversion\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\f \x01(\tR\tmachineId\"\x8a\x02\n" +
 	"\fCapabilities\x12!\n" +
 	"\fmemory_limit\x18\x01 \x01(\bR\vmemoryLimit\x12\x1b\n" +
 	"\tcpu_quota\x18\x02 \x01(\bR\bcpuQuota\x12\x1d\n" +

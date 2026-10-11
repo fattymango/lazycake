@@ -3,7 +3,7 @@
 Back to [README](README.md). Read before touching the connection, trust, billing, or deploying.
 
 ## Design limits you must know
-1. **Machine identity = agent process instance.** `instance_id` is regenerated at every agent start, so every restart/reboot/update creates a new node row (production had 20 for 2 machines), leaves an offline ghost, and **resets that machine's trust to 0.5 — a banned machine can shed its ban by restarting.** Backlog **8.19** (`docs/02-frontend-overhaul/IMPLEMENTATION.md`); unscheduled, owner to decide.
+1. **Machine identity (fixed in v0.4.4, task 8.19).** A machine is `(account, machine_id)`: the agent keeps `machine-id` in the host directory it mounts (`LAZYCAKE_LCINIT_HOST_DIR`; a bare process uses the user config dir), so restarts, updates and recreated containers are the same node and keep their trust. Gotchas: an agent that cannot write that directory registers without an id and falls back to one entry per process; two computers cloned from one disk image share an id; trust is still only in coordinator memory (a coordinator restart resets it); the first registration with an id adopts the newest offline entry of the same hostname+arch that has no id (`FindLegacyNode`), so old duplicate rows are not merged, only the newest is taken over.
 2. **Trust is in memory.** Coordinator restart → everyone 0.5; the DB column is write-only.
 3. **No HTTPS.** Portal on plain HTTP; agent gRPC token unencrypted. Backlog 8.18 (Let's Encrypt for an IP is an idea, unverified; needs a reverse proxy and agent TLS + a new agent release).
 4. **Server hygiene:** open items about the production host are kept in the gitignored `CLAUDE.local.md` (do not write them in tracked files).
@@ -30,4 +30,4 @@ Back to [README](README.md). Read before touching the connection, trust, billing
 - WSL2 kernels don't enforce tmpfs memory limits (historical reason the test VM exists).
 
 ## Open follow-ups (from the 2026-10 sessions)
-Task 8.19 (identity), 8.18 (HTTPS), persisted trust, other pages could use the wide layout. Backlog lives in `docs/02-frontend-overhaul/IMPLEMENTATION.md` (tasks 8.12–8.19) and `PROGRESS.md`.
+8.18 (HTTPS), persisted trust, other pages could use the wide layout. Backlog lives in `docs/02-frontend-overhaul/IMPLEMENTATION.md` (tasks 8.12–8.19) and `PROGRESS.md`.

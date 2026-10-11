@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"time"
 
 	"github.com/fattymango/lazycake/internal/coordinator/events"
 	"github.com/fattymango/lazycake/internal/coordinator/store"
@@ -24,58 +25,64 @@ func (s *Scheduler) reclaimOverdue(ctx context.Context) {
 		return
 	}
 	for _, t := range tasks {
-		// The customer asked for this task to be stopped and its node has gone
-		// quiet: it must end as stopped, not be retried elsewhere or counted
-		// as a host that vanished.
-		if t.CancelRequestedAt != nil {
-			s.finishStopped(ctx, t, now)
-			continue
-		}
-		// t.Attempt counts attempts already consumed before this failure;
-		// this failed dispatch consumes one more, so retry only if that
-		// still leaves at least one attempt under MaxAttempts.
-		if t.Delivery == store.AtLeastOnce && t.Attempt+1 < t.Retry.MaxAttempts {
-			if err := s.Store.RequeueTaskForRetry(ctx, t.ID, []store.TaskState{t.State}); err != nil {
-				if err != store.ErrConflict {
-					s.Log.Error("requeueing overdue task for retry", "task_id", t.ID, "error", err)
-				}
-				continue
-			}
-			s.Log.Warn("task requeued after missed lease", "task_id", t.ID, "attempt", t.Attempt+1)
-			nodeID := ""
-			if t.NodeID != nil {
-				nodeID = *t.NodeID
-			}
-			s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), AccountID: t.AccountID, TaskID: t.ID, NodeID: nodeID, State: string(store.TaskQueued)})
-			continue
-		}
-		if err := s.Store.AbandonTask(ctx, t.ID, []store.TaskState{t.State}, now); err != nil {
-			if err != store.ErrConflict {
-				s.Log.Error("abandoning overdue task", "task_id", t.ID, "error", err)
-			}
-			continue
-		}
-		s.Log.Warn("task abandoned after missed lease", "task_id", t.ID, "delivery", t.Delivery)
-		abandonedNodeID := ""
-		if t.NodeID != nil {
-			abandonedNodeID = *t.NodeID
-		}
-		s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), AccountID: t.AccountID, TaskID: t.ID, NodeID: abandonedNodeID, State: string(store.TaskAbandoned)})
+		s.reclaimTask(ctx, t, now)
+	}
+}
 
-		// An abandoned task never reaches OnTaskFinished (the agent is
-		// gone, there's no TaskFinished to receive), so nothing else ever
-		// releases its dispatch-time hold (task 4.5) or drops the node's
-		// trust (task 5.3, PLAN.md "a host that vanishes ... is paid
-		// nothing") - both have to happen here instead.
-		if err := s.Store.ReleaseHold(ctx, t.ID); err != nil {
-			s.Log.Warn("releasing hold for abandoned task", "task_id", t.ID, "error", err)
+// reclaimTask ends one task whose node can no longer run it: stopped if the customer asked, requeued if it may be retried, otherwise
+// abandoned (hold released, node trust dropped). Shared by the lease reclaimer and by a restarted agent that lost its tasks.
+func (s *Scheduler) reclaimTask(ctx context.Context, t store.Task, now time.Time) {
+	// The customer asked for this task to be stopped and its node has gone
+	// quiet: it must end as stopped, not be retried elsewhere or counted
+	// as a host that vanished.
+	if t.CancelRequestedAt != nil {
+		s.finishStopped(ctx, t, now)
+		return
+	}
+	// t.Attempt counts attempts already consumed before this failure;
+	// this failed dispatch consumes one more, so retry only if that
+	// still leaves at least one attempt under MaxAttempts.
+	if t.Delivery == store.AtLeastOnce && t.Attempt+1 < t.Retry.MaxAttempts {
+		if err := s.Store.RequeueTaskForRetry(ctx, t.ID, []store.TaskState{t.State}); err != nil {
+			if err != store.ErrConflict {
+				s.Log.Error("requeueing overdue task for retry", "task_id", t.ID, "error", err)
+			}
+			return
 		}
+		s.Log.Warn("task requeued after missed lease", "task_id", t.ID, "attempt", t.Attempt+1)
+		nodeID := ""
 		if t.NodeID != nil {
-			s.Trust.Abandoned(*t.NodeID)
-			// Same safety net as OnTaskStarted/OnTaskFinished (task 5.4):
-			// an abandoned task might have vanished mid-pull, never
-			// reaching either.
-			s.ColdPull.Finish(imageDigest(t.Image), *t.NodeID)
+			nodeID = *t.NodeID
 		}
+		s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), AccountID: t.AccountID, TaskID: t.ID, NodeID: nodeID, State: string(store.TaskQueued)})
+		return
+	}
+	if err := s.Store.AbandonTask(ctx, t.ID, []store.TaskState{t.State}, now); err != nil {
+		if err != store.ErrConflict {
+			s.Log.Error("abandoning overdue task", "task_id", t.ID, "error", err)
+		}
+		return
+	}
+	s.Log.Warn("task abandoned after missed lease", "task_id", t.ID, "delivery", t.Delivery)
+	abandonedNodeID := ""
+	if t.NodeID != nil {
+		abandonedNodeID = *t.NodeID
+	}
+	s.Bus.Publish(events.Event{Type: "task_state", AtMS: now.UnixMilli(), AccountID: t.AccountID, TaskID: t.ID, NodeID: abandonedNodeID, State: string(store.TaskAbandoned)})
+
+	// An abandoned task never reaches OnTaskFinished (the agent is
+	// gone, there's no TaskFinished to receive), so nothing else ever
+	// releases its dispatch-time hold (task 4.5) or drops the node's
+	// trust (task 5.3, PLAN.md "a host that vanishes ... is paid
+	// nothing") - both have to happen here instead.
+	if err := s.Store.ReleaseHold(ctx, t.ID); err != nil {
+		s.Log.Warn("releasing hold for abandoned task", "task_id", t.ID, "error", err)
+	}
+	if t.NodeID != nil {
+		s.Trust.Abandoned(*t.NodeID)
+		// Same safety net as OnTaskStarted/OnTaskFinished (task 5.4):
+		// an abandoned task might have vanished mid-pull, never
+		// reaching either.
+		s.ColdPull.Finish(imageDigest(t.Image), *t.NodeID)
 	}
 }

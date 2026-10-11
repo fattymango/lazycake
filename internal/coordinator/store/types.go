@@ -80,7 +80,9 @@ type Node struct {
 	// how a reconnecting agent is recognised as the same node rather than
 	// getting a brand new node_id - and with it a fresh, empty set of
 	// assigned tasks - every time (IMPLEMENTATION.md task 3.3).
-	InstanceID       string
+	InstanceID string
+	// MachineID identifies the physical machine across agent restarts and updates ("" for an agent that predates it).
+	MachineID        string
 	AccountID        string
 	Hostname         string
 	Arch             string

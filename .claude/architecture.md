@@ -28,7 +28,7 @@ Every heartbeat (agent → coordinator, every ~15 s) is acknowledged. The agent'
 
 ## Reconnect and adoption
 
-On `Register` the agent lists `running_task_ids`; `api.adoptOrCancel` keeps those still assigned to this node and sends `Cancel` for the rest. A node is identified by `(account, instance_id)` and the agent makes a **new instance id every start**, so a restart is a new machine entry (see [caveats](caveats.md), backlog 8.19).
+On `Register` the agent lists `running_task_ids`; `api.adoptOrCancel` keeps those still assigned to this node and sends `Cancel` for the rest. A node is identified by `(account, machine_id)` (the agent keeps the machine id on the host, so restarts and updates are the same node); `instance_id` is minted per process and only distinguishes a restart from a reconnect. When a known machine registers as a **new process** (instance id changed), `OnAgentRestarted` reclaims every task still assigned to the node that the agent does not list (its containers died with the old process), through the same `reclaimTask` path as an expired lease. Agents without a machine id fall back to `(account, instance_id)` (see [caveats](caveats.md)).
 
 ## Tunnel (task reaches the customer's private services)
 

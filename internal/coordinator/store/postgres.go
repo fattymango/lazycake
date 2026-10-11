@@ -123,11 +123,12 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 		return fmt.Errorf("marshalling capabilities: %w", err)
 	}
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO nodes (id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
+		INSERT INTO nodes (id, account_id, instance_id, machine_id, hostname, arch, cpu_flags, capabilities,
 			offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, agent_version, connected)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
+		VALUES ($1, $2, $3, $13, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
 		ON CONFLICT (id) DO UPDATE SET
 			instance_id = EXCLUDED.instance_id,
+			machine_id = COALESCE(EXCLUDED.machine_id, nodes.machine_id),
 			hostname = EXCLUDED.hostname,
 			arch = EXCLUDED.arch,
 			cpu_flags = EXCLUDED.cpu_flags,
@@ -139,14 +140,14 @@ func (s *PostgresStore) UpsertNode(ctx context.Context, n Node) error {
 			agent_version = EXCLUDED.agent_version,
 			connected = true`,
 		n.ID, n.AccountID, nullIfEmpty(n.InstanceID), n.Hostname, n.Arch, orEmpty(n.CPUFlags), caps,
-		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB, n.OfferNetworkMbps, n.AgentVersion)
+		n.OfferCores, n.OfferMemoryMB, n.OfferDiskMB, n.OfferNetworkMbps, n.AgentVersion, nullIfEmpty(n.MachineID))
 	if err != nil {
 		return fmt.Errorf("upserting node: %w", err)
 	}
 	return nil
 }
 
-const nodeColumns = `id, account_id, instance_id, hostname, arch, cpu_flags, capabilities,
+const nodeColumns = `id, account_id, instance_id, machine_id, hostname, arch, cpu_flags, capabilities,
 	offer_cores, offer_memory_mb, offer_disk_mb, offer_network_mbps, agent_version, bench_score, trust_score,
 	connected, last_heartbeat_at, created_at`
 
@@ -172,6 +173,34 @@ func (s *PostgresStore) GetNodeByInstanceID(ctx context.Context, accountID, inst
 	}
 	if err != nil {
 		return Node{}, fmt.Errorf("getting node by instance id: %w", err)
+	}
+	return n, nil
+}
+
+func (s *PostgresStore) GetNodeByMachineID(ctx context.Context, accountID, machineID string) (Node, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT `+nodeColumns+` FROM nodes WHERE account_id = $1 AND machine_id = $2`, accountID, machineID)
+	n, err := scanNode(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Node{}, ErrNotFound
+	}
+	if err != nil {
+		return Node{}, fmt.Errorf("getting node by machine id: %w", err)
+	}
+	return n, nil
+}
+
+func (s *PostgresStore) FindLegacyNode(ctx context.Context, accountID, hostname, arch string) (Node, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT `+nodeColumns+` FROM nodes
+		 WHERE account_id = $1 AND hostname = $2 AND arch = $3 AND machine_id IS NULL AND NOT connected
+		 ORDER BY last_heartbeat_at DESC NULLS LAST, created_at DESC LIMIT 1`, accountID, hostname, arch)
+	n, err := scanNode(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Node{}, ErrNotFound
+	}
+	if err != nil {
+		return Node{}, fmt.Errorf("finding legacy node: %w", err)
 	}
 	return n, nil
 }
@@ -219,8 +248,8 @@ type rowScanner interface {
 func scanNode(row rowScanner) (Node, error) {
 	var n Node
 	var capsRaw []byte
-	var instanceID *string
-	err := row.Scan(&n.ID, &n.AccountID, &instanceID, &n.Hostname, &n.Arch, &n.CPUFlags, &capsRaw,
+	var instanceID, machineID *string
+	err := row.Scan(&n.ID, &n.AccountID, &instanceID, &machineID, &n.Hostname, &n.Arch, &n.CPUFlags, &capsRaw,
 		&n.OfferCores, &n.OfferMemoryMB, &n.OfferDiskMB, &n.OfferNetworkMbps, &n.AgentVersion, &n.BenchScore, &n.TrustScore,
 		&n.Connected, &n.LastHeartbeatAt, &n.CreatedAt)
 	if err != nil {
@@ -228,6 +257,9 @@ func scanNode(row rowScanner) (Node, error) {
 	}
 	if instanceID != nil {
 		n.InstanceID = *instanceID
+	}
+	if machineID != nil {
+		n.MachineID = *machineID
 	}
 	if len(capsRaw) > 0 {
 		if err := json.Unmarshal(capsRaw, &n.Capabilities); err != nil {
