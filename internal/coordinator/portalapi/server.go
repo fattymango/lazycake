@@ -14,6 +14,11 @@ import (
 // "don't duplicate the digest-pin/gateway-ownership/balance checks") and
 // store.Store directly for everything account-scoped enough that no
 // existing gRPC method already does it.
+// GatewayDisconnector closes a gateway's live connection because the customer deleted it.
+type GatewayDisconnector interface {
+	DisconnectGateway(gatewayID string) bool
+}
+
 type Server struct {
 	Store store.Store
 	// Customer reuses api.CustomerServer.SubmitTaskForAccount so task
@@ -33,7 +38,9 @@ type Server struct {
 	// button (the tunnel relay in production). Optional: without it the test
 	// endpoint answers 503.
 	Prober GatewayProber
-	Log    *slog.Logger
+	// Disconnector drops a deleted gateway's live relay connection (the tunnel relay in production). Optional.
+	Disconnector GatewayDisconnector
+	Log          *slog.Logger
 	// Dev mirrors config.Config.Dev: the session cookie is Secure unless
 	// this is true (PLAN.md §2 - local/demo compose serves plain HTTP).
 	Dev bool
@@ -84,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/portal/customer/tasks/{id}/usage", s.requireSession(store.RoleCustomer, s.handleTaskUsage))
 	mux.HandleFunc("GET /api/portal/customer/tasks/{id}/traffic", s.requireSession(store.RoleCustomer, s.handleTaskTraffic))
 	mux.HandleFunc("POST /api/portal/customer/gateways/{id}/test", s.requireSession(store.RoleCustomer, s.handleTestGateway))
+	mux.HandleFunc("DELETE /api/portal/customer/gateways/{id}", s.requireSession(store.RoleCustomer, s.handleDeleteGateway))
 	mux.HandleFunc("POST /api/portal/customer/gateways", s.requireSession(store.RoleCustomer, s.handleCreateGateway))
 	mux.HandleFunc("GET /api/portal/customer/ledger", s.requireSession(store.RoleCustomer, s.handleCustomerLedger))
 	mux.HandleFunc("POST /api/portal/customer/balance/add", s.requireSession(store.RoleCustomer, s.handleAddBalance))

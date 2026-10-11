@@ -1108,3 +1108,72 @@ func TestInstallTokenTakesTheChosenOffer(t *testing.T) {
 	bad := c.do(http.MethodPost, "/api/portal/provider/nodes/install-token", machineOffer{Cores: 0, MemoryMB: 2048, DiskMB: 10240, NetworkMbps: 100})
 	require.Equal(t, http.StatusBadRequest, bad.StatusCode)
 }
+
+type recordingDisconnector struct{ ids []string }
+
+func (r *recordingDisconnector) DisconnectGateway(id string) bool {
+	r.ids = append(r.ids, id)
+	return true
+}
+
+// Deleting a gateway: refused while a task that hasn't finished uses it, then the gateway disappears from the
+// list, its install token stops working and its live connection is dropped. Someone else's gateway is a 404.
+func TestGatewayDeleteIsRefusedWhileInUseThenExpiresTheToken(t *testing.T) {
+	st := testStore(t)
+	bus := events.NewBus()
+	disc := &recordingDisconnector{}
+	srv := &Server{
+		Store: st, Customer: &api.CustomerServer{Store: st, Rates: pricing.DefaultRates(), Bus: bus},
+		Bus: bus, Disconnector: disc, Log: discardLog(), Dev: true,
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	newClient := func() *testClient {
+		jar, err := cookiejar.New(nil)
+		require.NoError(t, err)
+		return &testClient{t: t, base: ts.URL, hc: &http.Client{Jar: jar}}
+	}
+	c, other := newClient(), newClient()
+	signed := signUpCustomer(t, c, "dana")
+	signUpCustomer(t, other, "eve")
+
+	resp := c.do(http.MethodPost, "/api/portal/customer/gateways", createGatewayRequest{
+		Label: "lab", Services: []gatewayServiceView{{Name: "db", Port: 5432}},
+	})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeBody[createGatewayResponse](t, resp)
+	path := "/api/portal/customer/gateways/" + created.ID
+
+	require.NoError(t, st.CreateTask(context.Background(), store.Task{
+		ID: "tsk_use", AccountID: signed.AccountID, State: store.TaskRunning, Image: "x", GatewayIDs: []string{created.ID},
+		Limits:       store.Limits{CPUCores: 1, MemoryMB: 128, DiskMB: 500},
+		Requirements: store.Requirements{Arch: "amd64", Isolation: "podman"},
+		Delivery:     store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+	}))
+
+	require.Equal(t, http.StatusNotFound, other.do(http.MethodDelete, path, nil).StatusCode, "not their gateway")
+	require.Equal(t, http.StatusConflict, c.do(http.MethodDelete, path, nil).StatusCode, "a running task uses it")
+	require.Empty(t, disc.ids, "a refused delete must not drop the connection")
+	_, err := st.Authenticate(context.Background(), auth.Hash(created.InstallToken))
+	require.NoError(t, err, "a refused delete must not expire the token")
+
+	require.NoError(t, st.TransitionTask(context.Background(), "tsk_use", []store.TaskState{store.TaskRunning}, store.TaskCancelled, store.TaskUpdate{}))
+
+	require.Equal(t, http.StatusNoContent, c.do(http.MethodDelete, path, nil).StatusCode)
+	require.Equal(t, []string{created.ID}, disc.ids)
+	_, err = st.Authenticate(context.Background(), auth.Hash(created.InstallToken))
+	require.ErrorIs(t, err, store.ErrNotFound, "the token is expired")
+
+	list := decodeBody[[]gatewayView](t, c.do(http.MethodGet, "/api/portal/customer/gateways", nil))
+	require.Empty(t, list)
+	require.Equal(t, http.StatusNotFound, c.do(http.MethodDelete, path, nil).StatusCode, "already deleted")
+
+	// A new task can't target it any more.
+	resp = c.do(http.MethodPost, "/api/portal/customer/tasks", map[string]any{
+		"image": "alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000", "cores": 1, "memory_mb": 128, "wall_timeout_s": 60,
+		"tunnel_targets": []map[string]any{{"gateway_id": created.ID, "hostname": "db", "port": 5432}},
+	})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	msg, _ := io.ReadAll(resp.Body)
+	require.Contains(t, string(msg), "not found", "a deleted gateway is not a valid target")
+}

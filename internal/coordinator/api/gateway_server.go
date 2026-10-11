@@ -63,6 +63,9 @@ func (s *GatewayServer) ReportBytes(ctx context.Context, req *lazycakev1.ByteRep
 	if gw.AccountID != tok.AccountID {
 		return nil, status.Error(codes.PermissionDenied, "gateway does not belong to this token's account")
 	}
+	if gw.ArchivedAt != nil {
+		return nil, status.Error(codes.PermissionDenied, "gateway was deleted")
+	}
 
 	toLocal, toTask := req.GetBytesToLocal(), req.GetBytesToTask()
 	if toLocal < 0 || toTask < 0 {
@@ -123,6 +126,9 @@ func (s *GatewayServer) Hello(ctx context.Context, req *lazycakev1.GatewayHello)
 	}
 	if gw.AccountID != tok.AccountID {
 		return nil, status.Error(codes.PermissionDenied, "gateway does not belong to this token's account")
+	}
+	if gw.ArchivedAt != nil {
+		return nil, status.Error(codes.PermissionDenied, "gateway was deleted")
 	}
 	if err := s.Store.SetGatewayVersion(ctx, gw.ID, capVersion(req.GetVersion())); err != nil {
 		slog.Warn("recording gateway version", "gateway_id", gw.ID, "error", err)

@@ -8,7 +8,7 @@ Plain REST/JSON under `/api/portal/*`, backing the customer and provider web app
 
 ## Routes (see `server.go` for the authoritative list)
 - Auth: `POST …/customer/signup|login`, `…/provider/signup|login`, `POST /login`, `POST /logout`, `GET /me`.
-- Customer: `tasks` (POST submit, GET list, `{id}` GET, `{id}/cancel`, `{id}/logs`, `{id}/usage`, `{id}/traffic`), `gateways` (GET/POST, `{id}/traffic`, `{id}/test`), `ledger`, `balance/add` (dev-style top-up, there is no payment rail), `events` (SSE), `me`.
+- Customer: `tasks` (POST submit, GET list, `{id}` GET, `{id}/cancel`, `{id}/logs`, `{id}/usage`, `{id}/traffic`), `gateways` (GET/POST, DELETE `{id}` = archive: 204, 409 while a task that has not finished uses it, 404 for another account's; revokes the token and drops the live relay connection via `Server.Disconnector`; `{id}/traffic`, `{id}/test`), `ledger`, `balance/add` (dev-style top-up, there is no payment rail), `events` (SSE), `me`.
 - Provider: `nodes` (GET list, `{id}`, DELETE `{id}` = remove machine + ask agent to exit, `{id}/usage`, `{id}/tasks`, `nodes/install-token` POST = mint an agent token and return the install command for the chosen offer), `ledger`, `events` (SSE), `me`.
 
 ## Files

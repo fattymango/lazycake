@@ -2,6 +2,7 @@ package portalapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -366,19 +367,21 @@ func (s *Server) handleCreateGateway(w http.ResponseWriter, r *http.Request) {
 		services[i] = store.GatewayService{Name: svc.Name, Port: svc.Port}
 	}
 
-	gatewayID := id.New(id.Gateway)
-	if err := s.Store.CreateGateway(r.Context(), store.Gateway{
-		ID: gatewayID, AccountID: sess.AccountID, Label: req.Label, Services: services,
-	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "creating gateway")
-		return
-	}
-
 	installToken, err := newSessionID() // 32 random bytes, hex-encoded - same shape as api.randomToken, no need for a second generator
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "generating install token")
 		return
 	}
+
+	gatewayID := id.New(id.Gateway)
+	if err := s.Store.CreateGateway(r.Context(), store.Gateway{
+		ID: gatewayID, AccountID: sess.AccountID, Label: req.Label, Services: services,
+		TokenHash: auth.Hash(installToken), // so deleting the gateway can expire exactly this token
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "creating gateway")
+		return
+	}
+
 	if err := s.Store.CreateToken(r.Context(), store.APIToken{
 		TokenHash: auth.Hash(installToken), AccountID: sess.AccountID, Kind: store.TokenGateway,
 	}); err != nil {
@@ -392,6 +395,29 @@ func (s *Server) handleCreateGateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, createGatewayResponse{gatewayView: toGatewayView(gw), InstallToken: installToken})
+}
+
+// handleDeleteGateway archives a gateway that no unfinished task uses: its token is revoked in the same
+// transaction, and a live connection is dropped with the "deleted" code so the gateway on the customer's
+// machine stops for good (see cmd/gateway). Refused with 409 while a task is queued or running against it.
+func (s *Server) handleDeleteGateway(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromContext(r.Context())
+	gatewayID := r.PathValue("id")
+	switch err := s.Store.ArchiveGateway(r.Context(), sess.AccountID, gatewayID); {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "gateway not found")
+		return
+	case errors.Is(err, store.ErrGatewayInUse):
+		writeError(w, http.StatusConflict, "a task that hasn't finished is using this gateway: wait for it or cancel it first")
+		return
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "deleting gateway")
+		return
+	}
+	if s.Disconnector != nil {
+		s.Disconnector.DisconnectGateway(gatewayID)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ledgerView mirrors web/src/shared/types.ts's LedgerEntry.

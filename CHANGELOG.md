@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.2 — 2026-10-11
+
+Needs migration 024 (before the coordinator) and an updated gateway image.
+
+### Added
+- **Delete a gateway** (trash button on the gateway card and its page). Allowed only while no queued or running task uses it (the button shows why when it can't be used). Deleting archives it (history stays, it leaves the list), expires its install token immediately, and drops its live connection. The gateway on the owner's machine stops serving and goes idle, and stays idle across container restarts; running it again by hand is refused by the coordinator. The dashboard then shows the command that removes the container and its key from the machine, since LazyCake has no access to it. Tasks can no longer target a deleted gateway. Migration 024 adds `gateways.archived_at` and `gateways.token_hash`; gateways created before it have no recorded token, so their token cannot be singled out, but they are refused by id all the same. Gateways older than this release do not stop by themselves; they just keep being refused.
+
 ## v0.4.1 — 2026-10-11
 
 ### Added

@@ -10,6 +10,7 @@ package quic
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -53,6 +54,36 @@ type GatewayRegistry interface {
 	// SetGatewayConnected records connectedness and, when connected is
 	// true, the Noise public key the gateway just published.
 	SetGatewayConnected(ctx context.Context, gatewayID string, connected bool, noisePubkey []byte) error
+}
+
+// GatewayRevocations is an optional second interface of a GatewayRegistry: it lets the relay tell a gateway
+// that was deleted (CodeGatewayRevoked) apart from one that merely failed to authenticate.
+type GatewayRevocations interface {
+	// GatewayArchived reports whether the customer deleted gatewayID.
+	GatewayArchived(ctx context.Context, gatewayID string) bool
+}
+
+// CodeGatewayRevoked is the application error code the relay closes a connection with when the gateway
+// it names was deleted. A gateway that sees it must stop for good: reconnecting can never succeed.
+const CodeGatewayRevoked quicgo.ApplicationErrorCode = 2
+
+// IsGatewayRevoked reports whether err is the relay saying this gateway was deleted.
+func IsGatewayRevoked(err error) bool {
+	var app *quicgo.ApplicationError
+	return errors.As(err, &app) && app.ErrorCode == CodeGatewayRevoked
+}
+
+// DisconnectGateway drops the live connection of a gateway that was just deleted, telling it why.
+// It reports whether the gateway was connected to this relay.
+func (r *Relay) DisconnectGateway(gatewayID string) bool {
+	r.mu.Lock()
+	conn := r.gateways[gatewayID]
+	r.mu.Unlock()
+	if conn == nil {
+		return false
+	}
+	conn.CloseWithError(CodeGatewayRevoked, "gateway deleted")
+	return true
 }
 
 // StreamStats is reported once a relayed stream closes, for the
@@ -148,6 +179,13 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 		r.Log.Warn("reading control frame", "error", err)
 		return
 	}
+	if cf.Role == "gateway" && r.gatewayArchived(ctx, cf.GatewayID) {
+		// Checked before the token: deleting a gateway also revokes its token, and the gateway should
+		// learn it was deleted rather than just that its credentials stopped working.
+		r.Log.Warn("deleted gateway tried to connect", "gateway_id", cf.GatewayID)
+		conn.CloseWithError(CodeGatewayRevoked, "gateway deleted")
+		return
+	}
 	accountID, err := r.Auth.Authenticate(ctx, cf.Token)
 	if err != nil {
 		r.Log.Warn("relay auth failed", "role", cf.Role, "error", err)
@@ -198,6 +236,11 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 	default:
 		r.Log.Warn("unknown role in control frame", "role", cf.Role)
 	}
+}
+
+func (r *Relay) gatewayArchived(ctx context.Context, gatewayID string) bool {
+	rev, ok := r.Gateways.(GatewayRevocations)
+	return ok && gatewayID != "" && rev.GatewayArchived(ctx, gatewayID)
 }
 
 func (r *Relay) registerGateway(id string, conn *quicgo.Conn) {

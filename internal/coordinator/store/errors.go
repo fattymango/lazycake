@@ -11,5 +11,7 @@ var (
 	// of the expected fromStates.
 	ErrConflict = errors.New("store: task not in expected state")
 	// ErrDuplicate is returned by CreateTask when idempotency_key collides.
-	ErrDuplicate = errors.New("store: duplicate idempotency key")
+	// ErrGatewayInUse is returned by ArchiveGateway when a task that has not finished still uses the gateway.
+	ErrGatewayInUse = errors.New("store: gateway is in use by a task")
+	ErrDuplicate    = errors.New("store: duplicate idempotency key")
 )

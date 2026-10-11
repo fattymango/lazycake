@@ -154,7 +154,7 @@ func (s *CustomerServer) SubmitTaskForAccount(ctx context.Context, accountID str
 			}
 			return store.Task{}, status.Errorf(codes.Internal, "getting gateway %s: %v", spec.GatewayID, err)
 		}
-		if gw.AccountID != accountID {
+		if gw.AccountID != accountID || gw.ArchivedAt != nil {
 			// Same error as not-found: don't reveal that a gateway ID
 			// belongs to someone else.
 			return store.Task{}, status.Errorf(codes.InvalidArgument, "gateway %s not found", spec.GatewayID)
@@ -351,6 +351,7 @@ func (s *CustomerServer) CreateGateway(ctx context.Context, req *lazycakev1.Crea
 
 	if err := s.Store.CreateGateway(ctx, store.Gateway{
 		ID: gatewayID, AccountID: tok.AccountID, Label: req.GetLabel(), Services: services,
+		TokenHash: auth.Hash(installToken),
 	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "creating gateway: %v", err)
 	}

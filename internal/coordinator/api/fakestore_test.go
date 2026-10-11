@@ -461,12 +461,25 @@ func (f *fakeStore) GetGateway(ctx context.Context, id string) (store.Gateway, e
 	return g, nil
 }
 
+func (f *fakeStore) ArchiveGateway(ctx context.Context, accountID, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.gateways[id]
+	if !ok || g.AccountID != accountID || g.ArchivedAt != nil {
+		return store.ErrNotFound
+	}
+	now := time.Now()
+	g.ArchivedAt = &now
+	f.gateways[id] = g
+	return nil
+}
+
 func (f *fakeStore) ListGatewaysByAccount(ctx context.Context, accountID string) ([]store.Gateway, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []store.Gateway
 	for _, g := range f.gateways {
-		if g.AccountID == accountID {
+		if g.AccountID == accountID && g.ArchivedAt == nil {
 			out = append(out, g)
 		}
 	}

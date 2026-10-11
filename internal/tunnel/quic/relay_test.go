@@ -222,3 +222,56 @@ func TestRelayShutdownClosesConnections(t *testing.T) {
 		t.Fatal("gateway connection still open 2s after the relay shut down")
 	}
 }
+
+// archivedRegistry is a registry that knows which gateways were deleted.
+type archivedRegistry struct {
+	recordingRegistry
+	archived map[string]bool
+}
+
+func (r *archivedRegistry) GatewayArchived(_ context.Context, id string) bool { return r.archived[id] }
+
+func waitRevoked(t *testing.T, conn interface{ Context() context.Context }) {
+	t.Helper()
+	select {
+	case <-conn.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("connection was never closed")
+	}
+	if !IsGatewayRevoked(context.Cause(conn.Context())) {
+		t.Fatalf("closed, but not with the gateway-deleted code: %v", context.Cause(conn.Context()))
+	}
+}
+
+// Deleting a gateway drops its live connection with the "deleted" code, and a deleted gateway that dials in
+// again, even with a token that still authenticates, is told the same.
+func TestDeletedGatewayIsDisconnectedAndRefused(t *testing.T) {
+	addr := freeUDPAddr(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	reg := &archivedRegistry{archived: map[string]bool{}}
+	relay := &Relay{Auth: fakeAuth{}, Gateways: reg, Log: log}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go relay.Serve(ctx, addr)
+	time.Sleep(100 * time.Millisecond)
+
+	conn, err := DialGateway(ctx, addr, "tok", "gw_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if relay.DisconnectGateway("gw_other") {
+		t.Fatal("disconnected a gateway that isn't connected")
+	}
+	if !relay.DisconnectGateway("gw_1") {
+		t.Fatal("the connected gateway wasn't found")
+	}
+	waitRevoked(t, conn)
+
+	reg.archived["gw_1"] = true
+	again, err := DialGateway(ctx, addr, "tok", "gw_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRevoked(t, again)
+}

@@ -306,6 +306,9 @@ func (s *Scheduler) dispatchMessage(ctx context.Context, t store.Task, leaseExpi
 		if err != nil {
 			return nil, fmt.Errorf("looking up gateway %s for target %s: %w", tt.GatewayID, tt.Hostname, err)
 		}
+		if gw.ArchivedAt != nil {
+			return nil, fmt.Errorf("gateway %s was deleted (target %s)", tt.GatewayID, tt.Hostname)
+		}
 		if len(gw.NoisePubkey) == 0 {
 			return nil, fmt.Errorf("gateway %s has not published a noise key yet (has it ever connected?)", tt.GatewayID)
 		}

@@ -35,7 +35,13 @@ func (a StoreAdapter) OwnsGateway(ctx context.Context, accountID, gatewayID stri
 		}
 		return false, fmt.Errorf("getting gateway: %w", err)
 	}
-	return gw.AccountID == accountID, nil
+	return gw.AccountID == accountID && gw.ArchivedAt == nil, nil
+}
+
+// GatewayArchived satisfies quic.GatewayRevocations.
+func (a StoreAdapter) GatewayArchived(ctx context.Context, gatewayID string) bool {
+	gw, err := a.Store.GetGateway(ctx, gatewayID)
+	return err == nil && gw.ArchivedAt != nil
 }
 
 func (a StoreAdapter) SetGatewayConnected(ctx context.Context, gatewayID string, connected bool, noisePubkey []byte) error {

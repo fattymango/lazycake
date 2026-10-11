@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -45,10 +48,45 @@ func run() error {
 		services[s.Name] = s.Addr()
 	}
 
+	// A gateway the customer deleted never serves again, even after a restart of its container
+	// (--restart=always brings it back, and the key volume remembers).
+	tombstone := tombstonePath(keyPath())
+	if revokedBefore(tombstone, cfg.GatewayID) {
+		return dormant(ctx, log, cfg.GatewayID)
+	}
+
 	reportBytes, hello := newByteReporter(ctx, cfg, log)
-	return serveForever(ctx, log, func(ctx context.Context) error {
+	err = serveForever(ctx, log, func(ctx context.Context) error {
 		return serveOnce(ctx, cfg, keypair, services, log, reportBytes, hello)
 	})
+	if errors.Is(err, errGatewayDeleted) {
+		if werr := os.WriteFile(tombstone, []byte(cfg.GatewayID), 0o600); werr != nil {
+			log.Warn("couldn't record the deletion; a restart will be rejected again instead", "error", werr)
+		}
+		return dormant(ctx, log, cfg.GatewayID)
+	}
+	return err
+}
+
+// errGatewayDeleted means the coordinator told this gateway it was deleted: its token is expired and
+// every connection attempt will be refused, so retrying is pointless.
+var errGatewayDeleted = errors.New("gateway was deleted in the dashboard")
+
+func tombstonePath(keyPath string) string { return filepath.Join(filepath.Dir(keyPath), "deleted") }
+
+func revokedBefore(path, gatewayID string) bool {
+	b, err := os.ReadFile(path)
+	return err == nil && strings.TrimSpace(string(b)) == gatewayID
+}
+
+// dormant keeps the process idle until it is stopped: no connections, no forwarding. The container keeps its
+// restart policy, so exiting would only have it restarted; the dashboard hands the owner the command that
+// removes it. Services stay unreachable either way.
+func dormant(ctx context.Context, log *slog.Logger, gatewayID string) error {
+	log.Error("this gateway was deleted in the LazyCake dashboard and will not connect again. Remove it with: "+
+		"podman rm -f lazycake-gateway && podman volume rm lazycake-gateway-data", "gateway_id", gatewayID)
+	<-ctx.Done()
+	return nil
 }
 
 // serveOnce holds one relay connection: dials, then accepts tunnelled
@@ -97,6 +135,9 @@ func serveForever(ctx context.Context, log *slog.Logger, serve func(context.Cont
 		if ctx.Err() != nil {
 			log.Info("gateway shutting down")
 			return nil
+		}
+		if quic.IsGatewayRevoked(err) {
+			return errGatewayDeleted
 		}
 		if time.Since(start) >= healthyAfter {
 			delay = reconnectMin

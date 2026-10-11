@@ -15,21 +15,21 @@ func (s *PostgresStore) CreateGateway(ctx context.Context, g Gateway) error {
 		return fmt.Errorf("marshalling services: %w", err)
 	}
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO gateways (id, account_id, label, noise_pubkey, services)
-		 VALUES ($1, $2, $3, $4, $5)`,
-		g.ID, g.AccountID, g.Label, g.NoisePubkey, services)
+		`INSERT INTO gateways (id, account_id, label, noise_pubkey, services, token_hash)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		g.ID, g.AccountID, g.Label, g.NoisePubkey, services, g.TokenHash)
 	if err != nil {
 		return fmt.Errorf("creating gateway: %w", err)
 	}
 	return nil
 }
 
-const gatewayColumns = `id, account_id, label, noise_pubkey, services, connected, created_at, version`
+const gatewayColumns = `id, account_id, label, noise_pubkey, services, connected, created_at, version, archived_at, token_hash`
 
 func scanGateway(row rowScanner) (Gateway, error) {
 	var g Gateway
 	var servicesRaw []byte
-	err := row.Scan(&g.ID, &g.AccountID, &g.Label, &g.NoisePubkey, &servicesRaw, &g.Connected, &g.CreatedAt, &g.Version)
+	err := row.Scan(&g.ID, &g.AccountID, &g.Label, &g.NoisePubkey, &servicesRaw, &g.Connected, &g.CreatedAt, &g.Version, &g.ArchivedAt, &g.TokenHash)
 	if err != nil {
 		return Gateway{}, err
 	}
@@ -55,7 +55,7 @@ func (s *PostgresStore) GetGateway(ctx context.Context, id string) (Gateway, err
 
 func (s *PostgresStore) ListGatewaysByAccount(ctx context.Context, accountID string) ([]Gateway, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+gatewayColumns+` FROM gateways WHERE account_id = $1 ORDER BY created_at`, accountID)
+		`SELECT `+gatewayColumns+` FROM gateways WHERE account_id = $1 AND archived_at IS NULL ORDER BY created_at`, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("listing gateways: %w", err)
 	}
@@ -100,4 +100,44 @@ func (s *PostgresStore) SetGatewayVersion(ctx context.Context, id, version strin
 		return fmt.Errorf("setting gateway version: %w", err)
 	}
 	return nil
+}
+
+func (s *PostgresStore) ArchiveGateway(ctx context.Context, accountID, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("archiving gateway: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var tokenHash []byte
+	err = tx.QueryRow(ctx,
+		`SELECT token_hash FROM gateways WHERE id = $1 AND account_id = $2 AND archived_at IS NULL FOR UPDATE`,
+		id, accountID).Scan(&tokenHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("locking gateway: %w", err)
+	}
+
+	var inUse bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM tasks WHERE $1 = ANY(gateway_ids)
+		   AND state IN ('queued', 'reserved', 'dispatched', 'running'))`, id).Scan(&inUse); err != nil {
+		return fmt.Errorf("checking gateway use: %w", err)
+	}
+	if inUse {
+		return ErrGatewayInUse
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE gateways SET archived_at = now(), connected = false WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("archiving gateway: %w", err)
+	}
+	if len(tokenHash) > 0 {
+		if _, err := tx.Exec(ctx,
+			`UPDATE api_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`, tokenHash); err != nil {
+			return fmt.Errorf("revoking gateway token: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
 }

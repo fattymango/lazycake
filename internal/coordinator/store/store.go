@@ -179,7 +179,13 @@ type Gateways interface {
 	CreateGateway(ctx context.Context, g Gateway) error
 	// SetGatewayVersion records the release a gateway reported (a no-op when unchanged).
 	SetGatewayVersion(ctx context.Context, id, version string) error
+	// GetGateway also returns archived gateways (check ArchivedAt): their history stays readable.
 	GetGateway(ctx context.Context, id string) (Gateway, error)
+	// ArchiveGateway soft-deletes the account's gateway and revokes its install token, in one transaction.
+	// ErrNotFound if it doesn't exist, belongs to another account or is already archived; ErrGatewayInUse
+	// if a task that has not finished (queued, reserved, dispatched, running) uses it.
+	ArchiveGateway(ctx context.Context, accountID, id string) error
+	// ListGatewaysByAccount returns the account's gateways that are not archived.
 	ListGatewaysByAccount(ctx context.Context, accountID string) ([]Gateway, error)
 	// SetGatewayConnected records connectedness and, when connected is
 	// true, the Noise public key the gateway just published at connect

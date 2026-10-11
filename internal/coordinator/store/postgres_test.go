@@ -823,3 +823,54 @@ func TestVersionsAreStoredForAgentsAndGateways(t *testing.T) {
 	g, _ = s.GetGateway(ctx, "gw_1")
 	require.Equal(t, "v0.3.13", g.Version)
 }
+
+// Deleting a gateway archives it only while no unfinished task uses it, expires exactly its own token, and
+// leaves the row readable for history.
+func TestArchiveGateway(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustAccount(t, s, "act_2")
+	for _, h := range [][]byte{[]byte("hash-a"), []byte("hash-b")} {
+		require.NoError(t, s.CreateToken(ctx, APIToken{TokenHash: h, AccountID: "act_1", Kind: TokenGateway}))
+	}
+	require.NoError(t, s.CreateGateway(ctx, Gateway{ID: "gw_a", AccountID: "act_1", Label: "a", TokenHash: []byte("hash-a")}))
+	require.NoError(t, s.CreateGateway(ctx, Gateway{ID: "gw_b", AccountID: "act_1", Label: "b", TokenHash: []byte("hash-b")}))
+	require.NoError(t, s.CreateGateway(ctx, Gateway{ID: "gw_old", AccountID: "act_1", Label: "predates token links"}))
+
+	newTask := func(id string, state TaskState, gw string) {
+		require.NoError(t, s.CreateTask(ctx, Task{
+			ID: id, AccountID: "act_1", State: state, Image: "x", GatewayIDs: []string{gw},
+			Limits:       Limits{CPUCores: 1, MemoryMB: 128, DiskMB: 500},
+			Requirements: Requirements{Arch: "amd64", Isolation: "podman"},
+			Delivery:     AtMostOnce, Retry: Retry{MaxAttempts: 1},
+		}))
+	}
+	newTask("tsk_q", TaskQueued, "gw_a")
+
+	require.ErrorIs(t, s.ArchiveGateway(ctx, "act_1", "gw_a"), ErrGatewayInUse, "a queued task blocks deletion")
+	_, err := s.Authenticate(ctx, []byte("hash-a"))
+	require.NoError(t, err, "a refused delete must not touch the token")
+
+	require.ErrorIs(t, s.ArchiveGateway(ctx, "act_2", "gw_b"), ErrNotFound, "someone else's gateway looks like it doesn't exist")
+
+	// A finished task no longer blocks.
+	require.NoError(t, s.TransitionTask(ctx, "tsk_q", []TaskState{TaskQueued}, TaskCancelled, TaskUpdate{}))
+	require.NoError(t, s.ArchiveGateway(ctx, "act_1", "gw_a"))
+
+	_, err = s.Authenticate(ctx, []byte("hash-a"))
+	require.ErrorIs(t, err, ErrNotFound, "its token is expired")
+	_, err = s.Authenticate(ctx, []byte("hash-b"))
+	require.NoError(t, err, "another gateway's token is untouched")
+
+	g, err := s.GetGateway(ctx, "gw_a")
+	require.NoError(t, err)
+	require.NotNil(t, g.ArchivedAt, "the row stays for history")
+	require.False(t, g.Connected)
+	list, err := s.ListGatewaysByAccount(ctx, "act_1")
+	require.NoError(t, err)
+	require.Len(t, list, 2, "archived gateways drop out of the list")
+
+	require.ErrorIs(t, s.ArchiveGateway(ctx, "act_1", "gw_a"), ErrNotFound, "already archived")
+	require.NoError(t, s.ArchiveGateway(ctx, "act_1", "gw_old"), "a gateway with no linked token can still be archived")
+}

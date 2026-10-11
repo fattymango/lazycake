@@ -42,3 +42,6 @@ export const GATEWAY_BOOT_COMMAND = `systemctl --user enable --now podman-restar
 
 /** Step 4: show what the gateway is doing, to confirm it connected. */
 export const GATEWAY_LOGS_COMMAND = `podman logs --tail 20 lazycake-gateway`;
+
+/** After a gateway is deleted in the dashboard its container goes idle by itself; this removes it and its key from the machine. */
+export const GATEWAY_REMOVE_COMMAND = `podman rm -f lazycake-gateway && podman volume rm lazycake-gateway-data`;

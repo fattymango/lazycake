@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, Plug } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import { bytes, count, dateTime, relativeTime, shortDateTime } from "@/lib/format";
@@ -24,6 +24,8 @@ import { ConnectionPill, TaskStatusPill } from "@/ui/StatusPill";
 import { UpdateNotice } from "@/ui/UpdateNotice";
 import { LineChart, type ChartSeries } from "@/ui/LineChart";
 import { TrafficLegend } from "./TrafficLegend";
+import { DeleteGatewayDialog } from "./DeleteGatewayDialog";
+import { DeleteGatewayButton } from "./Gateways";
 
 type Range = "7d" | "30d";
 const WINDOW: Record<Range, number> = { "7d": 7 * 86_400_000, "30d": 30 * 86_400_000 };
@@ -38,6 +40,8 @@ type Busiest = GatewayTraffic["busiest_tasks"][number];
 export function GatewayDetail() {
   const { id = "" } = useParams<{ id: string }>();
   const [range, setRange] = useState<Range>("7d");
+  const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
   const gateways = useAsync((s) => apiGet<Gateway[]>("/api/portal/customer/gateways", s), []);
   const traffic = useAsync(
     (s) => apiGet<GatewayTraffic>(`/api/portal/customer/gateways/${encodeURIComponent(id)}/traffic?range=${range}`, s),
@@ -45,6 +49,8 @@ export function GatewayDetail() {
   );
   const tasks = useAsync((s) => apiGet<Task[]>("/api/portal/customer/tasks", s), []);
   useInterval(() => {
+    // Once deleted the gateway disappears from the list: don't let a refresh swap this page for "not found" under the open dialog.
+    if (deleting) return;
     tasks.reload();
     gateways.reload();
     traffic.reload();
@@ -135,15 +141,18 @@ export function GatewayDetail() {
           </span>
         }
         actions={
-          <Segmented<Range>
-            label="Period"
-            value={range}
-            onChange={setRange}
-            options={[
-              { value: "7d", label: "7 days" },
-              { value: "30d", label: "30 days" },
-            ]}
-          />
+          <div className="flex items-center gap-2">
+            {gw && <DeleteGatewayButton gatewayId={gw.id} label={gw.label} tasks={tasks.data} onClick={() => setDeleting(true)} />}
+            <Segmented<Range>
+              label="Period"
+              value={range}
+              onChange={setRange}
+              options={[
+                { value: "7d", label: "7 days" },
+                { value: "30d", label: "30 days" },
+              ]}
+            />
+          </div>
         }
       />
 
@@ -293,6 +302,7 @@ export function GatewayDetail() {
       </Card>
 
       <TrafficLegend />
+      <DeleteGatewayDialog gateway={deleting && gw ? gw : null} onClose={() => setDeleting(false)} onClosed={() => navigate("/gateways")} />
     </div>
   );
 }

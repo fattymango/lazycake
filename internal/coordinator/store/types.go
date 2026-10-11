@@ -275,6 +275,10 @@ type Gateway struct {
 	CreatedAt   time.Time
 	// Version is the release the gateway last reported ("" if it predates version reporting).
 	Version string
+	// TokenHash identifies the install token minted for this gateway (nil for gateways that predate it).
+	TokenHash []byte
+	// ArchivedAt is set once the customer deleted the gateway: it keeps its history but can no longer connect or be used.
+	ArchivedAt *time.Time
 }
 
 // GatewayTrafficReport is one byte report from a gateway about one forwarded
