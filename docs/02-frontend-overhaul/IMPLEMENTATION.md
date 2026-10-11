@@ -451,3 +451,8 @@ guided update from 8.16) makes a **new machine entry** and leaves the old one of
 **Options to evaluate:** keep the instance id in a volume so a recreated container with the same volume stays the same machine (the install command has no data volume today); key trust (and the machine entry) by
 the agent token or a stable machine identity and keep the instance id only for adopting tasks; retire entries that have been offline for a set time (hidden, not deleted, because tasks and billing refer to them);
 persist trust in the database. Needs a decision on what "the same machine" means when one token is used on two computers.
+
+### Task 8.20 — The machine that drains for a big task is chosen by chance
+Found in the third production load test (v0.4.16). When the oldest waiting task needs more than a machine has free, one machine empties itself for it and the others keep working (the claim is `Scheduler.drainers`, first to ask wins). In the run the 4-core VM was the drainer almost the whole time: it ran 121 tasks against 897 on the 8-core PC (about 11% of the work for a third of the cores), because its running tasks had wall limits of about 260 s, so the backfill window was short and it sat with free cores.
+
+**Options to evaluate:** pick the drainer by who would have room soonest (the `backfillWindow` shadow time) and let it be replaced only when another machine is much sooner, to avoid flapping; or let tasks backfill by their measured typical run time instead of their wall limit. Measure with `tools/loadtest/loadtest.py` (`tasks_per_node`).

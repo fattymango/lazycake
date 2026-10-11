@@ -23,7 +23,7 @@ LazyCake is a marketplace for leftover CPU: **providers** lend spare machine cap
 - Communicate **plainly** and concisely: what changed, what you verified, what is still open. Lead with the result. Answer the question asked.
 - Keep scope tight; ask only when the decision is genuinely the owner's (e.g. force-push, deleting things, scope-expanding rewrites). Otherwise pick the conventional default and mention it.
 - Write code in the surrounding style (comment density, naming). Comments explain *why*.
-- Keep docs current (see §7). Record backlog ideas in `docs/02-frontend-overhaul/IMPLEMENTATION.md` as numbered tasks (latest: 8.19).
+- Keep docs current (see §7). Record backlog ideas in `docs/02-frontend-overhaul/IMPLEMENTATION.md` as numbered tasks (latest: 8.20).
 - The deployment target runs on a small box (1 vCPU, ~458 MB RAM, ~2 GB free disk): keep the coordinator light.
 
 ## 3. Repo map (details in `.claude/`)
