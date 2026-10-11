@@ -275,3 +275,51 @@ func TestDeletedGatewayIsDisconnectedAndRefused(t *testing.T) {
 	}
 	waitRevoked(t, again)
 }
+
+type testGuard struct {
+	mu      sync.Mutex
+	fails   int
+	blocked bool
+}
+
+func (g *testGuard) Blocked(string) bool { g.mu.Lock(); defer g.mu.Unlock(); return g.blocked }
+func (g *testGuard) Fail(string)         { g.mu.Lock(); g.fails++; g.mu.Unlock() }
+
+// A client that fails to authenticate is counted, and one the guard blocks is dropped before it can authenticate.
+func TestRelayCountsAuthFailuresAndDropsBlockedClients(t *testing.T) {
+	addr := freeUDPAddr(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	guard := &testGuard{}
+	relay := &Relay{Auth: fakeAuth{}, Guard: guard, Log: log}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go relay.Serve(ctx, addr)
+	time.Sleep(100 * time.Millisecond)
+
+	bad, err := DialGateway(ctx, addr, "", "gw_1", nil) // fakeAuth refuses an empty token
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-bad.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("a failed authentication should close the connection")
+	}
+	guard.mu.Lock()
+	fails := guard.fails
+	guard.blocked = true
+	guard.mu.Unlock()
+	if fails != 1 {
+		t.Fatalf("recorded %d failures, want 1", fails)
+	}
+
+	good, err := DialGateway(ctx, addr, "tok", "gw_2", nil) // a valid token, but the address is blocked
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-good.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("a blocked address was served")
+	}
+}

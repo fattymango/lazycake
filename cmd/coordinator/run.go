@@ -20,6 +20,7 @@ import (
 	"github.com/fattymango/lazycake/internal/coordinator/dashboard"
 	"github.com/fattymango/lazycake/internal/coordinator/events"
 	"github.com/fattymango/lazycake/internal/coordinator/portalapi"
+	"github.com/fattymango/lazycake/internal/coordinator/ratelimit"
 	coordrelay "github.com/fattymango/lazycake/internal/coordinator/relay"
 	"github.com/fattymango/lazycake/internal/coordinator/scheduler"
 	"github.com/fattymango/lazycake/internal/coordinator/seed"
@@ -157,7 +158,12 @@ func run() error {
 	sched.Billing = &billing.Meters{Store: st, Clock: clock.Real{}, Log: log, Reconciler: reconciler, Ledger: ledger}
 	sched.Rates = rates
 
-	grpcServer := grpc.NewServer()
+	// 20 failed authentications from one address within a minute blocks it for five (gRPC and relay share the count).
+	authGuard := ratelimit.NewFailGuard(20, time.Minute, 5*time.Minute)
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(ratelimit.UnaryGuard(authGuard)),
+		grpc.ChainStreamInterceptor(ratelimit.StreamGuard(authGuard)),
+	)
 	lazycakev1.RegisterAgentServiceServer(grpcServer, &api.Server{
 		Store:      st,
 		Registry:   registry,
@@ -190,6 +196,7 @@ func run() error {
 	}
 
 	tunnelRelay := &quic.Relay{
+		Guard:    authGuard,
 		Auth:     coordrelay.StoreAdapter{Store: st},
 		Gateways: coordrelay.StoreAdapter{Store: st},
 		Log:      log,
@@ -229,7 +236,13 @@ func run() error {
 		dashHandler.ServeHTTP(w, r2)
 	})
 	httpMux.Handle("/", webassets.Handler("index.html"))
-	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
+	// No WriteTimeout: the dashboard's SSE streams are long-lived writes. The read side is bounded so a client dribbling
+	// a request in byte by byte (slowloris) cannot hold connections open.
+	httpServer := &http.Server{
+		Addr: cfg.HTTPAddr, Handler: httpMux,
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
+	}
 	httpErr := make(chan error, 1)
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

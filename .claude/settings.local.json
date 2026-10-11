@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git tag:*)",
+      "Bash(git push origin master v*)",
+      "Bash(git status:*)",
+      "Bash(ssh kassab@68.183.72.125:*)",
+      "Bash(scp:*)",
+      "Bash(podman build:*)",
+      "Bash(podman push:*)",
+      "Bash(go run github.com/pressly/goose/v3/cmd/goose@latest:*)"
+    ]
+  }
+}

@@ -3,9 +3,12 @@ package portalapi
 import (
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/fattymango/lazycake/internal/coordinator/api"
 	"github.com/fattymango/lazycake/internal/coordinator/events"
+	"github.com/fattymango/lazycake/internal/coordinator/ratelimit"
 	"github.com/fattymango/lazycake/internal/coordinator/store"
 )
 
@@ -52,6 +55,11 @@ type Server struct {
 	CoordinatorAddr string
 
 	limiter *loginLimiter
+
+	// Per-IP request limits (see ratelimit). Built by Handler; tests may replace them first.
+	reqLimit    *ratelimit.Limiter // every /api/portal/ request
+	loginLimit  *ratelimit.Limiter // login attempts, whether or not the password was right
+	signupLimit *ratelimit.Limiter // account creation
 }
 
 // Handler returns the mux to mount at /api/portal/ on the coordinator's
@@ -64,6 +72,17 @@ type Server struct {
 func (s *Server) Handler() http.Handler {
 	if s.limiter == nil {
 		s.limiter = newLoginLimiter()
+	}
+
+	if s.reqLimit == nil {
+		// The dashboard polls several endpoints and holds one SSE stream; this leaves a normal tab far below the limit.
+		s.reqLimit = ratelimit.NewLimiter(30, time.Second, 120)
+	}
+	if s.loginLimit == nil {
+		s.loginLimit = ratelimit.NewLimiter(10, time.Minute, 10)
+	}
+	if s.signupLimit == nil {
+		s.signupLimit = ratelimit.NewLimiter(5, 10*time.Minute, 5)
 	}
 
 	mux := http.NewServeMux()
@@ -115,5 +134,28 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, http.StatusNotFound, "not found")
 	})
 
-	return mux
+	return s.rateLimited(mux)
+}
+
+// rateLimited throttles by client IP: everything under /api/portal/ gets a generous limit, and login and signup a
+// strict one on top (the per-username lockout alone lets one address try a password against every account).
+func (s *Server) rateLimited(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := ratelimit.ClientIP(r.RemoteAddr)
+		limit := s.reqLimit
+		if r.Method == http.MethodPost {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/login"):
+				limit = s.loginLimit
+			case strings.HasSuffix(r.URL.Path, "/signup"):
+				limit = s.signupLimit
+			}
+		}
+		if !s.reqLimit.Allow(ip) || (limit != s.reqLimit && !limit.Allow(ip)) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, "too many requests: slow down and try again in a minute")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

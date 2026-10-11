@@ -3,7 +3,7 @@
 Plain REST/JSON under `/api/portal/*`, backing the customer and provider web apps. Back to [README](README.md). It wraps the same `store.Store` / `api.CustomerServer` logic as gRPC rather than re-implementing it. Frontend consumer: [web-frontend](web-frontend.md).
 
 ## Auth and sessions
-- Username/password accounts (portal credentials table, migration 012); sign-up for customer and provider, `POST /api/portal/login` (unified), role-specific logins. Sessions in `sessions` (013), httpOnly `SameSite=Lax` cookie, 7-day TTL, `Secure` unless dev mode. `lockout.go` throttles repeated failed logins. Account-scoped: every handler uses the session's `AccountID`; never trust IDs from the client without `getOwn…` checks.
+- Username/password accounts (portal credentials table, migration 012); sign-up for customer and provider, `POST /api/portal/login` (unified), role-specific logins. Sessions in `sessions` (013), httpOnly `SameSite=Lax` cookie, 7-day TTL, `Secure` unless dev mode. `lockout.go` locks a username after 10 failed logins in 5 min. **Per-IP limits** (`server.go` `rateLimited`, package `internal/coordinator/ratelimit`): 30 req/s (burst 120) for everything under `/api/portal/`, plus 10 logins/min and 5 sign-ups/10 min, answered `429` with `Retry-After`; the IP is the socket address, never `X-Forwarded-For`. JSON bodies are capped at 1 MiB (`413`). If the portal is ever put behind a reverse proxy, the limiter must be taught the proxy's header or every client shares one bucket. Account-scoped: every handler uses the session's `AccountID`; never trust IDs from the client without `getOwn…` checks.
 - Production is **plain HTTP** today, so `Secure` cookies behave per config; HTTPS is backlog 8.18.
 
 ## Routes (see `server.go` for the authoritative list)

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -86,6 +87,20 @@ func (r *Relay) DisconnectGateway(gatewayID string) bool {
 	return true
 }
 
+// FailureGuard lets the relay shed clients that keep failing to authenticate. Optional; keys are client IP addresses.
+type FailureGuard interface {
+	Blocked(ip string) bool
+	Fail(ip string)
+}
+
+func clientIP(conn *quicgo.Conn) string {
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		return conn.RemoteAddr().String()
+	}
+	return host
+}
+
 // StreamStats is reported once a relayed stream closes, for the
 // three-point byte reconciliation phase 4 builds on top of this.
 type StreamStats struct {
@@ -99,6 +114,7 @@ type StreamStats struct {
 // it, and it pumps bytes between them.
 type Relay struct {
 	Auth     Authenticator
+	Guard    FailureGuard    // may be nil: no throttling of repeated failed authentication
 	Gateways GatewayRegistry // may be nil: gateway ownership/pubkey persistence then just doesn't happen
 	Log      *slog.Logger
 
@@ -169,6 +185,11 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 		delete(r.conns, conn)
 		r.mu.Unlock()
 	}()
+	ip := clientIP(conn)
+	if r.Guard != nil && r.Guard.Blocked(ip) {
+		conn.CloseWithError(1, "too many failed authentication attempts")
+		return
+	}
 	controlStream, err := conn.AcceptStream(ctx)
 	if err != nil {
 		r.Log.Warn("accepting control stream", "error", err)
@@ -189,6 +210,9 @@ func (r *Relay) handleConn(ctx context.Context, conn *quicgo.Conn) {
 	accountID, err := r.Auth.Authenticate(ctx, cf.Token)
 	if err != nil {
 		r.Log.Warn("relay auth failed", "role", cf.Role, "error", err)
+		if r.Guard != nil {
+			r.Guard.Fail(ip)
+		}
 		conn.CloseWithError(1, "authentication failed")
 		return
 	}

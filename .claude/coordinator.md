@@ -2,6 +2,9 @@
 
 One Go process: gRPC for agents/customers/gateways, REST for the dashboards, QUIC relay for tunnels, background scheduler. Back to [README](README.md). Related: [scheduler-trust](scheduler-trust.md), [billing](billing.md), [store-database](store-database.md), [portal-api](portal-api.md).
 
+## Abuse protection
+`internal/coordinator/ratelimit`: `Limiter` (token bucket per IP) and `FailGuard` (N failed authentications per window blocks an IP). HTTP: see [portal-api](portal-api.md); the server has `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s, `IdleTimeout` 2 min, 64 KiB headers, and deliberately **no `WriteTimeout`** (SSE streams). gRPC (7443): unary and stream interceptors refuse an IP with `ResourceExhausted` after 20 `Unauthenticated` answers in a minute (5-minute block). Relay (7444): the same `FailGuard` (shared count) via `quic.Relay.Guard`; a blocked address is dropped before it can authenticate. All in memory: a restart forgets it. Not a volumetric-DDoS defence: that needs something in front of the box.
+
 ## `cmd/coordinator`
 `main.go` (flags, `--version`), `run.go` (wiring of every component and the gRPC servers; heartbeat and lease seconds are set here), `shutdown.go` (graceful stop; gRPC graceful stop is forced after 10 s because agent streams stay open — the "graceful stop timed out" warning on restart is normal).
 

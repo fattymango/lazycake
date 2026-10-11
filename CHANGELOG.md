@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.3 — 2026-10-11
+
+Coordinator only: no migration, agents and gateways unchanged.
+
+### Added
+- **Rate limiting and abuse protection.** The portal limits each IP address: 10 login attempts a minute and 5 sign-ups per 10 minutes (answered `429` with `Retry-After`), and a generous 30 requests a second for everything else. This closes the gap where one address could try a password against thousands of usernames without ever tripping the per-username lockout. An address that fails authentication 20 times in a minute is blocked for five minutes on the agent/customer gRPC port and on the tunnel relay. JSON request bodies are capped at 1 MiB (`413`), and the HTTP server now times out slow or idle connections (slowloris). Limits are per IP, in memory, and reset when the coordinator restarts. This does not stop a volumetric DDoS: that needs a filter in front of the server.
+
 ## v0.4.2 — 2026-10-11
 
 Needs migration 024 (before the coordinator) and an updated gateway image.

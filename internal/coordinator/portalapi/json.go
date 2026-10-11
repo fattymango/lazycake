@@ -2,6 +2,7 @@ package portalapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"google.golang.org/grpc/codes"
@@ -24,8 +25,16 @@ func writeError(w http.ResponseWriter, statusCode int, message string) {
 
 // decodeJSON decodes the request body into v, or writes a 400 and returns
 // false on malformed JSON.
+// maxBodyBytes caps a JSON request body: the largest legitimate one (a task with its environment) is a few KB.
+const maxBodyBytes = 1 << 20
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes)).Decode(v); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
 		writeError(w, http.StatusBadRequest, "malformed request body")
 		return false
 	}

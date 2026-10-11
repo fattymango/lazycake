@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -1176,4 +1177,38 @@ func TestGatewayDeleteIsRefusedWhileInUseThenExpiresTheToken(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	msg, _ := io.ReadAll(resp.Body)
 	require.Contains(t, string(msg), "not found", "a deleted gateway is not a valid target")
+}
+
+// One address can't hammer login or sign-up, even by spreading attempts over many usernames (the per-username
+// lockout never trips then), and a huge body is refused before it is read.
+func TestPerIPLimitsOnLoginSignupAndBodySize(t *testing.T) {
+	c, _, _ := newTestServer(t)
+
+	for i := 0; i < 5; i++ {
+		resp := c.do(http.MethodPost, "/api/portal/customer/signup", credentialsRequest{Username: fmt.Sprintf("user%d", i), Password: "password1"})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, "signup %d", i)
+	}
+	resp := c.do(http.MethodPost, "/api/portal/customer/signup", credentialsRequest{Username: "user5", Password: "password1"})
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "the 6th sign-up from one address")
+	require.NotEmpty(t, resp.Header.Get("Retry-After"))
+
+	for i := 0; i < 10; i++ {
+		resp := c.do(http.MethodPost, "/api/portal/login", credentialsRequest{Username: fmt.Sprintf("nobody%d", i), Password: "wrong-pass"})
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "login %d is judged normally", i)
+	}
+	resp = c.do(http.MethodPost, "/api/portal/login", credentialsRequest{Username: "user0", Password: "password1"})
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "the 11th login attempt, even with the right password")
+
+	// Other routes are unaffected by the strict login/sign-up buckets.
+	require.Equal(t, http.StatusOK, c.do(http.MethodGet, "/api/portal/me", nil).StatusCode, "the signed-in session still works")
+
+	big, err := http.NewRequest(http.MethodPost, c.base+"/api/portal/provider/signup", strings.NewReader(`{"username":"`+strings.Repeat("a", 2<<20)+`"}`))
+	require.NoError(t, err)
+	big.Header.Set("Content-Type", "application/json")
+	// A different server so the sign-up bucket above doesn't answer first.
+	c2, _, _ := newTestServer(t)
+	big.URL, _ = big.URL.Parse(c2.base + "/api/portal/provider/signup")
+	r, err := c2.hc.Do(big)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusRequestEntityTooLarge, r.StatusCode)
 }
