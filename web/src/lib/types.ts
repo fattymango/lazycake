@@ -198,6 +198,8 @@ export interface Node extends VersionInfo {
   offer_disk_mb: number;
   /** Tunnel bandwidth on offer in Mbit/s; 0 when no limit was set. */
   offer_network_mbps: number;
+  reserved_cores: number;
+  reserved_memory_mb: number;
   trust_score: number;
   last_heartbeat_at_ms?: number;
   created_at_ms: number;

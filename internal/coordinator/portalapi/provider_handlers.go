@@ -73,6 +73,8 @@ type nodeView struct {
 	OfferDiskMB      int     `json:"offer_disk_mb"`
 	OfferNetworkMbps int     `json:"offer_network_mbps"`
 	versionView
+	ReservedCores     float64 `json:"reserved_cores"`
+	ReservedMemoryMB  int     `json:"reserved_memory_mb"`
 	TrustScore        float64 `json:"trust_score"`
 	LastHeartbeatAtMS int64   `json:"last_heartbeat_at_ms,omitempty"`
 	CreatedAtMS       int64   `json:"created_at_ms"`
@@ -98,9 +100,12 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]nodeView, len(nodes))
+	ids := make([]string, len(nodes))
 	for i, n := range nodes {
 		out[i] = toNodeView(n)
+		ids[i] = n.ID
 	}
+	s.addReservations(r.Context(), ids, out)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -121,7 +126,21 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		writeStoreOrRPCError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toNodeView(node))
+	nv := []nodeView{toNodeView(node)}
+	s.addReservations(r.Context(), []string{node.ID}, nv)
+	writeJSON(w, http.StatusOK, nv[0])
+}
+
+// addReservations fills in what each machine has promised to its tasks. Best effort: a failure leaves zeros rather than failing the page.
+func (s *Server) addReservations(ctx context.Context, ids []string, views []nodeView) {
+	res, err := s.Store.NodeReservations(ctx, ids)
+	if err != nil {
+		return
+	}
+	for i := range views {
+		views[i].ReservedCores = res[views[i].ID].Cores
+		views[i].ReservedMemoryMB = res[views[i].ID].MemoryMB
+	}
 }
 
 // handleDeleteNode implements DELETE /api/portal/provider/nodes/{id}: the

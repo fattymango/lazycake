@@ -32,8 +32,8 @@ var (
 
 // The release in which each program's code (hashed below) was last changed, and its hash. Change a pair together with its release constant.
 const (
-	recordedAgentHash      = "3423dfa7a3eceecc5dfacc9b72645b21cb5b5331e31e0add4dbf6f51506424c9"
-	recordedAgentRelease   = "v0.4.4"
+	recordedAgentHash      = "e570bfeb8b211864f8e1e5029273a8438da505ea727c636305511c4eb77ec755"
+	recordedAgentRelease   = "v0.4.15"
 	recordedGatewayHash    = "87d176c51c6b8c8ec025ba9f777ed9054342f581db0ffc9ba7f852dc5a42c9db"
 	recordedGatewayRelease = "v0.4.12"
 )

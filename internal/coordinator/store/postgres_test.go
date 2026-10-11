@@ -931,3 +931,23 @@ func TestGatewayMaxMbps(t *testing.T) {
 	require.NotNil(t, g.MaxMbps, "unlimited is a recorded 0, not NULL")
 	require.Equal(t, 0, *g.MaxMbps)
 }
+
+// What a machine has promised to its tasks (not what they burn): active states count, finished and queued ones do not.
+func TestNodeReservationsCountOnlyTasksHoldingCapacity(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	mustAccount(t, s, "act_1")
+	mustNode(t, s, "nod_1", "act_1")
+	mustNode(t, s, "nod_2", "act_1")
+	for _, id := range []string{"tsk_run", "tsk_disp", "tsk_done"} {
+		mustRunningTask(t, s, id, "act_1", "nod_1")
+	}
+	for id, st := range map[string]string{"tsk_run": "running", "tsk_disp": "dispatched", "tsk_done": "succeeded"} {
+		_, err := s.pool.Exec(ctx, `UPDATE tasks SET state = $2::task_state WHERE id = $1`, id, st)
+		require.NoError(t, err)
+	}
+	got, err := s.NodeReservations(ctx, []string{"nod_1", "nod_2"})
+	require.NoError(t, err)
+	require.Equal(t, Reservation{Cores: 2, MemoryMB: 512}, got["nod_1"])
+	require.NotContains(t, got, "nod_2")
+}

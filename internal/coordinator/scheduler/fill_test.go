@@ -4,8 +4,10 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -91,4 +93,104 @@ func TestTickRespectsMemoryAndSkipsWhatDoesNotFit(t *testing.T) {
 
 	s.tick(ctx)
 	require.Equal(t, 2, disp.count(), "two 512 MB tasks fit in 1024 MB; the 4 GB task is skipped, the third small one has no room")
+}
+
+func (d *dispatchRecorder) ids() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.tasks...)
+}
+
+// age makes a task look as if it was submitted `ago` ago.
+func age(t *testing.T, st *store.PostgresStore, id string, ago time.Duration) {
+	t.Helper()
+	_, err := st.Pool().Exec(context.Background(), `UPDATE tasks SET created_at = now() - $2::interval WHERE id = $1`, id, fmt.Sprintf("%d seconds", int(ago.Seconds())))
+	require.NoError(t, err)
+}
+
+func starvationEnv(t *testing.T, offerCores float64) (*store.PostgresStore, *dispatchRecorder, *Scheduler) {
+	t.Helper()
+	st := testStore(t)
+	ctx := context.Background()
+	require.NoError(t, st.CreateAccount(ctx, store.Account{ID: "act_1", Name: "act_1", BalanceMicros: 1_000_000_000}))
+	require.NoError(t, st.UpsertNode(ctx, store.Node{ID: "nod_1", AccountID: "act_1", Hostname: "h", Arch: "amd64",
+		OfferCores: offerCores, OfferMemoryMB: 8192, OfferDiskMB: 100_000}))
+	disp := &dispatchRecorder{}
+	return st, disp, New(st, disp, clock.Real{}, discardLog(), 60)
+}
+
+func report(t *testing.T, s *Scheduler, freeCores float64) {
+	t.Helper()
+	require.NoError(t, s.OnCapacityReport(context.Background(), "nod_1", api.CapacityReportEvent{FreeCores: freeCores, FreeMemoryMB: 8192, FreeDiskMB: 100_000}))
+}
+
+// A task that needs more cores than the node has free was overtaken forever by a stream of small ones: a big task (4 cores) waited 30+ minutes while small
+// ones kept the node's free cores below 4. Once it has waited long enough the node stops giving its cores to newer tasks, and the big one goes first the
+// moment it fits.
+func TestAWaitingBigTaskHoldsTheNodeBackAndGoesFirstWhenItFits(t *testing.T) {
+	st, disp, s := starvationEnv(t, 4)
+	ctx := context.Background()
+	queuedTask(t, st, "tsk_big", 4, 1024)
+	age(t, st, "tsk_big", 5*time.Minute)
+	for i := 0; i < 6; i++ {
+		queuedTask(t, st, fmt.Sprintf("tsk_small%d", i), 0.25, 64)
+	}
+
+	report(t, s, 1) // three cores are busy: the big task does not fit, but the small ones would
+	s.tick(ctx)
+	require.Empty(t, disp.ids(), "the node must not be filled with newer small tasks while the big one waits")
+
+	report(t, s, 4) // the running work finished
+	s.tick(ctx)
+	require.Equal(t, []string{"tsk_big"}, disp.ids(), "the big task is placed first, and fills the node")
+}
+
+func TestATaskThatHasNotWaitedLongDoesNotHoldAnything(t *testing.T) {
+	st, disp, s := starvationEnv(t, 4)
+	queuedTask(t, st, "tsk_big", 4, 1024)
+	age(t, st, "tsk_big", 10*time.Second) // well under the 90 s
+	for i := 0; i < 6; i++ {
+		queuedTask(t, st, fmt.Sprintf("tsk_small%d", i), 0.25, 64)
+	}
+	report(t, s, 1)
+	s.tick(context.Background())
+	require.Len(t, disp.ids(), 4, "a young big task is no reason to leave cores idle: the four 0.25-core tasks fit in one free core")
+}
+
+func TestANodeThatCouldNeverRunTheBigTaskIsNotHeldBack(t *testing.T) {
+	st, disp, s := starvationEnv(t, 2) // offers 2 cores: it can never run a 4-core task
+	queuedTask(t, st, "tsk_big", 4, 1024)
+	age(t, st, "tsk_big", 10*time.Minute)
+	for i := 0; i < 3; i++ {
+		queuedTask(t, st, fmt.Sprintf("tsk_small%d", i), 0.5, 64)
+	}
+	s.tick(context.Background())
+	require.Len(t, disp.ids(), 3, "holding this node would help no one")
+}
+
+func TestTasksOlderThanTheWaitingBigOneAreStillPlacedDuringTheHold(t *testing.T) {
+	st, disp, s := starvationEnv(t, 4)
+	queuedTask(t, st, "tsk_older_small", 0.5, 64)
+	age(t, st, "tsk_older_small", 20*time.Minute)
+	queuedTask(t, st, "tsk_big", 4, 1024)
+	age(t, st, "tsk_big", 5*time.Minute)
+	queuedTask(t, st, "tsk_newer_small", 0.5, 64)
+
+	report(t, s, 1)
+	s.tick(context.Background())
+	require.Equal(t, []string{"tsk_older_small"}, disp.ids(), "a task that has waited even longer than the big one is not held back")
+}
+
+// A task the node just refused sat at the front of the queue: it was claimed, found to be cooling down, put back, and the node placed nothing else that tick.
+func TestATaskCoolingDownForThisNodeDoesNotStallIt(t *testing.T) {
+	st, disp, s := starvationEnv(t, 4)
+	queuedTask(t, st, "tsk_refused", 1, 128)
+	age(t, st, "tsk_refused", 10*time.Second)
+	queuedTask(t, st, "tsk_next", 1, 128)
+	s.mu.Lock()
+	s.rejected[rejectKey{"nod_1", "tsk_refused"}] = time.Now().Add(time.Minute)
+	s.mu.Unlock()
+
+	s.tick(context.Background())
+	require.Equal(t, []string{"tsk_next"}, disp.ids(), "the refused task is skipped, the next one is placed")
 }

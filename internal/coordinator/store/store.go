@@ -88,12 +88,18 @@ type Tasks interface {
 	ListTasksByAccount(ctx context.Context, accountID string, limit int) ([]Task, error)
 	// AccountTaskSummary counts accountID's tasks over all of them (see TaskSummary); finishedWindow bounds how many recent outcomes it returns.
 	AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (TaskSummary, error)
+	// NodeReservations sums, per node, the cores and memory promised to tasks that hold capacity there (reserved, dispatched, running). Nodes with none are absent.
+	NodeReservations(ctx context.Context, nodeIDs []string) (map[string]Reservation, error)
 
 	// ClaimQueuedTask atomically picks one queued task matching filter,
 	// moves it to 'reserved' with the given node and lease, and returns it.
 	// Uses SELECT ... FOR UPDATE SKIP LOCKED so concurrent claimers never
 	// race for the same task. Returns ErrNoTask if nothing matches.
 	ClaimQueuedTask(ctx context.Context, nodeID string, filter CapacityFilter, requeueAfter time.Time) (Task, error)
+	// OldestQueuedBefore returns the oldest queued task submitted before `before` that this machine could run if it were empty (it matches the
+	// filter, whose Free* fields are the machine's whole offer). ErrNoTask if there is none. The scheduler uses it to find a task that has waited
+	// too long and holds the machine back for it.
+	OldestQueuedBefore(ctx context.Context, offer CapacityFilter, before time.Time) (Task, error)
 
 	// TransitionTask moves a task to a new state, applying the given field
 	// updates in the same statement. It fails if the task is not currently

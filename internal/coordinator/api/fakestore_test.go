@@ -498,8 +498,16 @@ func (f *fakeStore) SetGatewayMaxMbps(ctx context.Context, id string, mbps int) 
 	return nil
 }
 
+func (f *fakeStore) NodeReservations(ctx context.Context, nodeIDs []string) (map[string]store.Reservation, error) {
+	return map[string]store.Reservation{}, nil
+}
+
 func (f *fakeStore) AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (store.TaskSummary, error) {
 	return store.TaskSummary{ByState: map[store.TaskState]int{}, Gateways: map[string]store.GatewayTaskSummary{}}, nil
+}
+
+func (f *fakeStore) OldestQueuedBefore(context.Context, store.CapacityFilter, time.Time) (store.Task, error) {
+	return store.Task{}, store.ErrNoTask
 }
 
 func (f *fakeStore) ArchiveGateway(ctx context.Context, accountID, id string) error {

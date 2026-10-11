@@ -21,3 +21,6 @@ For a task with targets the container runs `--network=none`. `target.go`/`proxy.
 - Containers started for tunnel tests need the in-container tools to exist; network tests use `testdata/netns-spike.sh` ideas and `internal/e2e/tunnel_isolation_test.go`.
 - Gateways and agents must be updated by their owners (pull + recreate); the dashboard shows "Update available".
 - Gateway container recreation keeps its identity only if its Noise key is on a mounted volume.
+
+## Agent relay link (v0.4.15)
+`internal/agent/netns/relaylink.go`: per task, `relayLink` dials the relay once, retrying the first dial (4 attempts, 500 ms apart), and if the QUIC connection dies it redials once (single-flight) and retries the stream, instead of every stream failing for the rest of the task (the load test logged ~33,000 "opening relayed stream: timeout" from one dead connection). Tests: `relaylink_test.go`.

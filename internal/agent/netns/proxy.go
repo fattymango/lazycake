@@ -200,14 +200,20 @@ func (p *Proxy) Setup(ctx context.Context) error {
 		listeners[i] = ln
 	}
 
-	relayConn, err := quic.DialAgent(ctx, p.RelayAddr, p.Token)
+	link, err := newRelayLink(ctx, func(ctx context.Context) (relayConn, error) {
+		c, err := quic.DialAgent(ctx, p.RelayAddr, p.Token)
+		if err != nil {
+			return nil, err
+		}
+		return quicRelayConn{c}, nil
+	}, p.Log)
 	if err != nil {
 		return fmt.Errorf("dialing relay: %w", err)
 	}
 
 	serveCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
-	serve(serveCtx, resultCfg, dnsConn, listeners, relayConn, p.EgressCapBytes, p.OnEgressExceeded, &p.Counters, p.Bandwidth, p.Log)
+	serve(serveCtx, resultCfg, dnsConn, listeners, link, p.EgressCapBytes, p.OnEgressExceeded, &p.Counters, p.Bandwidth, p.Log)
 
 	// Best-effort: lcinit polls for this file (--wait-file, wired up by
 	// executor.go's wrapWithLcinit) before starting the task's actual

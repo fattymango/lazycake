@@ -160,6 +160,9 @@ func (r *Runner) TrySend(msg *lazycakev1.AgentMessage) bool {
 	}
 }
 
+// healthyConnection is how long a connection must have lasted for the next loss to start the backoff over.
+var healthyConnection = 30 * time.Second // a variable so a test need not wait 30 s
+
 // Run connects, registers, heartbeats, and reconnects on failure until ctx
 // is cancelled.
 func (r *Runner) Run(ctx context.Context) error {
@@ -171,9 +174,16 @@ func (r *Runner) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		started := time.Now()
 		err := r.runOnce(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// Backoff exists for a coordinator that keeps refusing us. A connection that stayed up is not that: without this reset the delay only ever
+		// grew (nothing called Reset), so after a few restarts of the coordinator over an agent's life every reconnect waited the full minute
+		// (observed: "reconnecting in 61s"), long enough for the running tasks to be fenced.
+		if time.Since(started) >= healthyConnection {
+			backoff.Reset()
 		}
 		if err != nil {
 			r.Log.Warn("connection to coordinator lost", "error", err)

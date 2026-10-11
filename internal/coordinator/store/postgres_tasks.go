@@ -182,6 +182,8 @@ func (s *PostgresStore) ClaimQueuedTask(ctx context.Context, nodeID string, filt
 				AND cpu_cores <= $5
 				AND memory_mb <= $6
 				AND disk_mb <= $7
+				AND ($8::timestamptz IS NULL OR created_at < $8)
+				AND NOT (id = ANY($9::text[]))
 			ORDER BY created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
@@ -189,6 +191,7 @@ func (s *PostgresStore) ClaimQueuedTask(ctx context.Context, nodeID string, filt
 		RETURNING `+taskColumns,
 		nodeID, requeueAfter,
 		filter.Arch, filter.Isolations, filter.FreeCores, filter.FreeMemoryMB, filter.FreeDiskMB,
+		nullTime(filter.OlderThan), nonNilStrings(filter.ExcludeTaskIDs),
 	)
 	t, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -443,4 +446,66 @@ func (s *PostgresStore) AccountTaskSummary(ctx context.Context, accountID string
 		sum.Gateways[gid] = g
 	}
 	return sum, grows.Err()
+}
+
+func (s *PostgresStore) OldestQueuedBefore(ctx context.Context, offer CapacityFilter, before time.Time) (Task, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+taskColumns+` FROM tasks
+		WHERE state = 'queued'
+			AND req_arch = $1
+			AND req_isolation = ANY($2)
+			AND cpu_cores <= $3
+			AND memory_mb <= $4
+			AND disk_mb <= $5
+			AND created_at < $6
+		ORDER BY created_at
+		LIMIT 1`,
+		offer.Arch, offer.Isolations, offer.FreeCores, offer.FreeMemoryMB, offer.FreeDiskMB, before)
+	t, err := scanTask(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Task{}, ErrNoTask
+	}
+	if err != nil {
+		return Task{}, fmt.Errorf("finding the oldest waiting task: %w", err)
+	}
+	return t, nil
+}
+
+// nullTime is SQL NULL for the zero time, so "no limit" needs no special query.
+func nullTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
+}
+
+// nonNilStrings turns a nil slice into an empty one (a nil Go slice is SQL NULL, and `id = ANY(NULL)` is never true).
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+func (s *PostgresStore) NodeReservations(ctx context.Context, nodeIDs []string) (map[string]Reservation, error) {
+	out := map[string]Reservation{}
+	if len(nodeIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT node_id, COALESCE(sum(cpu_cores), 0)::float8, COALESCE(sum(memory_mb), 0)::int
+		FROM tasks WHERE node_id = ANY($1) AND state IN ('reserved','dispatched','running')
+		GROUP BY node_id`, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var r Reservation
+		if err := rows.Scan(&id, &r.Cores, &r.MemoryMB); err != nil {
+			return nil, err
+		}
+		out[id] = r
+	}
+	return out, rows.Err()
 }

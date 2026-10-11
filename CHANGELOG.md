@@ -3,6 +3,19 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.15 — 2026-10-11
+
+Coordinator and agent (agents show "Update available"; gateways are unchanged). No migration.
+
+### Fixed
+- **Big tasks no longer starve.** A task that has waited more than 90 seconds now holds back the machines that could run it: they stop taking newer work until it fits, then it goes first. In the load test 4-core tasks waited 31 minutes and 8-core 42 minutes behind a stream of small ones. A task a machine just rejected no longer blocks that machine.
+- **Trust survives a coordinator restart.** Scores were saved but never read back, so every deploy reset all machines to 0.5.
+- **Agents reconnect quickly after a coordinator restart.** The reconnect delay never reset, so agents waited about a minute, long enough to fence running tasks. It resets after a connection that lasted 30 seconds.
+- **A task's tunnel survives a dropped relay connection.** The first dial is retried and a dead connection is replaced once, instead of failing the task or every stream.
+
+### Added
+- **Reserved cores and memory on machine cards and pages** ("Reserved by tasks: 8 of 8 cores"), next to the CPU in use, so a full machine no longer looks like it has spare room.
+
 ## v0.4.14 — 2026-10-11
 
 Coordinator only; agents and gateways are unchanged and are not rebuilt or restarted.

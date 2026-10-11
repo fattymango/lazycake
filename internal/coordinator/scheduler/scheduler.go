@@ -109,6 +109,10 @@ type Scheduler struct {
 	// just needs a value for requeue_after).
 	LeaseS int32
 
+	// StarveAfter is how long a queued task may wait before nodes that could run it stop filling their cores with newer tasks (see
+	// holdForStarvingTask); zero means defaultStarveAfter.
+	StarveAfter time.Duration
+
 	mu       sync.Mutex
 	freeCap  map[string]store.CapacityFilter // node_id -> last reported free capacity
 	banned   map[string]bool                 // node_id -> currently below the trust ban threshold (for logging changes)

@@ -108,7 +108,11 @@ func TestEgressCap(t *testing.T) {
 
 	const capBytes = 10 << 20 // 10MB
 	exceeded := make(chan struct{}, 1)
-	serve(ctx, cfg, dnsConn, []*net.TCPListener{taskLn}, agentConn, capBytes, func() {
+	link, err := newRelayLink(ctx, func(context.Context) (relayConn, error) { return quicRelayConn{agentConn}, nil }, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve(ctx, cfg, dnsConn, []*net.TCPListener{taskLn}, link, capBytes, func() {
 		select {
 		case exceeded <- struct{}{}:
 		default:

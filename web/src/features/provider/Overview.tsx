@@ -96,6 +96,12 @@ export function MachineCard({ node }: { node: Node }) {
         <UsageTrend node={node} />
 
         <div className="mt-auto space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted" data-tnum>
+            <span>Reserved by tasks</span>
+            <span>
+              {node.reserved_cores} of {node.offer_cores} cores
+            </span>
+          </div>
           <div className="flex items-center justify-between text-xs text-muted">
             <span className="flex items-center gap-1.5">
               Trust <TrustInfo />

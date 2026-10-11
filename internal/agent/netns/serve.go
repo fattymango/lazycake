@@ -6,11 +6,9 @@ import (
 	"log/slog"
 	"net"
 
-	quicgo "github.com/quic-go/quic-go"
 	"golang.org/x/time/rate"
 
 	"github.com/fattymango/lazycake/internal/tunnel/noise"
-	"github.com/fattymango/lazycake/internal/tunnel/quic"
 )
 
 // serve runs the parent-side loops against sockets the netns child bound
@@ -18,11 +16,11 @@ import (
 // connection and relay it out through QUIC+Noise, enforcing egressCapBytes
 // (<=0 for unlimited) across every connection the task opens. Runs until
 // ctx is cancelled or the sockets are closed.
-func serve(ctx context.Context, cfg Config, dnsConn *net.UDPConn, listeners []*net.TCPListener, relayConn *quicgo.Conn, egressCapBytes int64, onEgressExceeded func(), counters *TunnelCounters, bandwidth *rate.Limiter, log *slog.Logger) {
+func serve(ctx context.Context, cfg Config, dnsConn *net.UDPConn, listeners []*net.TCPListener, link *relayLink, egressCapBytes int64, onEgressExceeded func(), counters *TunnelCounters, bandwidth *rate.Limiter, log *slog.Logger) {
 	limiter := newEgressLimiter(egressCapBytes, onEgressExceeded)
 	go serveDNSLoop(dnsConn, cfg.Targets, log)
 	for i, t := range cfg.Targets {
-		go serveTargetLoop(ctx, listeners[i], t, cfg, relayConn, limiter, counters, bandwidth, log)
+		go serveTargetLoop(ctx, listeners[i], t, cfg, link, limiter, counters, bandwidth, log)
 	}
 }
 
@@ -44,22 +42,22 @@ func serveDNSLoop(conn *net.UDPConn, targets []Target, log *slog.Logger) {
 	}
 }
 
-func serveTargetLoop(ctx context.Context, ln *net.TCPListener, target Target, cfg Config, relayConn *quicgo.Conn, limiter *egressLimiter, counters *TunnelCounters, bandwidth *rate.Limiter, log *slog.Logger) {
+func serveTargetLoop(ctx context.Context, ln *net.TCPListener, target Target, cfg Config, link *relayLink, limiter *egressLimiter, counters *TunnelCounters, bandwidth *rate.Limiter, log *slog.Logger) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		go handleTaskConn(ctx, conn, target, cfg, relayConn, limiter, counters, bandwidth, log)
+		go handleTaskConn(ctx, conn, target, cfg, link, limiter, counters, bandwidth, log)
 	}
 }
 
-func handleTaskConn(ctx context.Context, conn net.Conn, target Target, cfg Config, relayConn *quicgo.Conn, limiter *egressLimiter, counters *TunnelCounters, bandwidth *rate.Limiter, log *slog.Logger) {
+func handleTaskConn(ctx context.Context, conn net.Conn, target Target, cfg Config, link *relayLink, limiter *egressLimiter, counters *TunnelCounters, bandwidth *rate.Limiter, log *slog.Logger) {
 	limiter.register(conn)
 	defer limiter.unregister(conn)
 	defer conn.Close()
 
-	stream, err := quic.OpenRelayedStream(ctx, relayConn, target.GatewayID, cfg.TaskID)
+	stream, err := link.OpenStream(ctx, target.GatewayID, cfg.TaskID)
 	if err != nil {
 		log.Warn("opening relayed stream", "task_id", cfg.TaskID, "hostname", target.Hostname, "error", err)
 		return

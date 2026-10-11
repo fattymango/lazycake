@@ -117,16 +117,63 @@ func (s *Scheduler) reserveFree(n store.Node, lim store.Limits) {
 	s.freeCap[n.ID] = f
 }
 
+// defaultStarveAfter is how long a task may wait before the nodes that could run it stop giving its cores to newer, smaller tasks.
+const defaultStarveAfter = 90 * time.Second
+
+func (s *Scheduler) starveAfter() time.Duration {
+	if s.StarveAfter > 0 {
+		return s.StarveAfter
+	}
+	return defaultStarveAfter
+}
+
+// holdForStarvingTask stops a node being filled with small newer tasks while an older, bigger one waits for room. Placement takes the oldest task
+// that FITS the free cores, so a steady stream of small tasks keeps a node's free cores below what a big task needs and the big task is overtaken
+// forever (in the production load test: 31 minutes' median wait for 4-core tasks and 42 for 8-core ones, against 5 to 9 for small ones; no 4-core task
+// ever ran on the 4-core VM). If the oldest task this node could run when empty has waited longer than starveAfter and does not fit what is free
+// now, the node may only place tasks older than it: its running work finishes, its cores free up, and the big task is claimed as soon as it fits.
+// Nodes that could never run that task are unaffected.
+func (s *Scheduler) holdForStarvingTask(ctx context.Context, n store.Node, filter *store.CapacityFilter) {
+	offer := store.CapacityFilter{Arch: n.Arch, Isolations: filter.Isolations, FreeCores: n.OfferCores, FreeMemoryMB: n.OfferMemoryMB, FreeDiskMB: n.OfferDiskMB}
+	head, err := s.Store.OldestQueuedBefore(ctx, offer, s.now().Add(-s.starveAfter()))
+	if err != nil {
+		if err != store.ErrNoTask {
+			s.Log.Warn("looking for a waiting task", "node_id", n.ID, "error", err)
+		}
+		return
+	}
+	if head.Limits.CPUCores <= filter.FreeCores && head.Limits.MemoryMB <= filter.FreeMemoryMB && head.Limits.DiskMB <= filter.FreeDiskMB {
+		return // it fits now: it is the oldest task that fits, so it is the one claimed next
+	}
+	filter.OlderThan = head.CreatedAt
+}
+
+// cooldownTasks are the tasks this node refused and is still cooling down from; they are skipped when claiming.
+func (s *Scheduler) cooldownTasks(nodeID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	var ids []string
+	for k, until := range s.rejected {
+		if k.nodeID == nodeID && now.Before(until) {
+			ids = append(ids, k.taskID)
+		}
+	}
+	return ids
+}
+
 // tryPlaceOne claims one queued task that fits the node and dispatches it. It reports whether a task was actually dispatched: a task that
 // was put back (cooldown, cold-pull cap, hold or send failure) is not a placement, and the caller must not keep claiming after it.
 func (s *Scheduler) tryPlaceOne(ctx context.Context, n store.Node) (bool, error) {
 	filter := store.CapacityFilter{
-		Arch:         n.Arch,
-		Isolations:   isolationsFor(n),
-		FreeCores:    s.freeCoresFor(n),
-		FreeMemoryMB: s.freeMemoryFor(n),
-		FreeDiskMB:   s.freeDiskFor(n),
+		Arch:           n.Arch,
+		Isolations:     isolationsFor(n),
+		FreeCores:      s.freeCoresFor(n),
+		FreeMemoryMB:   s.freeMemoryFor(n),
+		FreeDiskMB:     s.freeDiskFor(n),
+		ExcludeTaskIDs: s.cooldownTasks(n.ID),
 	}
+	s.holdForStarvingTask(ctx, n, &filter)
 
 	requeueAfter := s.now().Add(time.Duration(s.LeaseS)*time.Second + leaseMargin)
 	task, err := s.Store.ClaimQueuedTask(ctx, n.ID, filter, requeueAfter)

@@ -270,3 +270,54 @@ func TestAMessageSentFromOnRegisteredReachesTheCoordinator(t *testing.T) {
 		t.Fatalf("expected the finished report, got %+v", got)
 	}
 }
+
+// runCycles connects, holds each connection for `stayUp`, then breaks it, `cycles` times, and returns the backoff's state afterwards.
+func runCycles(t *testing.T, cycles int, stayUp time.Duration) *Backoff {
+	t.Helper()
+	streams := make(chan *fakeStream, cycles+2)
+	client := &fakeClient{next: func(ctx context.Context) *fakeStream {
+		s := newFakeStream(ctx)
+		streams <- s
+		return s
+	}}
+	b := &Backoff{Min: 2 * time.Millisecond, Max: 50 * time.Millisecond}
+	r := &Runner{Client: client, Identity: Identity{Token: "tok"}, Log: discardLogger(), Backoff: b}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
+	for i := 0; i < cycles; i++ {
+		s := waitFor(t, streams, 2*time.Second, "connect")
+		waitFor(t, s.out, time.Second, "register")
+		time.Sleep(stayUp)
+		s.failRecv(errors.New("coordinator restarted"))
+	}
+	waitFor(t, streams, 2*time.Second, "the reconnect after the last break")
+	cancel()
+	<-done
+	return b
+}
+
+// The backoff was never reset, so after a few coordinator restarts over an agent's life every reconnect took the full minute and the tasks it
+// was running were fenced. A connection that stayed up starts the delay over.
+func TestBackoffStartsOverAfterAConnectionThatStayedUp(t *testing.T) {
+	old := healthyConnection
+	healthyConnection = 30 * time.Millisecond
+	defer func() { healthyConnection = old }()
+
+	b := runCycles(t, 5, 60*time.Millisecond)
+	if b.attempt > 1 {
+		t.Fatalf("after five healthy connections the backoff is at step %d: each restart would wait longer than the last", b.attempt)
+	}
+}
+
+// ...but a coordinator that keeps dropping us immediately is still backed off from.
+func TestBackoffStillGrowsWhenConnectionsKeepFailingAtOnce(t *testing.T) {
+	old := healthyConnection
+	healthyConnection = 5 * time.Second
+	defer func() { healthyConnection = old }()
+
+	b := runCycles(t, 5, 0)
+	if b.attempt < 4 {
+		t.Fatalf("after five immediate failures the backoff is only at step %d", b.attempt)
+	}
+}

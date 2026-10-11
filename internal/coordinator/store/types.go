@@ -198,6 +198,12 @@ type CapacityFilter struct {
 	FreeCores    float64
 	FreeMemoryMB int
 	FreeDiskMB   int
+	// OlderThan, when set, restricts a claim to tasks submitted before it: how a node is held back from filling its cores with newer, smaller tasks
+	// while an older task that needs more is waiting for room.
+	OlderThan time.Time
+	// ExcludeTaskIDs are never claimed (tasks this node just refused and is cooling down from), so one of them at the front of the queue does not
+	// stall the node for the tick.
+	ExcludeTaskIDs []string
 }
 
 // GatewayService is one local TCP service a gateway is willing to forward
@@ -441,4 +447,10 @@ type TaskUsageSummary struct {
 type NodeUsageLatest struct {
 	At     time.Time
 	Sample NodeUsageSample
+}
+
+// Reservation is the capacity promised to a node's active tasks, which is what the scheduler counts, not what the tasks currently burn.
+type Reservation struct {
+	Cores    float64
+	MemoryMB int
 }

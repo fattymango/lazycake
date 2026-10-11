@@ -57,6 +57,30 @@ func NewTrustTracker() *TrustTracker {
 	return &TrustTracker{scores: make(map[string]float64), persisted: make(map[string]float64)}
 }
 
+// LoadFrom restores every node's trust score from the database. Scores were already written there on every change but never read back, so each
+// restart of the coordinator (every deploy) sent every machine back to TrustStart: it threw away what an honest machine had earned, and let a banned
+// one back in. A node the database has never scored keeps the starting score (the column's default).
+func (t *TrustTracker) LoadFrom(ctx context.Context, st store.Store) error {
+	nodes, err := st.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, n := range nodes {
+		s := n.TrustScore
+		if s < TrustMin {
+			s = TrustMin
+		}
+		if s > TrustMax {
+			s = TrustMax
+		}
+		t.scores[n.ID] = s
+		t.persisted[n.ID] = s
+	}
+	return nil
+}
+
 // Score returns nodeID's current trust score, TrustStart if never observed.
 func (t *TrustTracker) Score(nodeID string) float64 {
 	t.mu.Lock()

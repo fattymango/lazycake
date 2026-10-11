@@ -177,6 +177,14 @@ export function MachineDetail() {
                       ),
                       value: <TrustMeter score={n.trust_score} />,
                     },
+                    {
+                      label: "Reserved by tasks",
+                      value: (
+                        <span data-tnum>
+                          {n.reserved_cores} of {n.offer_cores} cores · {n.reserved_memory_mb} of {n.offer_memory_mb} MB
+                        </span>
+                      ),
+                    },
                     { label: "Heartbeat", value: <span data-tnum>{relativeTime(n.last_heartbeat_at_ms)}</span> },
                     {
                       label: "Agent",

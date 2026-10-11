@@ -98,6 +98,10 @@ func run() error {
 	sched := scheduler.New(st, registry, clock.Real{}, log, leaseS)
 	sched.Trust.Store = st
 	sched.Trust.Log = log
+	// Trust is persisted on every change: read it back, or every restart sends every machine back to 0.5.
+	if err := sched.Trust.LoadFrom(ctx, st); err != nil {
+		log.Warn("couldn't restore the nodes' trust scores; they start at the default", "error", err)
+	}
 	sched.Bus = bus
 
 	// Canary injection (task 5.2). The account/gateway row always exist -
