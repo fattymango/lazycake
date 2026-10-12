@@ -25,6 +25,7 @@ import (
 	"github.com/fattymango/lazycake/internal/coordinator/auth"
 	"github.com/fattymango/lazycake/internal/coordinator/events"
 	"github.com/fattymango/lazycake/internal/coordinator/pricing"
+	"github.com/fattymango/lazycake/internal/coordinator/ratelimit"
 	"github.com/fattymango/lazycake/internal/coordinator/store"
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
 )
@@ -62,6 +63,12 @@ type testClient struct {
 
 func newTestServer(t *testing.T) (*testClient, store.Store, *events.Bus) {
 	t.Helper()
+	return newTestServerWith(t, nil)
+}
+
+// newTestServerWith lets a test adjust the server before it starts (e.g. to loosen a limit that is not what the test is about).
+func newTestServerWith(t *testing.T, adjust func(*Server)) (*testClient, store.Store, *events.Bus) {
+	t.Helper()
 	st := testStore(t)
 	bus := events.NewBus()
 	srv := &Server{
@@ -70,6 +77,9 @@ func newTestServer(t *testing.T) (*testClient, store.Store, *events.Bus) {
 		Bus:      bus,
 		Log:      discardLog(),
 		Dev:      true,
+	}
+	if adjust != nil {
+		adjust(srv)
 	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
@@ -121,7 +131,7 @@ func TestSignupLoginLogout(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	me := decodeBody[meResponse](t, resp)
 	require.Equal(t, signed.AccountID, me.AccountID)
-	require.Equal(t, int64(0), me.BalanceMicros)
+	require.Equal(t, int64(signupBonusMicros), me.BalanceMicros)
 
 	resp = c.do(http.MethodPost, "/api/portal/logout", nil)
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -180,7 +190,8 @@ func mustJarClient(t *testing.T) *http.Client {
 }
 
 func TestLoginLockoutAfterRepeatedFailures(t *testing.T) {
-	c, _, _ := newTestServer(t)
+	// The per-address login limit (10 a minute) is not what this tests: 11 attempts would hit it before the lockout and only pass under -race by being slow.
+	c, _, _ := newTestServerWith(t, func(s *Server) { s.loginLimit = ratelimit.NewLimiter(1000, time.Minute, 1000) })
 	resp := c.do(http.MethodPost, "/api/portal/customer/signup", credentialsRequest{Username: "eve", Password: "correcthorse"})
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
@@ -295,8 +306,10 @@ func TestSubmitTaskRejectsNonDigestPinnedImage(t *testing.T) {
 }
 
 func TestSubmitTaskInsufficientBalance(t *testing.T) {
-	c, _, _ := newTestServer(t)
-	signUpCustomer(t, c, "hank") // zero balance by default
+	c, st, _ := newTestServer(t)
+	hank := signUpCustomer(t, c, "hank")
+	_, err := st.AdjustBalance(context.Background(), hank.AccountID, -signupBonusMicros) // spend the signup bonus
+	require.NoError(t, err)
 
 	resp := c.do(http.MethodPost, "/api/portal/customer/tasks", submitTaskRequest{
 		Image: "alpine@sha256:abc", Cores: 8, MemoryMB: 16384, WallTimeoutS: 36000,
@@ -411,8 +424,8 @@ func TestAddBalanceAndLedger(t *testing.T) {
 
 	resp = c.do(http.MethodGet, "/api/portal/customer/me", nil)
 	me := decodeBody[meResponse](t, resp)
-	require.Equal(t, int64(5_000_000), me.BalanceMicros)
-	require.Equal(t, int64(5_000_000), me.AvailableBalanceMicros)
+	require.Equal(t, int64(signupBonusMicros+5_000_000), me.BalanceMicros)
+	require.Equal(t, int64(signupBonusMicros+5_000_000), me.AvailableBalanceMicros)
 
 	resp = c.do(http.MethodPost, "/api/portal/customer/balance/add", addBalanceRequest{AmountMicros: -1})
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode, "must reject a non-positive amount")
@@ -768,8 +781,8 @@ func TestStopQueuedTaskIsImmediateFreeAndRepeatable(t *testing.T) {
 	require.False(t, got.CancelRequested, "a finished task isn't 'stopping'")
 
 	me := decodeBody[meResponse](t, c.do(http.MethodGet, "/api/portal/customer/me", nil))
-	require.Equal(t, int64(10_000_000), me.BalanceMicros, "a task that never ran costs nothing")
-	require.Equal(t, int64(10_000_000), me.AvailableBalanceMicros)
+	require.Equal(t, int64(signupBonusMicros+10_000_000), me.BalanceMicros, "a task that never ran costs nothing")
+	require.Equal(t, int64(signupBonusMicros+10_000_000), me.AvailableBalanceMicros)
 
 	resp = c.do(http.MethodPost, "/api/portal/customer/tasks/"+id+"/cancel", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode, "stopping it again is a harmless repeat")
@@ -1338,4 +1351,17 @@ func TestTaskSummaryCountsEveryTaskNotJustTheNewestPage(t *testing.T) {
 	require.Equal(t, 2, g.Running)
 	require.Equal(t, 1, g.Queued)
 	require.Equal(t, lastOnGW, g.LastTaskID, "the newest task that used the gateway, even one far from the list")
+}
+
+// A new customer can run a first task without topping up; a provider's balance is what it earns, so it starts empty.
+func TestNewCustomerStartsWithOneHundredDollarsAndProviderWithNone(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	cust := signUpCustomer(t, c, "newcustomer")
+	prov := signUpProvider(t, c, "newprovider")
+	a, err := st.GetAccount(context.Background(), cust.AccountID)
+	require.NoError(t, err)
+	require.EqualValues(t, 100_000_000, a.BalanceMicros)
+	a, err = st.GetAccount(context.Background(), prov.AccountID)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, a.BalanceMicros)
 }

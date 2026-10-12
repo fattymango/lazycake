@@ -23,6 +23,10 @@ type authResponse struct {
 	Role      store.PortalRole `json:"role"`
 }
 
+// signupBonusMicros is what a new customer account starts with ($100), so a first task can run without topping up. Providers start at zero: their
+// balance is what they earn.
+const signupBonusMicros = 100_000_000
+
 // handleSignup implements task 7.2's POST /api/portal/{customer,provider}/signup:
 // create the account plus its portal_credentials row, then sign the caller
 // straight in (create session, set cookie) - "register -> land signed in"
@@ -49,7 +53,11 @@ func (s *Server) handleSignup(role store.PortalRole) http.HandlerFunc {
 		}
 
 		accountID := id.New(id.Account)
-		if err := s.Store.CreateAccount(r.Context(), store.Account{ID: accountID, Name: req.Username}); err != nil {
+		var bonus int64
+		if role == store.RoleCustomer {
+			bonus = signupBonusMicros
+		}
+		if err := s.Store.CreateAccount(r.Context(), store.Account{ID: accountID, Name: req.Username, BalanceMicros: bonus}); err != nil {
 			writeError(w, http.StatusInternalServerError, "creating account")
 			return
 		}

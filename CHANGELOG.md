@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.20 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Changed
+- **New customer accounts start with $100** so a first task can run without topping up. Provider accounts still start at zero (their balance is what they earn). Existing accounts are not changed.
+
 ## v0.4.19 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration.
