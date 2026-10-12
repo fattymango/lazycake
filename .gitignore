@@ -32,3 +32,9 @@
 
 # machine-specific access details (hosts/users); never commit
 /CLAUDE.local.md
+
+# diagram export tooling (see docs/diagrams/export.sh)
+docs/diagrams/export/node_modules/
+docs/diagrams/export/bundle.js
+docs/diagrams/export/package.json
+docs/diagrams/export/package-lock.json
