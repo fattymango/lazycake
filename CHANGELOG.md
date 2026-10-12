@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.19 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Changed
+- **New logo**: a chocolate lazy cake that is also a database server (biscuit pieces on top, storage bays on the side). It replaces the old mark in the sidebar, on the sign-in pages and as the browser tab icon. The source art is in `docs/brand/`.
+
 ## v0.4.18 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration.
