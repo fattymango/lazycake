@@ -8,8 +8,6 @@ Providers lend the spare capacity of their machines; customers submit container 
 
 *Click the diagram to zoom. Source: [`docs/diagrams`](docs/diagrams).*
 
-## Screenshots
-
 <table>
   <tr>
     <td width="50%"><img src="img/customer-overview.png" alt="Customer overview"></td>
