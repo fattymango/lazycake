@@ -1293,9 +1293,10 @@ func TestTaskSummaryCountsEveryTaskNotJustTheNewestPage(t *testing.T) {
 		}))
 		return id
 	}
-	// oldest first: 10 failed (outside the last-50 window), 50 succeeded, then 3 running (2 on the gateway), 1 dispatched, then a 250-task backlog on top
+	// oldest first: 10 failed (8 days ago: outside the 7-day window), 50 succeeded, then 3 running (2 on the gateway), 1 dispatched, then a 250-task backlog on top
 	for i := 0; i < 10; i++ {
-		mk(me.AccountID, store.TaskFailed, 1)
+		_, err := st.(*store.PostgresStore).Pool().Exec(context.Background(), `UPDATE tasks SET created_at = now() - interval '8 days' WHERE id = $1`, mk(me.AccountID, store.TaskFailed, 1))
+		require.NoError(t, err)
 	}
 	for i := 0; i < 50; i++ {
 		mk(me.AccountID, store.TaskSucceeded, 1)
@@ -1329,8 +1330,8 @@ func TestTaskSummaryCountsEveryTaskNotJustTheNewestPage(t *testing.T) {
 	require.InDelta(t, 3.75, sum.RunningCores, 0.001)
 	require.Equal(t, 10, sum.ByState["failed"])
 	require.Equal(t, 50, sum.ByState["succeeded"])
-	require.Equal(t, 50, sum.Finished, "the success rate looks at the newest 50 finished tasks")
-	require.Equal(t, 50, sum.FinishedSucceeded, "the 10 older failures are outside that window")
+	require.Equal(t, 50, sum.Finished, "the success rate looks at the last 7 days")
+	require.Equal(t, 50, sum.FinishedSucceeded, "the 10 failures from 8 days ago are outside that window")
 	require.Equal(t, 3, sum.UsingGateways, "2 running + 1 queued task use the gateway among unfinished ones")
 	g := sum.Gateways[gw]
 	require.Equal(t, 2, g.Running)

@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.17 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Changed
+- **The Overview success rate covers the last 7 days** instead of the last 50 finished tasks: "45 of 50 this week". Running and queued counts are unchanged (all tasks).
+
 ## v0.4.16 — 2026-10-11
 
 Coordinator only; agents and gateways are unchanged. No migration.

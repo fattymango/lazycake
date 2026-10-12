@@ -502,7 +502,7 @@ func (f *fakeStore) NodeReservations(ctx context.Context, nodeIDs []string) (map
 	return map[string]store.Reservation{}, nil
 }
 
-func (f *fakeStore) AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (store.TaskSummary, error) {
+func (f *fakeStore) AccountTaskSummary(ctx context.Context, accountID string, finishedSince time.Time) (store.TaskSummary, error) {
 	return store.TaskSummary{ByState: map[store.TaskState]int{}, Gateways: map[string]store.GatewayTaskSummary{}}, nil
 }
 

@@ -130,7 +130,11 @@ export function Overview() {
                     <p className="text-2xs text-muted">succeeded</p>
                   </div>
                 }
-                summary={rate === null ? "No finished tasks yet" : `${rate} percent of the last ${finishedCount} finished tasks succeeded`}
+                summary={
+                  rate === null
+                    ? "No finished tasks yet"
+                    : `${rate} percent of the ${finishedCount} tasks finished in the last 7 days succeeded`
+                }
               />
             )}
             <dl className="min-w-0 flex-1 space-y-3 text-sm">
@@ -159,7 +163,7 @@ export function Overview() {
                   Finished
                 </dt>
                 <dd className="text-fg" data-tnum>
-                  {countsLoading ? "…" : rate === null ? "None yet" : `${succeeded} of last ${finishedCount}`}
+                  {countsLoading ? "…" : rate === null ? "None yet" : `${succeeded} of ${finishedCount} this week`}
                 </dd>
               </div>
             </dl>

@@ -337,8 +337,8 @@ type TaskSummary struct {
 	ByState map[TaskState]int
 	// RunningCores is the cores held by tasks that are dispatched or running.
 	RunningCores float64
-	// Finished is the outcome of the newest tasks that are no longer active, newest first (at most the requested number).
-	Finished []TaskState
+	// FinishedByState counts the tasks that are no longer active and finished (or, never started, were created) since the requested time.
+	FinishedByState map[TaskState]int
 	// UsingGateways counts unfinished tasks that use at least one gateway.
 	UsingGateways int
 	// Gateways holds, per gateway the account's tasks ever used: unfinished tasks by kind and the newest task that used it.

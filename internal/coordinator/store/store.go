@@ -86,8 +86,8 @@ type Tasks interface {
 	// task 7.3's customer portal task history - nobody sees another
 	// account's tasks through it.
 	ListTasksByAccount(ctx context.Context, accountID string, limit int) ([]Task, error)
-	// AccountTaskSummary counts accountID's tasks over all of them (see TaskSummary); finishedWindow bounds how many recent outcomes it returns.
-	AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (TaskSummary, error)
+	// AccountTaskSummary counts accountID's tasks over all of them (see TaskSummary); finishedSince bounds the finished-task outcomes it counts.
+	AccountTaskSummary(ctx context.Context, accountID string, finishedSince time.Time) (TaskSummary, error)
 	// NodeReservations sums, per node, the cores and memory promised to tasks that hold capacity there (reserved, dispatched, running). Nodes with none are absent.
 	NodeReservations(ctx context.Context, nodeIDs []string) (map[string]Reservation, error)
 

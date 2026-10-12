@@ -372,8 +372,8 @@ func (s *PostgresStore) ListCancelRequested(ctx context.Context) ([]Task, error)
 	return out, rows.Err()
 }
 
-func (s *PostgresStore) AccountTaskSummary(ctx context.Context, accountID string, finishedWindow int) (TaskSummary, error) {
-	sum := TaskSummary{ByState: map[TaskState]int{}, Gateways: map[string]GatewayTaskSummary{}}
+func (s *PostgresStore) AccountTaskSummary(ctx context.Context, accountID string, finishedSince time.Time) (TaskSummary, error) {
+	sum := TaskSummary{ByState: map[TaskState]int{}, FinishedByState: map[TaskState]int{}, Gateways: map[string]GatewayTaskSummary{}}
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT state::text, count(*), COALESCE(sum(cpu_cores) FILTER (WHERE state IN ('dispatched','running')), 0)::float8
@@ -398,19 +398,21 @@ func (s *PostgresStore) AccountTaskSummary(ctx context.Context, accountID string
 	}
 
 	frows, err := s.pool.Query(ctx, `
-		SELECT state::text FROM tasks
+		SELECT state::text, count(*) FROM tasks
 		WHERE account_id = $1 AND state NOT IN ('queued','reserved','dispatched','running')
-		ORDER BY created_at DESC LIMIT $2`, accountID, finishedWindow)
+			AND COALESCE(finished_at, created_at) >= $2
+		GROUP BY state`, accountID, finishedSince)
 	if err != nil {
 		return sum, fmt.Errorf("reading recent outcomes: %w", err)
 	}
 	for frows.Next() {
 		var st string
-		if err := frows.Scan(&st); err != nil {
+		var n int
+		if err := frows.Scan(&st, &n); err != nil {
 			frows.Close()
 			return sum, err
 		}
-		sum.Finished = append(sum.Finished, TaskState(st))
+		sum.FinishedByState[TaskState(st)] = n
 	}
 	frows.Close()
 	if err := frows.Err(); err != nil {
