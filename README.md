@@ -11,7 +11,7 @@ Providers lend the spare capacity of their machines; customers submit container 
 <table>
   <tr>
     <td width="50%"><img src="img/customer-overview.png" alt="Customer overview"></td>
-    <td width="50%"><img src="img/customer-gateways.png" alt="Customer gateways"></td>
+    <td width="50%"><img src="img/customer-task-running.png" alt="Customer task view"></td>
   </tr>
   <tr>
     <td width="50%"><img src="img/provider-overview.png" alt="Provider overview"></td>
