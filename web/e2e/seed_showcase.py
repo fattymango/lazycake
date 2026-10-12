@@ -33,6 +33,7 @@ ap.add_argument("--real-gateway", action="append", default=[], help="existing ga
 ap.add_argument("--shift-old-days", type=int, default=45)
 ap.add_argument("--balance", type=float, default=2500.0, help="dollars the customer 'had' before the demo charges")
 ap.add_argument("--clean", action="store_true")
+ap.add_argument("--hero", action="store_true", help="put a failed task, 3 running tasks and 2 queued tasks at the top of the customer's task list (run after the main seed, just before the photos); nothing is dispatched or run")
 ap.add_argument("--live", action="store_true", help="refresh 'right now': the last 5 minutes of gateway bandwidth and the machines' heartbeats (run it just before taking screenshots)")
 ap.add_argument("--live-gateway", action="append", default=[], help="gateway id:Mbps (repeatable) to give live bandwidth, e.g. gw_x:180")
 args = ap.parse_args()
@@ -52,14 +53,125 @@ def ts(t):
     return "'" + t.strftime("%Y-%m-%d %H:%M:%S+00") + "'"
 
 
+def jsonb(v):
+    return q(json.dumps(v)) + "::jsonb"
+
+
+def arr(xs):
+    return "ARRAY[" + ",".join(q(x) for x in xs) + "]::text[]" if xs else "NULL"
+
+
 # ------------------------------------------------------------------------------------------------------------------ live
+def emit_live_telemetry():
+    """Keeps the running demo tasks and the machines carrying them looking alive: heartbeats, fresh usage readings up to now, the machine's 'now' panel."""
+    w(f"UPDATE nodes SET last_heartbeat_at = now(), connected = true WHERE id LIKE '%{TAG}%';")
+    w(f"UPDATE gateways SET connected = true WHERE id LIKE '%{TAG}%';")
+    run = f"t.state = 'running' AND t.id LIKE '%{TAG}%'"
+    # one reading per running task every 15 s since it started (the task page's Resource use chart)
+    w(f"INSERT INTO task_usage_samples (task_id, at, cpu_cores, memory_bytes, tunnel_out, tunnel_in) "
+      f"SELECT t.id, g.at, t.cpu_cores * 0.93 * (0.92 + 0.16 * random()), (t.memory_mb::bigint * 1048576 * 0.72 * (1 - exp(-extract(epoch FROM g.at - t.started_at) / 70.0)))::bigint, 0, 0 "
+      f"FROM tasks t CROSS JOIN LATERAL generate_series(t.started_at + interval '15 seconds', now(), interval '15 seconds') g(at) WHERE {run} ON CONFLICT DO NOTHING;")
+    # machine readings every 30 s for the last 12 minutes, with the running tasks in them
+    w("INSERT INTO node_usage_samples (node_id, at, host_cpu_busy, cpu_count, mem_used, mem_total, disk_used, disk_total, tasks_cpu, tasks_mem, tasks) "
+      "SELECT n.id, g.at, LEAST(0.97, 0.02 + COALESCE(SUM(t.cpu_cores * 0.93), 0) / n.offer_cores + random() * 0.012), n.offer_cores::int, "
+      "(2.4 * 2^30 + COALESCE(SUM(t.memory_mb::bigint * 1048576 * 0.6), 0))::bigint, (n.offer_memory_mb::bigint * 1048576 * 1.25)::bigint, (n.offer_disk_mb::bigint * 1048576 * 0.36)::bigint, (n.offer_disk_mb::bigint * 1048576)::bigint, "
+      "COALESCE(SUM(t.cpu_cores * 0.93), 0), COALESCE(SUM(t.memory_mb::bigint * 1048576 * 0.6), 0)::bigint, "
+      "COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'cpu', round((t.cpu_cores * 0.93)::numeric, 3), 'mem', (t.memory_mb::bigint * 1048576 * 0.6)::bigint, 'out', 0, 'in', 0)) FILTER (WHERE t.id IS NOT NULL), '[]'::jsonb) "
+      f"FROM nodes n CROSS JOIN LATERAL generate_series(date_trunc('minute', now()) - interval '12 minutes', now(), interval '30 seconds') g(at) "
+      f"LEFT JOIN tasks t ON t.node_id = n.id AND {run} AND t.started_at <= g.at WHERE n.id LIKE '%{TAG}%' GROUP BY n.id, g.at, n.offer_cores, n.offer_memory_mb, n.offer_disk_mb ON CONFLICT DO NOTHING;")
+    w("UPDATE node_usage_latest l SET at = now(), sample = jsonb_set(jsonb_set(jsonb_set(l.sample, '{At}', to_jsonb(to_char(now() at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'))), "
+      "'{Tasks}', COALESCE((SELECT jsonb_agg(jsonb_build_object('TaskID', t.id, 'CPUCores', round((t.cpu_cores * 0.93)::numeric, 3), 'MemoryBytes', (t.memory_mb::bigint * 1048576 * 0.6)::bigint, 'TunnelToGateway', 0, 'TunnelToTask', 0)) "
+      f"FROM tasks t WHERE t.node_id = l.node_id AND {run}), 'null'::jsonb)), "
+      f"'{{HostCPUBusy}}', to_jsonb(round(LEAST(0.97, 0.03 + COALESCE((SELECT SUM(t.cpu_cores * 0.93) FROM tasks t WHERE t.node_id = l.node_id AND {run}), 0) / (SELECT offer_cores FROM nodes WHERE id = l.node_id))::numeric, 4))) "
+      f"WHERE l.node_id LIKE '%{TAG}%';")
+
+
+if args.hero:
+    rh = random.Random(args.seed)
+    CROCK32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+    nowh = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+
+    def hid(code):
+        return "tsk_" + TAG + "H" + code + "".join(rh.choice(CROCK32) for _ in range(15))
+
+    def img(prefix):
+        return f"(SELECT image FROM tasks WHERE image LIKE '{prefix}@%' AND id LIKE '%{TAG}%' AND id NOT LIKE '%{TAG}H%' LIMIT 1)"
+
+    def nodeid(host):
+        return f"(SELECT id FROM nodes WHERE hostname = '{host}' AND id LIKE '%{TAG}%')"
+
+    GWPG = f"(SELECT id FROM gateways WHERE label = 'production-postgres' AND id LIKE '%{TAG}%')"
+    day = nowh.strftime("%Y-%m-%d")
+    like = f"'%{TAG}H%'"
+    w("BEGIN;")
+    for t in ("task_logs", "task_usage_samples", "task_meters", "task_usage_totals", "gateway_traffic", "task_gateway_totals"):
+        w(f"DELETE FROM {t} WHERE task_id LIKE {like};")
+    w(f"DELETE FROM ledger_entries WHERE task_id LIKE {like};")
+    w(f"DELETE FROM tasks WHERE id LIKE {like};")
+    heroes = []  # (code, state, image prefix, entrypoint, args, cores, mem, wall, created_ago_s, started_after_s, node host, gateway?, log builder)
+
+    def ago(s):
+        return ts(nowh - dt.timedelta(seconds=s))
+
+    def tasks_row(tid, state, image, ent, av, cores, mem, wall, created_s, started_s, finished_s, node, gw, arch, code, reason):
+        gwj = f"jsonb_build_array(jsonb_build_object('gateway_id', {GWPG}, 'hostname', 'postgres', 'port', 5432))" if gw else "'[]'::jsonb"
+        gwa = f"ARRAY[{GWPG}]::text[]" if gw else "ARRAY[]::text[]"
+        st = ago(started_s) if started_s is not None else "NULL"
+        fi = ago(finished_s) if finished_s is not None else "NULL"
+        w(f"INSERT INTO tasks (id, account_id, state, image, entrypoint, args, env, workdir, cpu_cores, memory_mb, disk_mb, wall_timeout_s, req_arch, req_isolation, gateway_ids, delivery, max_attempts, attempt, node_id, exit_code, exit_reason, started_at, finished_at, created_at, tunnel_targets) "
+          f"VALUES ({q(tid)}, {CUST}, {q(state)}::task_state, {image}, {arr(ent)}, {arr(av)}, '{{}}'::jsonb, '', {cores}, {mem}, 2048, {wall}, {q(arch)}, 'podman', {gwa}, 'at_most_once', 1, 1, {node}, "
+          f"{code}, {q(reason) if reason else 'NULL'}, {st}, {fi}, {ago(created_s)}, {gwj});")
+
+    def log(tid, rows):
+        vals = [f"({q(tid)}, {i}, {q(stream)}, {ago(s)}, {q(text)})" for i, (stream, s, text) in enumerate(rows, 1)]
+        w("INSERT INTO task_logs (task_id, seq, stream, at, line) VALUES " + ",".join(vals) + ";")
+
+    def iso(s):
+        return (nowh - dt.timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # --- running (oldest first so the newest is created last)
+    r1, r2, r3 = hid("R1"), hid("R2"), hid("R3")
+    tasks_row(r1, "running", img("docker.io/pytorch/pytorch"), None, ["python", "eval.py", "--model", "resnet50", "--shard", "7"], 4, 4096, 3600, 372, 360, None, nodeid("fra1-atlas-rack-01"), False, "amd64", "NULL", None)
+    log(r1, [("stdout", 360 - k * 12, t) for k, t in enumerate(
+        ["loading model resnet50 (25.6M parameters) ... done in 4.1s", "dataset shard 7/16: 31,250 images, batch size 64 (489 batches)"] +
+        [f"batch {20 * i}/489  top1={0.74 + i * 0.0021:.3f}  top5={0.915 + i * 0.001:.3f}  {i * 54 + 31} img/s" for i in range(1, 25)])])
+    tasks_row(r2, "running", img("docker.io/library/python"), None, ["python", "-m", "etl.run", "--day", day, "--source", "postgres.prod", "--batch-size", "5000"], 2, 2048, 1800, 188, 182, None, nodeid("fra1-atlas-rack-02"), True, "amd64", "NULL", None)
+    log(r2, [("stdout", 182 - k * 15, t) for k, t in enumerate(
+        [f"{iso(182)} INFO  etl.run starting day={day} source=postgres.prod batch_size=5000", f"{iso(181)} INFO  connected to postgres:5432 through the gateway, server version 16.4", f"{iso(180)} INFO  extracting public.orders (est. 1,204,330 rows)"] +
+        [f"{iso(180 - 15 * i)} INFO  batch {i}/241 ok (5000 rows, {13.2 + i % 4 * 0.9:.1f}s)" for i in range(1, 11)])])
+    tasks_row(r3, "running", img("docker.io/library/rust"), ["sh", "-c"], ["cargo test --release -- --shard 3/8"], 2, 1024, 600, 92, 84, None, nodeid("hel1-ax41-build-03"), False, "amd64", "NULL", None)
+    log(r3, [("stdout", 84 - k * 6, t) for k, t in enumerate(
+        ["Compiling lazycake-core v0.9.4", "Finished `test` profile [optimized] target(s) in 41.2s", "Running unittests src/lib.rs", "running 412 tests"] +
+        [f"test {m} ... ok" for m in ["auth::login_ok", "auth::session_expiry", "billing::price_round_trip", "billing::hold_release", "sched::fills_node", "sched::respects_memory", "relay::reconnects", "tunnel::noise_handshake", "usage::bucket_sum", "api::submit_idempotent"]])])
+    # --- failed
+    f1 = hid("F1")
+    tasks_row(f1, "failed", img("docker.io/library/python"), None, ["python", "-m", "etl.load", "--source", "postgres.prod", "--batch-size", "5000"], 1, 1024, 300, 640, 636, 589, nodeid("fra1-atlas-rack-02"), True, "amd64", "1", "exited")
+    log(f1, [("stdout", 636, f"{iso(636)} INFO  etl.load starting source=postgres.prod batch_size=5000"), ("stdout", 635, f"{iso(635)} INFO  connected to postgres:5432 through the gateway, server version 16.4"),
+             ("stdout", 634, f"{iso(634)} INFO  extracting table public.orders (est. 2,418,330 rows)"), ("stdout", 620, f"{iso(620)} INFO  batch 1/484 ok (5000 rows, 15.8s)"),
+             ("stdout", 605, f"{iso(605)} INFO  batch 2/484 ok (5000 rows, 15.1s)"), ("stderr", 590, f"{iso(590)} WARN  slow query on batch 3: 31.4s (threshold 20s)"),
+             ("stderr", 589, "Traceback (most recent call last):"), ("stderr", 589, '  File "/app/etl/load.py", line 142, in <module>'), ("stderr", 589, "    main()"),
+             ("stderr", 589, '  File "/app/etl/load.py", line 118, in main'), ("stderr", 589, "    cursor.execute(QUERY, params)"),
+             ("stderr", 589, "psycopg.errors.QueryCanceled: canceling statement due to statement timeout"), ("stdout", 589, f"{iso(589)} ERROR load failed after 2 of 484 batches; exiting with status 1")])
+    price = 100 + int((50 * 1 + 10 + 2 * 2) * 47 * 1.41)
+    w(f"INSERT INTO task_meters (task_id, node_id, started_at, finished_at, duration_s, normalised_s) VALUES ({q(f1)}, {nodeid('fra1-atlas-rack-02')}, {ago(636)}, {ago(589)}, 47, {47 * 1.41:.2f});")
+    w(f"INSERT INTO ledger_entries (id, task_id, account_id, kind, amount_micros, created_at) VALUES ({q('led_' + f1[4:])}, {q(f1)}, {CUST}, 'charge', {-price}, {ago(589)}), ({q('ldp_' + f1[4:])}, {q(f1)}, {PROV}, 'credit', {price}, {ago(589)});")
+    w(f"UPDATE accounts SET balance_micros = balance_micros - {price} WHERE id = {CUST};")
+    w(f"UPDATE accounts SET balance_micros = balance_micros + {price} WHERE id = {PROV};")
+    w(f"INSERT INTO task_usage_totals (task_id, node_id, core_seconds, peak_memory_bytes, tunnel_to_gateway, tunnel_to_task, samples, updated_at) VALUES ({q(f1)}, {nodeid('fra1-atlas-rack-02')}, 41.2, 612000000, 41000, 11800000, 3, {ago(589)});")
+    # --- queued: an architecture no machine offers, so the scheduler can never claim one of these (nothing is ever dispatched or run)
+    q1, q2 = hid("Q1"), hid("Q2")
+    tasks_row(q2, "queued", img("docker.io/pytorch/pytorch"), None, ["python", "eval.py", "--model", "vit-b16", "--shard", "11"], 4, 4096, 3600, 41, None, None, "NULL", False, "riscv64", "NULL", None)
+    tasks_row(q1, "queued", img("docker.io/jrottenberg/ffmpeg"), None, ["-i", "/in/clip-218.mp4", "-c:v", "libx264", "-preset", "medium", "/out/clip-218.mp4"], 2, 2048, 1800, 18, None, None, "NULL", False, "riscv64", "NULL", None)
+    emit_live_telemetry()
+    w("COMMIT;")
+    print("\n".join(out))
+    raise SystemExit
+
 if args.live:
     rl = random.Random()
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     w("BEGIN;")
-    w(f"UPDATE nodes SET last_heartbeat_at = now(), connected = true WHERE id LIKE '%{TAG}%';")
-    w(f"UPDATE gateways SET connected = true WHERE id LIKE '%{TAG}%';")
-    w("UPDATE node_usage_latest SET at = now(), sample = jsonb_set(sample, '{At}', to_jsonb(to_char(now() at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'))) WHERE node_id LIKE '%" + TAG + "%';")
+    emit_live_telemetry()
     for spec in args.live_gateway:
         gid, mbps = spec.split(":")
         mbps = float(mbps)
@@ -117,14 +229,6 @@ def mid(prefix):
         tail = CROCK[n % 32] + tail
         n //= 32
     return f"{prefix}_{TAG}{tail}" + "".join(rnd.choice(CROCK) for _ in range(26 - len(TAG) - 6))
-
-
-def jsonb(v):
-    return q(json.dumps(v)) + "::jsonb"
-
-
-def arr(xs):
-    return "ARRAY[" + ",".join(q(x) for x in xs) + "]::text[]" if xs else "NULL"
 
 
 # --- machines (the provider's): (host, arch, cores, mem_mb, disk_mb, mbps, bench, trust, offline windows [(hour_from, hour_to) daily UTC], one-off gaps)
