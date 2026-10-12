@@ -28,7 +28,7 @@ An AI app (Claude, Cursor, any MCP client) uses LazyCake through the **MCP** pro
 `/apps` ("Connected apps", both roles): shows the MCP URL and every connected app with last use, and **Disconnect** (`DELETE /api/portal/oauth/grants/{id}`) revokes the token at once. API: `GET /api/portal/oauth/grants`.
 
 ## Caveats
-- **HTTPS (backlog 8.18).** Production is plain HTTP today. Clients that require HTTPS for remote MCP servers (claude.ai / Claude Desktop connectors) cannot connect until it exists; clients that accept `http://` (Claude Code CLI `claude mcp add --transport http`, the SDK, inspectors) work. Tokens and codes travel in clear text over HTTP, like logins do today.
+- **HTTPS** is available on the same port since v0.4.25 ([https](https.md)); use `https://<host>:8080/mcp`. Over plain `http://` tokens and codes travel in clear text (with `LAZYCAKE_FORCE_HTTPS=1` plain visitors are redirected).
 - Migrations: 027 must be applied **before** the coordinator that uses it.
 - OAuth ids use a local `newID` (random hex), **not** `internal/id`: that package is hashed by the agent/gateway release guard (`internal/version/agentgateway_test.go`).
 - Verified with the official `@modelcontextprotocol/sdk` client end to end (discovery, registration, real browser consent, token exchange, tool calls); keep doing that after protocol changes (a throwaway script outside the repo is enough).

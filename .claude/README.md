@@ -30,6 +30,7 @@ A **customer** submits a container task (image, limits, optional tunnel targets)
 | [coordinator.md](coordinator.md) | `cmd/coordinator`, `api`, `auth`, `config`, `events`, `relay`, `seed`, `webassets` |
 | [scheduler-trust.md](scheduler-trust.md) | placement, trust score, spec drift, canaries, reclaim, cold-pull |
 | [scheduler-state.md](scheduler-state.md) | why a task is/is not placed on a machine: machine states, eligibility order, starvation hold, debugging checklist, scaling notes |
+| [https.md](https.md) | HTTPS on the same port: Let's Encrypt IP certificate, port-80 validation, same-port listener, production setup |
 | [mcp.md](mcp.md) | MCP server and OAuth for AI clients: flow, tools, token rules, connected apps, caveats |
 | [billing.md](billing.md) | meters, pricing, ledger, holds, byte reconciliation |
 | [store-database.md](store-database.md) | `store` interface, Postgres tables and migrations |

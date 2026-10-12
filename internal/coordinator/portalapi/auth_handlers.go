@@ -186,7 +186,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 			s.Log.Warn("revoking session on logout", "error", err)
 		}
 	}
-	clearSessionCookie(w, s.Dev)
+	clearSessionCookie(w, s.cookieSecure(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -205,6 +205,6 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, accountID 
 		writeError(w, http.StatusInternalServerError, "creating session")
 		return false
 	}
-	setSessionCookie(w, sessID, s.Dev)
+	setSessionCookie(w, sessID, s.cookieSecure(r))
 	return true
 }

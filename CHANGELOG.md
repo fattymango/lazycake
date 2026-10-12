@@ -3,6 +3,21 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.25 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration. Production needs port 80 open and a systemd drop-in (see `.claude/https.md`).
+
+### Added
+- **HTTPS on the same port.** The portal, the API and the MCP server now answer **https and plain http on port 8080**, with a real Let's Encrypt certificate for the server's IP address, obtained and renewed by the coordinator itself (no proxy, no certbot). IP-address certificates last about six days, so it renews every three; validation uses port 80. Open `https://<server-ip>:8080`. With `LAZYCAKE_FORCE_HTTPS=1` plain-HTTP visitors are redirected to https.
+- AI apps that insist on HTTPS (the Claude web and desktop connectors) can now connect to `https://<server-ip>:8080/mcp`.
+
+### Changed
+- The session cookie is always `Secure` when the request came over https, even on a dev-mode server.
+- Dependencies: `golang.org/x/crypto` 0.58 (needed for the Let's Encrypt `shortlived` profile), plus its `x/sys`, `x/sync`, `x/text` updates.
+
+### Not covered
+- The agent's gRPC connection (7443) and the tunnel relay are still unencrypted at the transport level (backlog 8.18, second half).
+
 ## v0.4.24 — 2026-10-12
 
 Needs migration 027 (before the coordinator). Agents and gateways are unchanged.
@@ -12,7 +27,7 @@ Needs migration 027 (before the coordinator). Agents and gateways are unchanged.
 - **Connected apps page** (both roles): see every connected app and when it was last used, and disconnect one to end its access immediately.
 
 ### Notes
-- Production serves plain HTTP until HTTPS (backlog 8.18) exists. Apps that insist on HTTPS for remote MCP servers (the Claude web and desktop connectors) cannot connect yet; Claude Code (`claude mcp add --transport http`), the MCP SDKs and inspectors can.
+- Production served plain HTTP at this release; HTTPS on the same port arrived in v0.4.25 (apps that insist on HTTPS, like the Claude web and desktop connectors, need it).
 
 ## v0.4.23 — 2026-10-12
 

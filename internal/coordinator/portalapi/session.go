@@ -40,29 +40,33 @@ func hashSessionID(id string) []byte {
 	return sum[:]
 }
 
+// cookieSecure: Secure unless this is a dev deployment on plain HTTP, and always when the request came in over TLS (so once HTTPS exists a session
+// started on it is never sent in clear text).
+func (s *Server) cookieSecure(r *http.Request) bool { return !s.Dev || r.TLS != nil }
+
 // setSessionCookie issues the httpOnly, SameSite=Lax cookie task 7.2
 // specifies. Secure is set unless dev is true (cfg.Dev - local/demo compose
 // serves plain HTTP).
-func setSessionCookie(w http.ResponseWriter, id string, dev bool) {
+func setSessionCookie(w http.ResponseWriter, id string, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    id,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   !dev,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
 }
 
 // clearSessionCookie expires the cookie immediately (logout).
-func clearSessionCookie(w http.ResponseWriter, dev bool) {
+func clearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   !dev,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})

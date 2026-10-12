@@ -1409,3 +1409,32 @@ func TestMachineTasksAreNewestFirst(t *testing.T) {
 	require.Len(t, got, 3)
 	require.Equal(t, []string{"tsk_ord_c", "tsk_ord_b", "tsk_ord_a"}, []string{got[0].ID, got[1].ID, got[2].ID}, "the most recently started first")
 }
+
+// A session started over https must never be sent in clear text later, even on a dev-mode server (which otherwise leaves cookies non-Secure so
+// plain-HTTP demos work).
+func TestSessionCookieIsSecureOverTLSEvenInDev(t *testing.T) {
+	st := testStore(t)
+	bus := events.NewBus()
+	srv := &Server{Store: st, Customer: &api.CustomerServer{Store: st, Rates: pricing.DefaultRates(), Bus: bus}, Bus: bus, Log: discardLog(), Dev: true}
+	h := srv.Handler()
+	signup := func(ts *httptest.Server, name string) *http.Cookie {
+		body, _ := json.Marshal(credentialsRequest{Username: name, Password: "password1"})
+		resp, err := ts.Client().Post(ts.URL+"/api/portal/customer/signup", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+		for _, c := range resp.Cookies() {
+			if c.Name == cookieName {
+				return c
+			}
+		}
+		t.Fatal("no session cookie")
+		return nil
+	}
+	tlsServer := httptest.NewTLSServer(h)
+	t.Cleanup(tlsServer.Close)
+	require.True(t, signup(tlsServer, "tlsuser").Secure, "over TLS the cookie is Secure")
+	plain := httptest.NewServer(h)
+	t.Cleanup(plain.Close)
+	require.False(t, signup(plain, "plainuser").Secure, "dev mode over plain HTTP keeps working")
+}

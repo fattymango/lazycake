@@ -30,6 +30,15 @@ type Config struct {
 	// PublicURL is the https://host the dashboard and MCP server are reached on, for the OAuth discovery documents (LAZYCAKE_PUBLIC_URL).
 	// Empty: derived from each request.
 	PublicURL string
+	// HTTPS on the same port as the portal (the HTTP address): TLSHost is the IP address or DNS name to get a Let's Encrypt certificate for
+	// (LAZYCAKE_TLS_HOST; empty = HTTPS off), TLSDir where the account key and certificate are kept (LAZYCAKE_TLS_DIR), TLSACMEDirectory the ACME
+	// server (LAZYCAKE_TLS_ACME_DIRECTORY; empty = Let's Encrypt production), TLSChallengeAddr where validation is answered, the CA connects to
+	// port 80 (LAZYCAKE_TLS_CHALLENGE_ADDR, default ":80"), and ForceHTTPS (LAZYCAKE_FORCE_HTTPS=1) redirects plain-HTTP visitors once a certificate exists.
+	TLSHost          string
+	TLSDir           string
+	TLSACMEDirectory string
+	TLSChallengeAddr string
+	ForceHTTPS       bool
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 	// SeedDemoToken, if set, makes the coordinator ensure a demo account
@@ -70,6 +79,11 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	cfg.PublicGRPCAddr = orDefault(getenv("LAZYCAKE_PUBLIC_GRPC_ADDR"), cfg.GRPCAddr)
 	cfg.PublicURL = getenv("LAZYCAKE_PUBLIC_URL")
+	cfg.TLSHost = getenv("LAZYCAKE_TLS_HOST")
+	cfg.TLSDir = orDefault(getenv("LAZYCAKE_TLS_DIR"), "tls")
+	cfg.TLSACMEDirectory = getenv("LAZYCAKE_TLS_ACME_DIRECTORY")
+	cfg.TLSChallengeAddr = orDefault(getenv("LAZYCAKE_TLS_CHALLENGE_ADDR"), ":80")
+	cfg.ForceHTTPS = getenv("LAZYCAKE_FORCE_HTTPS") == "1"
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("LAZYCAKE_DATABASE_URL is required")
@@ -95,6 +109,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("http_addr", c.HTTPAddr),
 		slog.String("relay_addr", c.RelayAddr),
 		slog.Bool("dev", c.Dev),
+		slog.String("tls_host", c.TLSHost),
+		slog.Bool("force_https", c.ForceHTTPS),
 	)
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/fattymango/lazycake/internal/coordinator/scheduler"
 	"github.com/fattymango/lazycake/internal/coordinator/seed"
 	"github.com/fattymango/lazycake/internal/coordinator/store"
+	"github.com/fattymango/lazycake/internal/coordinator/tlscert"
 	"github.com/fattymango/lazycake/internal/coordinator/webassets"
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
@@ -247,18 +248,41 @@ func run() error {
 	httpMux.Handle("/", webassets.Handler("index.html"))
 	// No WriteTimeout: the dashboard's SSE streams are long-lived writes. The read side is bounded so a client dribbling
 	// a request in byte by byte (slowloris) cannot hold connections open.
+	var httpHandler http.Handler = httpMux
+	var tlsMgr *tlscert.Manager
+	if cfg.TLSHost != "" {
+		// HTTPS on this same port (see internal/coordinator/tlscert): the certificate is obtained and renewed here, validation is answered on
+		// port 80, and the one listener speaks both TLS and plain HTTP.
+		tlsMgr, err = tlscert.New(tlscert.Config{Host: cfg.TLSHost, Dir: cfg.TLSDir, DirectoryURL: cfg.TLSACMEDirectory, HTTPAddr: cfg.TLSChallengeAddr, Log: log})
+		if err != nil {
+			return fmt.Errorf("setting up HTTPS: %w", err)
+		}
+		if _, port, err := net.SplitHostPort(cfg.HTTPAddr); err == nil && port != "" {
+			tlscert.RedirectPort = port
+		}
+		go tlsMgr.Run(ctx)
+		httpHandler = tlscert.Wrap(httpMux, cfg.ForceHTTPS, tlsMgr.Ready)
+	}
 	httpServer := &http.Server{
-		Addr: cfg.HTTPAddr, Handler: httpMux,
+		Addr: cfg.HTTPAddr, Handler: httpHandler,
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute,
 		MaxHeaderBytes: 64 << 10,
 	}
+	httpLis, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", cfg.HTTPAddr, err)
+	}
+	if tlsMgr != nil {
+		httpServer.ConnContext = tlscert.ConnContext
+		httpLis = tlscert.Listener(httpLis, tlsMgr.TLSConfig())
+	}
 	httpErr := make(chan error, 1)
 	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.Serve(httpLis); err != nil && err != http.ErrServerClosed {
 			httpErr <- err
 		}
 	}()
-	log.Info("dashboard/portal API listening", "addr", cfg.HTTPAddr)
+	log.Info("dashboard/portal API listening", "addr", cfg.HTTPAddr, "https", tlsMgr != nil)
 
 	// Gateway traffic keeps 5-minute detail for 90 days; the lifetime and per-task totals stay.
 	go func() {

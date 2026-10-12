@@ -424,10 +424,10 @@ use of the device may suffer. Browser checks: `web/e2e/addmachine.mjs` (33).
 
 ### Task 8.18 — HTTPS for the portal and TLS for the agent connection
 
-**Status: backlog, deferred by the owner (2026-10-11).** Found in a security check of the production server: the portal at `http://<ip>:8080` carries logins, session cookies and money over plain HTTP, and the
+**Status: first half DONE in v0.4.25 (2026-10-12): HTTPS for the portal and MCP on port 8080, see `.claude/https.md`. Still open: TLS for the agent gRPC connection and the relay.** Originally: backlog, deferred by the owner (2026-10-11). Found in a security check of the production server: the portal at `http://<ip>:8080` carries logins, session cookies and money over plain HTTP, and the
 agent's gRPC connection on 7443 sends its token unencrypted. Postgres is not exposed to the internet (details in the local-only `CLAUDE.local.md`).
 
-**Idea to evaluate:** a Let's Encrypt certificate for the bare IP address (a newer feature: short-lived, about 6 days, validated over HTTP on port 80 or TLS-ALPN, no DNS needed). Not verified yet. Things found:
+**Result for the portal (verified 2026-10-12):** Let's Encrypt does issue certificates for a bare IP address under the `shortlived` profile (about 6.7 days, http-01 on port 80 or tls-alpn-01 on 443; the default profile rejects IPs). No reverse proxy or certbot: the coordinator does the ACME flow itself with `golang.org/x/crypto/acme` v0.58 and serves TLS and plain HTTP on 8080. Original notes:
 - The server's Ubuntu 24.04 `certbot` is 2.9.0, probably too old for IP certificates: a newer client (certbot from snap/pip, `lego`, or Caddy) is needed.
 - Port 80 is closed and unused; 443 is already in use on the server, so the portal would sit on another port or the other service moves.
 - Try Let's Encrypt staging first; renewal must be automatic (6-day lifetime).
