@@ -16,6 +16,7 @@ import { Card, CardBody, CardFooter, CardHeader } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
 import { PageHeader } from "@/ui/PageHeader";
 import { Skeleton } from "@/ui/Skeleton";
+import { Tooltip } from "@/ui/Tooltip";
 import { RingGauge } from "@/ui/RingGauge";
 
 export function Overview() {
@@ -42,6 +43,9 @@ export function Overview() {
   const queued = sm?.queued ?? 0;
   const finishedCount = sm?.finished ?? 0;
   const succeeded = sm?.finished_succeeded ?? 0;
+  const by = sm?.finished_by_state ?? {};
+  // fenced and abandoned are tasks that lost their machine: neither a failure of the task nor a stop by the customer.
+  const interrupted = (by.fenced ?? 0) + (by.abandoned ?? 0);
   const rate = finishedCount ? Math.round((succeeded / finishedCount) * 100) : null;
   const coresInUse = sm?.running_cores ?? 0;
   const costs = costByTask(ledger.data);
@@ -119,23 +123,46 @@ export function Overview() {
             {countsLoading ? (
               <Skeleton className="size-28 rounded-full" />
             ) : (
-              <RingGauge
-                value={rate === null ? null : rate / 100}
-                tone={rate === null || rate >= 80 ? "success" : "warning"}
-                center={
-                  <div>
-                    <p className="text-2xl font-semibold leading-7 text-fg" data-tnum>
-                      {rate === null ? "—" : `${rate}%`}
-                    </p>
-                    <p className="text-2xs text-muted">succeeded</p>
-                  </div>
+              <Tooltip
+                side="right"
+                content={
+                  <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5" data-tnum>
+                    <dt className="text-muted">Succeeded</dt>
+                    <dd className="text-right">{count(by.succeeded ?? 0)}</dd>
+                    <dt className="text-muted">Failed</dt>
+                    <dd className="text-right">{count(by.failed ?? 0)}</dd>
+                    <dt className="text-muted">Stopped</dt>
+                    <dd className="text-right">{count(by.cancelled ?? 0)}</dd>
+                    {interrupted > 0 && (
+                      <>
+                        <dt className="text-muted">Machine lost</dt>
+                        <dd className="text-right">{count(interrupted)}</dd>
+                      </>
+                    )}
+                    <dt className="col-span-2 mt-1 text-2xs text-muted">Tasks finished in the last 7 days</dt>
+                  </dl>
                 }
-                summary={
-                  rate === null
-                    ? "No finished tasks yet"
-                    : `${rate} percent of the ${finishedCount} tasks finished in the last 7 days succeeded`
-                }
-              />
+              >
+                <div tabIndex={0} className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                  <RingGauge
+                    value={rate === null ? null : rate / 100}
+                    tone={rate === null || rate >= 80 ? "success" : "warning"}
+                    center={
+                      <div>
+                        <p className="text-2xl font-semibold leading-7 text-fg" data-tnum>
+                          {rate === null ? "—" : `${rate}%`}
+                        </p>
+                        <p className="text-2xs text-muted">succeeded</p>
+                      </div>
+                    }
+                    summary={
+                      rate === null
+                        ? "No finished tasks yet"
+                        : `${rate} percent of the ${finishedCount} tasks finished in the last 7 days succeeded`
+                    }
+                  />
+                </div>
+              </Tooltip>
             )}
             <dl className="min-w-0 flex-1 space-y-3 text-sm">
               <div className="flex items-center justify-between gap-3">

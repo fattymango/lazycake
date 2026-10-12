@@ -1332,6 +1332,7 @@ func TestTaskSummaryCountsEveryTaskNotJustTheNewestPage(t *testing.T) {
 	require.Equal(t, 50, sum.ByState["succeeded"])
 	require.Equal(t, 50, sum.Finished, "the success rate looks at the last 7 days")
 	require.Equal(t, 50, sum.FinishedSucceeded, "the 10 failures from 8 days ago are outside that window")
+	require.Equal(t, map[string]int{"succeeded": 50}, sum.FinishedByState, "the hover breakdown covers the same window")
 	require.Equal(t, 3, sum.UsingGateways, "2 running + 1 queued task use the gateway among unfinished ones")
 	g := sum.Gateways[gw]
 	require.Equal(t, 2, g.Running)

@@ -143,6 +143,8 @@ export interface TaskSummary {
   /** How many of the newest finished tasks were looked at (at most 50) and how many of them succeeded. */
   finished: number;
   finished_succeeded: number;
+  /** The same window by outcome; "cancelled" is what the dashboard calls stopped. */
+  finished_by_state: Partial<Record<TaskState, number>>;
   /** Unfinished tasks that use at least one gateway. */
   using_gateways: number;
   gateways: Record<string, { running: number; queued: number; last_task_id?: string; last_task_at_ms?: number }>;
