@@ -8,6 +8,14 @@ Providers lend the spare capacity of their machines; customers submit container 
 
 *Click the diagram to zoom. Source: [`docs/diagrams`](docs/diagrams).*
 
+## Screenshots
+
+| Customer overview | Customer gateways |
+|:--:|:--:|
+| ![Customer overview](img/customer-overview.png) | ![Customer gateways](img/customer-gateways.png) |
+| **Provider overview** | **Provider: add a machine** |
+| ![Provider overview](img/provider-overview.png) | ![Provider add machine](img/provider-add-machine.png) |
+
 ## Why the name
 
 A lazy cake is the no-bake chocolate biscuit cake made from leftover pieces you already have: no oven, no effort, and better than its parts. LazyCake does the same with computers: lots of small, idle ("lazy") machines combined into something useful with almost no effort.
