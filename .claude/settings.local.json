@@ -10,7 +10,8 @@
       "Bash(scp:*)",
       "Bash(podman build:*)",
       "Bash(podman push:*)",
-      "Bash(go run github.com/pressly/goose/v3/cmd/goose@latest:*)"
+      "Bash(go run github.com/pressly/goose/v3/cmd/goose@latest:*)",
+      "Bash(gh repo *)"
     ]
   }
 }
