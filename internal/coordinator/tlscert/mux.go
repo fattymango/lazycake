@@ -26,6 +26,9 @@ type Options struct {
 	// RequireTLS closes any connection that does not start a TLS handshake (the gRPC port once every agent and gateway is updated: their tokens
 	// must never cross the network in clear text).
 	RequireTLS bool
+	// AllowLoopback keeps plaintext working for clients on this machine even with RequireTLS: traffic that never leaves the host cannot be read
+	// on a network (the server's own gateway container connects over 127.0.0.1).
+	AllowLoopback bool
 	// OnRefused, if set, is told the remote address of each refused plaintext connection.
 	OnRefused func(remote string)
 }
@@ -104,7 +107,7 @@ func (c *lazyConn) init() {
 			c.inner, c.tls = tls.Server(pc, c.cfg), true
 			return
 		}
-		if c.opt.RequireTLS {
+		if c.opt.RequireTLS && !(c.opt.AllowLoopback && isLoopback(c.Conn.RemoteAddr().String())) {
 			c.err = ErrPlaintextRefused
 			if c.opt.OnRefused != nil {
 				c.opt.OnRefused(c.Conn.RemoteAddr().String())

@@ -296,3 +296,32 @@ func TestGRPCOverTheSamePortWithTheSharedCredentials(t *testing.T) {
 	t.Run("plaintext client once TLS is required", func(t *testing.T) { check(t, Options{RequireTLS: true}, "0", false) })
 	t.Run("TLS client once TLS is required", func(t *testing.T) { check(t, Options{RequireTLS: true}, "1", true) })
 }
+
+// With plaintext refused, this machine's own components (the server's gateway container talks to 127.0.0.1) still work.
+func TestRequireTLSStillAllowsLoopbackWhenAsked(t *testing.T) {
+	addr, _, ln := tlsListener(t, Options{RequireTLS: true, AllowLoopback: true})
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				buf := make([]byte, 5)
+				if _, err := io.ReadFull(c, buf); err == nil {
+					_, _ = c.Write(buf)
+				}
+			}()
+		}
+	}()
+	raw, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	defer raw.Close()
+	_, _ = raw.Write([]byte("local"))
+	_ = raw.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got := make([]byte, 5)
+	_, err = io.ReadFull(raw, got)
+	require.NoError(t, err)
+	require.Equal(t, "local", string(got))
+}

@@ -111,7 +111,7 @@ func run() error {
 		grpcTLS := tlsMgr.TLSConfig().Clone()
 		grpcTLS.NextProtos = []string{"h2"}
 		var lastRefusal atomic.Int64
-		lis = tlscert.ListenerWith(lis, grpcTLS, tlscert.Options{RequireTLS: cfg.RequireTLS, OnRefused: func(remote string) {
+		lis = tlscert.ListenerWith(lis, grpcTLS, tlscert.Options{RequireTLS: cfg.RequireTLS, AllowLoopback: true, OnRefused: func(remote string) {
 			if now := time.Now().Unix(); now-lastRefusal.Swap(now) >= 30 { // one line per half minute, not one per retry
 				log.Warn("refused a plaintext gRPC connection: update that agent or gateway to a release that uses TLS", "remote", remote)
 			}

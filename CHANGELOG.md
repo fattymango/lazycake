@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.27 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Fixed
+- With `LAZYCAKE_REQUIRE_TLS=1`, plaintext gRPC from **this machine itself** is still accepted. The gateway container that runs next to the coordinator on the server connects over `127.0.0.1`; refusing it broke its byte reports. Connections from other machines are still refused.
+
 ## v0.4.26 — 2026-10-12
 
 Coordinator, agent and gateway (both show "Update available"; update them with the dashboard's command, settings are kept). No migration.
