@@ -33,7 +33,7 @@ ap.add_argument("--real-gateway", action="append", default=[], help="existing ga
 ap.add_argument("--shift-old-days", type=int, default=45)
 ap.add_argument("--balance", type=float, default=2500.0, help="dollars the customer 'had' before the demo charges")
 ap.add_argument("--clean", action="store_true")
-ap.add_argument("--hero", action="store_true", help="put a failed task, 3 running tasks and 2 queued tasks at the top of the customer's task list (run after the main seed, just before the photos); nothing is dispatched or run")
+ap.add_argument("--hero", action="store_true", help="add a few very recent tasks to the customer's list, a success first, then one queued, one running and one failed among more successes (run after the main seed, just before the photos); nothing is dispatched or run")
 ap.add_argument("--live", action="store_true", help="refresh 'right now': the last 5 minutes of gateway bandwidth and the machines' heartbeats (run it just before taking screenshots)")
 ap.add_argument("--live-gateway", action="append", default=[], help="gateway id:Mbps (repeatable) to give live bandwidth, e.g. gw_x:180")
 args = ap.parse_args()
@@ -104,6 +104,8 @@ if args.hero:
     day = nowh.strftime("%Y-%m-%d")
     like = f"'%{TAG}H%'"
     w("BEGIN;")
+    w(f"UPDATE accounts SET balance_micros = balance_micros + COALESCE((SELECT -SUM(amount_micros) FROM ledger_entries WHERE kind = 'charge' AND task_id LIKE {like} AND account_id = {CUST}), 0) WHERE id = {CUST};")
+    w(f"UPDATE accounts SET balance_micros = balance_micros - COALESCE((SELECT SUM(amount_micros) FROM ledger_entries WHERE kind = 'credit' AND task_id LIKE {like} AND account_id = {PROV}), 0) WHERE id = {PROV};")
     for t in ("task_logs", "task_usage_samples", "task_meters", "task_usage_totals", "gateway_traffic", "task_gateway_totals"):
         w(f"DELETE FROM {t} WHERE task_id LIKE {like};")
     w(f"DELETE FROM ledger_entries WHERE task_id LIKE {like};")
@@ -129,39 +131,69 @@ if args.hero:
     def iso(s):
         return (nowh - dt.timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # --- running (oldest first so the newest is created last)
-    r1, r2, r3 = hid("R1"), hid("R2"), hid("R3")
-    tasks_row(r1, "running", img("docker.io/pytorch/pytorch"), None, ["python", "eval.py", "--model", "resnet50", "--shard", "7"], 4, 4096, 3600, 372, 360, None, nodeid("fra1-atlas-rack-01"), False, "amd64", "NULL", None)
-    log(r1, [("stdout", 360 - k * 12, t) for k, t in enumerate(
+    # The list is newest-first and should read like normal activity, not like three special rows: a success leads, the queued task is second, and the running
+    # and failed ones are mixed in among more successes.
+    def finish_task(tid, host, image, ent, av, cores, mem, wall, created_s, dur_s, gw, lines):
+        started_s, finished_s = created_s - 2, created_s - 2 - dur_s
+        tasks_row(tid, "succeeded", image, ent, av, cores, mem, wall, created_s, started_s, finished_s, nodeid(host), gw, "amd64", "0", "exited")
+        log(tid, lines(started_s, finished_s))
+        price = 100 + int((50 * cores + 10 * mem / 1024 + 2 * 2) * dur_s * 1.4)
+        w(f"INSERT INTO task_meters (task_id, node_id, started_at, finished_at, duration_s, normalised_s) VALUES ({q(tid)}, {nodeid(host)}, {ago(started_s)}, {ago(finished_s)}, {dur_s}, {dur_s * 1.4:.2f});")
+        w(f"INSERT INTO ledger_entries (id, task_id, account_id, kind, amount_micros, created_at) VALUES ({q('led_' + tid[4:])}, {q(tid)}, {CUST}, 'charge', {-price}, {ago(finished_s)}), ({q('ldp_' + tid[4:])}, {q(tid)}, {PROV}, 'credit', {price}, {ago(finished_s)});")
+        w(f"UPDATE accounts SET balance_micros = balance_micros - {price} WHERE id = {CUST};")
+        w(f"UPDATE accounts SET balance_micros = balance_micros + {price} WHERE id = {PROV};")
+        w(f"INSERT INTO task_usage_totals (task_id, node_id, core_seconds, peak_memory_bytes, tunnel_to_gateway, tunnel_to_task, samples, updated_at) VALUES ({q(tid)}, {nodeid(host)}, {cores * 0.8 * dur_s:.1f}, {int(mem * 1048576 * 0.55)}, {52000 if gw else 0}, {9400000 if gw else 0}, {max(dur_s // 15, 1)}, {ago(finished_s)});")
+
+    s1, s2, s3, s4 = hid("S1"), hid("S2"), hid("S3"), hid("S4")
+    finish_task(s1, "fra1-atlas-rack-02", img("docker.io/library/node"), None, ["node", "render.js", "--tenant", "globex", "--format", "pdf"], 0.5, 512, 30, 24, 14, False,
+                lambda st, fi: [("stdout", st, f"{iso(st)} render globex: 14 pages"), ("stdout", fi, f"{iso(fi)} wrote /out/globex-{day}.pdf (418 KB) in 13.6s")])
+    # --- queued: an architecture no machine offers, so the scheduler can never claim it (nothing is ever dispatched or run)
+    q1 = hid("Q1")
+    tasks_row(q1, "queued", img("docker.io/jrottenberg/ffmpeg"), None, ["-i", "/in/clip-218.mp4", "-c:v", "libx264", "-preset", "medium", "/out/clip-218.mp4"], 2, 2048, 1800, 47, None, None, "NULL", False, "riscv64", "NULL", None)
+    finish_task(s2, "hel1-ax41-build-03", img("docker.io/library/rust"), ["sh", "-c"], ["cargo test --release -- --shard 3/8"], 2, 1024, 300, 95, 61, False,
+                lambda st, fi: [("stdout", st, "Compiling lazycake-core v0.9.4"), ("stdout", st - 24, "running 412 tests"), ("stdout", fi, "test result: ok. 412 passed; 0 failed; 0 ignored; finished in 18.42s")])
+    # --- running
+    r1 = hid("R1")
+    tasks_row(r1, "running", img("docker.io/pytorch/pytorch"), None, ["python", "eval.py", "--model", "resnet50", "--shard", "7"], 4, 4096, 3600, 185, 178, None, nodeid("fra1-atlas-rack-01"), False, "amd64", "NULL", None)
+    log(r1, [("stdout", 178 - k * 7, t) for k, t in enumerate(
         ["loading model resnet50 (25.6M parameters) ... done in 4.1s", "dataset shard 7/16: 31,250 images, batch size 64 (489 batches)"] +
-        [f"batch {20 * i}/489  top1={0.74 + i * 0.0021:.3f}  top5={0.915 + i * 0.001:.3f}  {i * 54 + 31} img/s" for i in range(1, 25)])])
-    tasks_row(r2, "running", img("docker.io/library/python"), None, ["python", "-m", "etl.run", "--day", day, "--source", "postgres.prod", "--batch-size", "5000"], 2, 2048, 1800, 188, 182, None, nodeid("fra1-atlas-rack-02"), True, "amd64", "NULL", None)
-    log(r2, [("stdout", 182 - k * 15, t) for k, t in enumerate(
-        [f"{iso(182)} INFO  etl.run starting day={day} source=postgres.prod batch_size=5000", f"{iso(181)} INFO  connected to postgres:5432 through the gateway, server version 16.4", f"{iso(180)} INFO  extracting public.orders (est. 1,204,330 rows)"] +
-        [f"{iso(180 - 15 * i)} INFO  batch {i}/241 ok (5000 rows, {13.2 + i % 4 * 0.9:.1f}s)" for i in range(1, 11)])])
-    tasks_row(r3, "running", img("docker.io/library/rust"), ["sh", "-c"], ["cargo test --release -- --shard 3/8"], 2, 1024, 600, 92, 84, None, nodeid("hel1-ax41-build-03"), False, "amd64", "NULL", None)
-    log(r3, [("stdout", 84 - k * 6, t) for k, t in enumerate(
-        ["Compiling lazycake-core v0.9.4", "Finished `test` profile [optimized] target(s) in 41.2s", "Running unittests src/lib.rs", "running 412 tests"] +
-        [f"test {m} ... ok" for m in ["auth::login_ok", "auth::session_expiry", "billing::price_round_trip", "billing::hold_release", "sched::fills_node", "sched::respects_memory", "relay::reconnects", "tunnel::noise_handshake", "usage::bucket_sum", "api::submit_idempotent"]])])
-    # --- failed
+        [f"batch {20 * i}/489  top1={0.74 + i * 0.0021:.3f}  top5={0.915 + i * 0.001:.3f}  {i * 54 + 31} img/s" for i in range(1, 24)])])
+    finish_task(s3, "fra1-atlas-rack-02", img("docker.io/library/python"), None, ["python", "-m", "etl.run", "--day", day, "--source", "postgres.prod", "--batch-size", "5000"], 2, 2048, 1800, 292, 214, True,
+                lambda st, fi: [("stdout", st, f"{iso(st)} INFO  etl.run starting day={day}"), ("stdout", st - 1, f"{iso(st - 1)} INFO  connected to postgres:5432 through the gateway"), ("stdout", fi, f"{iso(fi)} INFO  loaded 188,420 rows in 14 batches")])
+    finish_task(s4, "fra1-atlas-rack-01", img("docker.io/library/python"), None, ["python", "-m", "pricing.mc", "--paths", "500000", "--seed", "41"], 2, 1024, 600, 361, 187, False,
+                lambda st, fi: [("stdout", st, f"{iso(st)} monte carlo: 500000 paths, seed 41"), ("stdout", fi, f"{iso(fi)} price=104.2731 stderr=0.0412")])
+    # --- failed (a few minutes back, so it sits among the successes)
     f1 = hid("F1")
-    tasks_row(f1, "failed", img("docker.io/library/python"), None, ["python", "-m", "etl.load", "--source", "postgres.prod", "--batch-size", "5000"], 1, 1024, 300, 640, 636, 589, nodeid("fra1-atlas-rack-02"), True, "amd64", "1", "exited")
-    log(f1, [("stdout", 636, f"{iso(636)} INFO  etl.load starting source=postgres.prod batch_size=5000"), ("stdout", 635, f"{iso(635)} INFO  connected to postgres:5432 through the gateway, server version 16.4"),
-             ("stdout", 634, f"{iso(634)} INFO  extracting table public.orders (est. 2,418,330 rows)"), ("stdout", 620, f"{iso(620)} INFO  batch 1/484 ok (5000 rows, 15.8s)"),
-             ("stdout", 605, f"{iso(605)} INFO  batch 2/484 ok (5000 rows, 15.1s)"), ("stderr", 590, f"{iso(590)} WARN  slow query on batch 3: 31.4s (threshold 20s)"),
-             ("stderr", 589, "Traceback (most recent call last):"), ("stderr", 589, '  File "/app/etl/load.py", line 142, in <module>'), ("stderr", 589, "    main()"),
-             ("stderr", 589, '  File "/app/etl/load.py", line 118, in main'), ("stderr", 589, "    cursor.execute(QUERY, params)"),
-             ("stderr", 589, "psycopg.errors.QueryCanceled: canceling statement due to statement timeout"), ("stdout", 589, f"{iso(589)} ERROR load failed after 2 of 484 batches; exiting with status 1")])
+    tasks_row(f1, "failed", img("docker.io/library/python"), None, ["python", "-m", "etl.load", "--source", "postgres.prod", "--batch-size", "5000"], 1, 1024, 300, 478, 474, 427, nodeid("fra1-atlas-rack-02"), True, "amd64", "1", "exited")
+    log(f1, [("stdout", 474, f"{iso(474)} INFO  etl.load starting source=postgres.prod batch_size=5000"), ("stdout", 473, f"{iso(473)} INFO  connected to postgres:5432 through the gateway, server version 16.4"),
+             ("stdout", 472, f"{iso(472)} INFO  extracting table public.orders (est. 2,418,330 rows)"), ("stdout", 458, f"{iso(458)} INFO  batch 1/484 ok (5000 rows, 15.8s)"),
+             ("stdout", 443, f"{iso(443)} INFO  batch 2/484 ok (5000 rows, 15.1s)"), ("stderr", 428, f"{iso(428)} WARN  slow query on batch 3: 31.4s (threshold 20s)"),
+             ("stderr", 427, "Traceback (most recent call last):"), ("stderr", 427, '  File "/app/etl/load.py", line 142, in <module>'), ("stderr", 427, "    main()"),
+             ("stderr", 427, '  File "/app/etl/load.py", line 118, in main'), ("stderr", 427, "    cursor.execute(QUERY, params)"),
+             ("stderr", 427, "psycopg.errors.QueryCanceled: canceling statement due to statement timeout"), ("stdout", 427, f"{iso(427)} ERROR load failed after 2 of 484 batches; exiting with status 1")])
+    # ordinary recent successes, so the list keeps a steady pulse after the first few rows instead of a gap
+    kinds = [
+        ("node", ["node", "render.js", "--tenant", "{t}", "--format", "pdf"], None, 0.5, 512, 30, (9, 30), False),
+        ("rust", ["cargo test --release -- --shard {n}/8"], ["sh", "-c"], 2, 1024, 300, (50, 130), False),
+        ("python", ["python", "-m", "etl.run", "--day", day, "--source", "postgres.prod", "--batch-size", "5000"], None, 2, 2048, 1800, (150, 420), True),
+        ("alpine", ["curl -fsS http://metrics:9100/metrics | head -c 2000 >/dev/null"], ["sh", "-c"], 0.25, 128, 30, (1, 5), False),
+        ("python", ["python", "-m", "pricing.mc", "--paths", "200000", "--seed", "{n}"], None, 1, 1024, 600, (60, 200), False),
+    ]
+    hosts = ["fra1-atlas-rack-01", "fra1-atlas-rack-02", "hel1-ax41-build-03"]
+    for i in range(12):
+        kind, av, ent, cores, mem, wall, (dlo, dhi), gw = kinds[rh.randrange(len(kinds))]
+        av = [x.format(t=rh.choice(["acme", "globex", "initech", "umbrella", "hooli"]), n=rh.randint(1, 8)) for x in av]
+        prefix = {"node": "docker.io/library/node", "rust": "docker.io/library/rust", "python": "docker.io/library/python", "alpine": "docker.io/library/alpine"}[kind]
+        age = 560 + i * 100 + rh.randint(0, 70)
+        dur = rh.randint(dlo, dhi)
+        finish_task(hid(f"X{i:x}"), rh.choice(hosts), img(prefix), ent, av, cores, mem, wall, age, dur, gw,
+                    lambda st, fi, k=kind: [("stdout", st, f"{iso(st)} INFO  {k} job starting"), ("stdout", fi, f"{iso(fi)} INFO  done")])
     price = 100 + int((50 * 1 + 10 + 2 * 2) * 47 * 1.41)
-    w(f"INSERT INTO task_meters (task_id, node_id, started_at, finished_at, duration_s, normalised_s) VALUES ({q(f1)}, {nodeid('fra1-atlas-rack-02')}, {ago(636)}, {ago(589)}, 47, {47 * 1.41:.2f});")
-    w(f"INSERT INTO ledger_entries (id, task_id, account_id, kind, amount_micros, created_at) VALUES ({q('led_' + f1[4:])}, {q(f1)}, {CUST}, 'charge', {-price}, {ago(589)}), ({q('ldp_' + f1[4:])}, {q(f1)}, {PROV}, 'credit', {price}, {ago(589)});")
+    w(f"INSERT INTO task_meters (task_id, node_id, started_at, finished_at, duration_s, normalised_s) VALUES ({q(f1)}, {nodeid('fra1-atlas-rack-02')}, {ago(474)}, {ago(427)}, 47, {47 * 1.41:.2f});")
+    w(f"INSERT INTO ledger_entries (id, task_id, account_id, kind, amount_micros, created_at) VALUES ({q('led_' + f1[4:])}, {q(f1)}, {CUST}, 'charge', {-price}, {ago(427)}), ({q('ldp_' + f1[4:])}, {q(f1)}, {PROV}, 'credit', {price}, {ago(427)});")
     w(f"UPDATE accounts SET balance_micros = balance_micros - {price} WHERE id = {CUST};")
     w(f"UPDATE accounts SET balance_micros = balance_micros + {price} WHERE id = {PROV};")
-    w(f"INSERT INTO task_usage_totals (task_id, node_id, core_seconds, peak_memory_bytes, tunnel_to_gateway, tunnel_to_task, samples, updated_at) VALUES ({q(f1)}, {nodeid('fra1-atlas-rack-02')}, 41.2, 612000000, 41000, 11800000, 3, {ago(589)});")
-    # --- queued: an architecture no machine offers, so the scheduler can never claim one of these (nothing is ever dispatched or run)
-    q1, q2 = hid("Q1"), hid("Q2")
-    tasks_row(q2, "queued", img("docker.io/pytorch/pytorch"), None, ["python", "eval.py", "--model", "vit-b16", "--shard", "11"], 4, 4096, 3600, 41, None, None, "NULL", False, "riscv64", "NULL", None)
-    tasks_row(q1, "queued", img("docker.io/jrottenberg/ffmpeg"), None, ["-i", "/in/clip-218.mp4", "-c:v", "libx264", "-preset", "medium", "/out/clip-218.mp4"], 2, 2048, 1800, 18, None, None, "NULL", False, "riscv64", "NULL", None)
+    w(f"INSERT INTO task_usage_totals (task_id, node_id, core_seconds, peak_memory_bytes, tunnel_to_gateway, tunnel_to_task, samples, updated_at) VALUES ({q(f1)}, {nodeid('fra1-atlas-rack-02')}, 41.2, 612000000, 41000, 11800000, 3, {ago(427)});")
     emit_live_telemetry()
     w("COMMIT;")
     print("\n".join(out))
