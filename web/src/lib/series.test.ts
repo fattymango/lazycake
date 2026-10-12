@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillBuckets, niceMax, stackTotal } from "./series";
+import { fillBuckets, niceScale, stackTotal } from "./series";
 
 const H = 3_600_000;
 
@@ -46,12 +46,21 @@ describe("fillBuckets", () => {
   });
 });
 
-describe("niceMax", () => {
-  it("rounds up to a readable axis top", () => {
-    expect(niceMax(0)).toBe(1);
-    expect(niceMax(3.2)).toBe(5);
-    expect(niceMax(7)).toBe(10);
-    expect(niceMax(1234)).toBe(2000);
-    expect(niceMax(100)).toBe(100);
+describe("niceScale", () => {
+  it("fits the data with round steps and a little headroom", () => {
+    expect(niceScale(0)).toMatchObject({ top: 1, step: 0.25 });
+    expect(niceScale(2.1).ticks).toEqual([0, 1, 2, 3]);
+    expect(niceScale(0.9).ticks).toEqual([0, 0.25, 0.5, 0.75, 1]);
+    expect(niceScale(8).ticks).toEqual([0, 2.5, 5, 7.5, 10]);
+    expect(niceScale(1234).top).toBe(1500);
+  });
+  it("always has a top above the data and a sensible number of gridlines", () => {
+    for (const v of [0.0017, 0.3, 1, 1.99, 2, 3.2, 7, 12, 99, 100, 1234, 5e9]) {
+      const s = niceScale(v);
+      expect(s.top).toBeGreaterThan(v);
+      expect(s.ticks.length).toBeGreaterThanOrEqual(3);
+      expect(s.ticks.length).toBeLessThanOrEqual(7);
+      expect(s.ticks[s.ticks.length - 1]).toBe(s.top);
+    }
   });
 });

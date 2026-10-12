@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { cn } from "@/lib/cn";
-import { niceMax, stackTotal, type StackPoint } from "@/lib/series";
+import { niceScale, stackTotal, type StackPoint } from "@/lib/series";
 
 export interface ChartSeries {
   key: string;
@@ -78,13 +78,13 @@ export function LineChart({
 
   const n = points.length;
   const max = Math.max(...points.flatMap((p) => series.map((s) => p.values[s.key] ?? 0)), 0);
-  // The axis reaches the limit line unless the limit is so far above the data that including it would
-  // flatten every line (e.g. 0.5 cores in use of 8 offered); then it is noted at the top edge instead.
-  const dataTop = niceMax(max);
-  const limitOnScale = !!limit && limit.value > 0 && limit.value <= dataTop * 4;
-  const top = limitOnScale && limit ? niceMax(Math.max(max, limit.value)) : dataTop;
+  // The axis reaches the limit line only when it is close to the data; a limit far above it (2 cores in use of 8 offered) would flatten every
+  // line, so it is noted at the top edge instead and the axis stays fitted to the data.
+  const dataScale = niceScale(max);
+  const limitOnScale = !!limit && limit.value > 0 && limit.value <= dataScale.top * 1.6;
+  const { top, ticks } = limitOnScale && limit ? niceScale(Math.max(max, limit.value)) : dataScale;
   const tick = axisFormat ?? format;
-  const left = labelWidth([0, 0.5, 1].map((f) => tick(top * f)));
+  const left = labelWidth(ticks.map((v) => tick(v)));
   const plotW = width - left - PAD.right;
   const plotH = height - PAD.top - PAD.bottom;
   const x = (i: number) => left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
@@ -156,18 +156,11 @@ export function LineChart({
             </pattern>
           </defs>
 
-          {[0, 0.5, 1].map((f) => (
-            <g key={f}>
-              <line
-                x1={left}
-                x2={width - PAD.right}
-                y1={y(top * f)}
-                y2={y(top * f)}
-                stroke="rgb(var(--border))"
-                strokeOpacity={f === 0 ? 1 : 0.7}
-              />
-              <text x={left - 8} y={y(top * f)} textAnchor="end" dominantBaseline="middle" className="fill-subtle text-2xs" data-tnum>
-                {tick(top * f)}
+          {ticks.map((v) => (
+            <g key={v}>
+              <line x1={left} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke="rgb(var(--border))" strokeOpacity={v === 0 ? 1 : 0.7} />
+              <text x={left - 8} y={y(v)} textAnchor="end" dominantBaseline="middle" className="fill-subtle text-2xs" data-tnum>
+                {tick(v)}
               </text>
             </g>
           ))}

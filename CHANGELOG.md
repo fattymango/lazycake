@@ -3,6 +3,16 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.22 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Fixed
+- **Charts keep a fitted, readable scale.** Every line chart (machine history, task resources, gateway and live bandwidth) used a fixed 0, middle, top axis and let the limit line (for example "8 cores offered") stretch it, so 2 cores of real use on an 8-core machine was squashed against the bottom with ticks at 0, 5 and 10. The axis now follows the data with round steps (about four gridlines, for example 0, 1, 2, 3), and a limit far above the data is noted at the top edge ("↑ 8 cores offered") instead of stretching the scale. A limit close to the data is still drawn as the dashed line.
+
+### Changed
+- **The browser tab icon follows the browser's light or dark setting and has no background**: the cake alone, with a thin cream outline in dark mode so it reads on a dark tab bar.
+
 ## v0.4.21 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration.

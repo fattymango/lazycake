@@ -42,10 +42,17 @@ export function stackTotal(p: StackPoint): number {
   return Object.values(p.values).reduce((a, b) => a + b, 0);
 }
 
-/** A y-axis maximum that is a round number above `max`, so the top gridline reads cleanly. */
-export function niceMax(max: number): number {
-  if (max <= 0) return 1;
-  const exp = Math.pow(10, Math.floor(Math.log10(max)));
-  for (const m of [1, 2, 2.5, 5, 10]) if (m * exp >= max) return m * exp;
-  return 10 * exp;
+/**
+ * A y-axis that fits the data: a round step (1, 2, 2.5 or 5 times a power of ten) giving about four intervals, and a top just above `max` (a few
+ * percent of headroom so the line never sits on the edge). A fixed 0, half, top axis made 2 cores of usage look flat once an 8-core limit
+ * stretched the scale to 10; this keeps the axis as tight as readable numbers allow.
+ */
+export function niceScale(max: number): { top: number; step: number; ticks: number[] } {
+  if (!(max > 0)) return { top: 1, step: 0.25, ticks: [0, 0.25, 0.5, 0.75, 1] };
+  const raw = (max * 1.04) / 4;
+  const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = ([1, 2, 2.5, 5, 10].map((m) => m * exp).find((s) => s >= raw) ?? 10 * exp) as number;
+  const count = Math.max(1, Math.ceil((max * 1.04) / step - 1e-9));
+  const clean = (v: number) => Number(v.toPrecision(12));
+  return { top: clean(count * step), step, ticks: Array.from({ length: count + 1 }, (_, i) => clean(i * step)) };
 }
