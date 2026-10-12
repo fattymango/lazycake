@@ -10,11 +10,18 @@ Providers lend the spare capacity of their machines; customers submit container 
 
 ## Screenshots
 
-| Customer overview | Customer gateways |
-|:--:|:--:|
-| ![Customer overview](img/customer-overview.png) | ![Customer gateways](img/customer-gateways.png) |
-| **Provider overview** | **Provider: add a machine** |
-| ![Provider overview](img/provider-overview.png) | ![Provider add machine](img/provider-add-machine.png) |
+<table>
+  <tr>
+    <td width="50%"><img src="img/customer-overview.png" alt="Customer overview"></td>
+    <td width="50%"><img src="img/customer-gateways.png" alt="Customer gateways"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="img/provider-overview.png" alt="Provider overview"></td>
+    <td width="50%"><img src="img/provider-add-machine.png" alt="Provider: add a machine"></td>
+  </tr>
+</table>
+
+*Top: customer overview and gateways. Bottom: provider overview and add a machine.*
 
 ## Why the name
 
