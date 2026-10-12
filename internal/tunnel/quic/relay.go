@@ -9,6 +9,7 @@ package quic
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -122,6 +123,11 @@ type Relay struct {
 	// finishes, with final byte counts.
 	OnStreamClosed func(StreamStats)
 
+	// TLSConfig, if set, supplies the relay's real certificate (the same one the portal serves). Without it the relay uses a throwaway
+	// self-signed one, which only clients that skip verification (loopback development) accept. It must return a config that can serve QUIC
+	// (TLS 1.3 and the ALPN below are set on a copy).
+	TLSConfig func() *tls.Config
+
 	mu       sync.Mutex
 	gateways map[string]*quicgo.Conn
 	conns    map[*quicgo.Conn]struct{} // every live connection, so shutdown can close them
@@ -137,9 +143,16 @@ func (r *Relay) Serve(ctx context.Context, addr string) error {
 		r.conns = make(map[*quicgo.Conn]struct{})
 	}
 	r.mu.Unlock()
-	tlsConf, err := selfSignedServerTLSConfig()
-	if err != nil {
-		return fmt.Errorf("building TLS config: %w", err)
+	var tlsConf *tls.Config
+	if r.TLSConfig != nil {
+		tlsConf = r.TLSConfig().Clone()
+		tlsConf.NextProtos = []string{alpn}
+		tlsConf.MinVersion = tls.VersionTLS13
+	} else {
+		var err error
+		if tlsConf, err = selfSignedServerTLSConfig(); err != nil {
+			return fmt.Errorf("building TLS config: %w", err)
+		}
 	}
 	ln, err := quicgo.ListenAddr(addr, tlsConf, connConfig)
 	if err != nil {

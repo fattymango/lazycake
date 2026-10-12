@@ -39,6 +39,9 @@ type Config struct {
 	TLSACMEDirectory string
 	TLSChallengeAddr string
 	ForceHTTPS       bool
+	// RequireTLS (LAZYCAKE_REQUIRE_TLS=1, needs TLSHost) closes any plaintext connection to the agent/gateway gRPC port: their bearer tokens may only
+	// cross the network inside TLS. Turn it on once every agent and gateway runs a release that speaks TLS (v0.4.26).
+	RequireTLS bool
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 	// SeedDemoToken, if set, makes the coordinator ensure a demo account
@@ -84,6 +87,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.TLSACMEDirectory = getenv("LAZYCAKE_TLS_ACME_DIRECTORY")
 	cfg.TLSChallengeAddr = orDefault(getenv("LAZYCAKE_TLS_CHALLENGE_ADDR"), ":80")
 	cfg.ForceHTTPS = getenv("LAZYCAKE_FORCE_HTTPS") == "1"
+	cfg.RequireTLS = getenv("LAZYCAKE_REQUIRE_TLS") == "1"
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("LAZYCAKE_DATABASE_URL is required")
@@ -111,6 +115,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("dev", c.Dev),
 		slog.String("tls_host", c.TLSHost),
 		slog.Bool("force_https", c.ForceHTTPS),
+		slog.Bool("require_tls", c.RequireTLS),
 	)
 }
 

@@ -22,5 +22,8 @@ For a task with targets the container runs `--network=none`. `target.go`/`proxy.
 - Gateways and agents must be updated by their owners (pull + recreate); the dashboard shows "Update available".
 - Gateway container recreation keeps its identity only if its Noise key is on a mounted volume.
 
+## Relay TLS (v0.4.26)
+The relay serves the coordinator's real certificate and clients verify it (see [https](https.md)); only loopback/`LAZYCAKE_COORDINATOR_TLS=0` setups still skip verification. `Relay.TLSConfig` supplies the certificate (nil = the old throwaway self-signed one, used by tests and local development). `clientTLSConfig(addr)` in `tls.go` is the dialer's config (`internal/transport.QUICConfig`).
+
 ## Agent relay link (v0.4.15)
 `internal/agent/netns/relaylink.go`: per task, `relayLink` dials the relay once, retrying the first dial (4 attempts, 500 ms apart), and if the QUIC connection dies it redials once (single-flight) and retries the stream, instead of every stream failing for the rest of the task (the load test logged ~33,000 "opening relayed stream: timeout" from one dead connection). Tests: `relaylink_test.go`.

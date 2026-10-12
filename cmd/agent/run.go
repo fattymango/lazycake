@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/fattymango/lazycake/internal/agent/bench"
 	"github.com/fattymango/lazycake/internal/agent/capacity"
@@ -29,6 +28,7 @@ import (
 	"github.com/fattymango/lazycake/internal/id"
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
+	"github.com/fattymango/lazycake/internal/transport"
 	"github.com/fattymango/lazycake/internal/tunnel/noise"
 	"github.com/fattymango/lazycake/internal/version"
 )
@@ -89,7 +89,7 @@ func run() error {
 	ledger := capacity.NewLedger(offer)
 
 	clientConn, err := grpc.NewClient(cfg.CoordinatorAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transport.GRPCCredentials(cfg.CoordinatorAddr)),
 		// Fail dead connections fast and reconnect on a fresh socket (see conn.Dialer).
 		grpc.WithContextDialer(conn.Dialer))
 	if err != nil {

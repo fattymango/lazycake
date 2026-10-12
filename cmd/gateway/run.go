@@ -13,13 +13,13 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/fattymango/lazycake/internal/gateway/config"
 	"github.com/fattymango/lazycake/internal/gateway/listener"
 	"github.com/fattymango/lazycake/internal/logging"
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
+	"github.com/fattymango/lazycake/internal/transport"
 	"github.com/fattymango/lazycake/internal/tunnel/noise"
 	"github.com/fattymango/lazycake/internal/tunnel/quic"
 	"github.com/fattymango/lazycake/internal/version"
@@ -201,7 +201,7 @@ func newByteReporter(ctx context.Context, cfg config.Config, log *slog.Logger) (
 		return func(listener.ForwardReport) {}, func(context.Context) {}
 	}
 
-	conn, err := grpc.NewClient(cfg.GRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cfg.GRPCAddr, grpc.WithTransportCredentials(transport.GRPCCredentials(cfg.GRPCAddr)))
 	if err != nil {
 		log.Warn("dialing coordinator gRPC for byte reports, disabling them", "addr", cfg.GRPCAddr, "error", err)
 		return func(listener.ForwardReport) {}, func(context.Context) {}

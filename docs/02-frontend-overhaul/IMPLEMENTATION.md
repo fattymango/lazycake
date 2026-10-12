@@ -424,7 +424,7 @@ use of the device may suffer. Browser checks: `web/e2e/addmachine.mjs` (33).
 
 ### Task 8.18 — HTTPS for the portal and TLS for the agent connection
 
-**Status: first half DONE in v0.4.25 (2026-10-12): HTTPS for the portal and MCP on port 8080, see `.claude/https.md`. Still open: TLS for the agent gRPC connection and the relay.** Originally: backlog, deferred by the owner (2026-10-11). Found in a security check of the production server: the portal at `http://<ip>:8080` carries logins, session cookies and money over plain HTTP, and the
+**Status: DONE. v0.4.25 (2026-10-12): HTTPS for the portal and MCP on port 8080. v0.4.26: TLS for the agent/gateway/lcctl gRPC connection and the verified relay certificate; see `.claude/https.md`.** Originally: backlog, deferred by the owner (2026-10-11). Found in a security check of the production server: the portal at `http://<ip>:8080` carries logins, session cookies and money over plain HTTP, and the
 agent's gRPC connection on 7443 sends its token unencrypted. Postgres is not exposed to the internet (details in the local-only `CLAUDE.local.md`).
 
 **Result for the portal (verified 2026-10-12):** Let's Encrypt does issue certificates for a bare IP address under the `shortlived` profile (about 6.7 days, http-01 on port 80 or tls-alpn-01 on 443; the default profile rejects IPs). No reverse proxy or certbot: the coordinator does the ACME flow itself with `golang.org/x/crypto/acme` v0.58 and serves TLS and plain HTTP on 8080. Original notes:

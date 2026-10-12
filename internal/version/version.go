@@ -11,6 +11,6 @@ var Version = "dev"
 // Bump the one whose code you edit (to the release you are cutting) in the same change, and re-record its hash in
 // agentgateway_test.go; that test fails until you do, and lists exactly what each one hashes.
 const (
-	AgentRelease   = "v0.4.15"
-	GatewayRelease = "v0.4.12"
+	AgentRelease   = "v0.4.26"
+	GatewayRelease = "v0.4.26"
 )

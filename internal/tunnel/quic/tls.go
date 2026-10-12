@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/fattymango/lazycake/internal/transport"
 )
 
 // selfSignedServerTLSConfig generates a throwaway certificate for the
@@ -56,12 +58,10 @@ func selfSignedServerTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-// insecureClientTLSConfig skips certificate verification - see the
-// comment on selfSignedServerTLSConfig for why that's an accepted
-// simplification here, not an oversight.
-func insecureClientTLSConfig() *tls.Config {
-	return &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"lazycake-tunnel"},
-	}
-}
+// alpn is the application protocol both ends of the relay connection name.
+const alpn = "lazycake-tunnel"
+
+// clientTLSConfig is the dialer's TLS configuration for the relay at addr: verified against the relay's certificate unless TLS is off for that
+// address (loopback development, or LAZYCAKE_COORDINATOR_TLS=0), in which case it skips verification as it always did - see the comment on
+// selfSignedServerTLSConfig. See internal/transport for the rule.
+func clientTLSConfig(addr string) *tls.Config { return transport.QUICConfig(addr, []string{alpn}) }

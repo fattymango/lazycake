@@ -6,10 +6,10 @@ import (
 	"os"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	lazycakev1 "github.com/fattymango/lazycake/internal/proto/lazycake/v1"
+	"github.com/fattymango/lazycake/internal/transport"
 )
 
 // newClient dials the coordinator named by LAZYCAKE_COORDINATOR_ADDR and
@@ -25,7 +25,7 @@ func newClient() (lazycakev1.CustomerServiceClient, context.Context, func(), err
 		return nil, nil, nil, fmt.Errorf("LAZYCAKE_TOKEN is required")
 	}
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(transport.GRPCCredentials(addr)))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("dialing %s: %w", addr, err)
 	}

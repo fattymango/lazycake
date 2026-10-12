@@ -3,6 +3,7 @@ package tlscert
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -15,16 +16,34 @@ import (
 // nothing that already talks plain HTTP breaks. The peek happens on the connection's own goroutine, never in Accept, so one slow client cannot
 // hold up the others.
 
-const peekTimeout = 10 * time.Second
+var peekTimeout = 10 * time.Second
 
-// Listener wraps inner so every accepted connection speaks TLS (with cfg) if the client starts a handshake and plain HTTP otherwise.
+// ErrPlaintextRefused is what a connection reports when plaintext is not allowed (Options.RequireTLS) and the client did not start TLS.
+var ErrPlaintextRefused = errors.New("plaintext connection refused: this port requires TLS")
+
+// Options changes what Listener allows.
+type Options struct {
+	// RequireTLS closes any connection that does not start a TLS handshake (the gRPC port once every agent and gateway is updated: their tokens
+	// must never cross the network in clear text).
+	RequireTLS bool
+	// OnRefused, if set, is told the remote address of each refused plaintext connection.
+	OnRefused func(remote string)
+}
+
+// Listener wraps inner so every accepted connection speaks TLS (with cfg) if the client starts a handshake and plain text otherwise.
 func Listener(inner net.Listener, cfg *tls.Config) net.Listener {
-	return &listener{Listener: inner, cfg: cfg}
+	return ListenerWith(inner, cfg, Options{})
+}
+
+// ListenerWith is Listener with options.
+func ListenerWith(inner net.Listener, cfg *tls.Config, opt Options) net.Listener {
+	return &listener{Listener: inner, cfg: cfg, opt: opt}
 }
 
 type listener struct {
 	net.Listener
 	cfg *tls.Config
+	opt Options
 }
 
 func (l *listener) Accept() (net.Conn, error) {
@@ -32,30 +51,65 @@ func (l *listener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &lazyConn{Conn: c, cfg: l.cfg}, nil
+	return &lazyConn{Conn: c, cfg: l.cfg, opt: l.opt}, nil
 }
 
 type lazyConn struct {
 	net.Conn
 	cfg   *tls.Config
+	opt   Options
 	once  sync.Once
 	inner net.Conn
 	tls   bool
 	err   error
+
+	mu           sync.Mutex
+	readDeadline time.Time // what the server asked for, so the peek never loosens it
+}
+
+// SetDeadline and SetReadDeadline remember the caller's deadline: the first-byte peek below must not cancel the header or handshake timeouts the
+// HTTP and gRPC servers set before their first read.
+func (c *lazyConn) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.mu.Unlock()
+	return c.Conn.SetDeadline(t)
+}
+
+func (c *lazyConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.mu.Unlock()
+	return c.Conn.SetReadDeadline(t)
 }
 
 func (c *lazyConn) init() {
 	c.once.Do(func() {
-		_ = c.Conn.SetReadDeadline(time.Now().Add(peekTimeout))
+		c.mu.Lock()
+		asked := c.readDeadline
+		c.mu.Unlock()
+		peek := time.Now().Add(peekTimeout)
+		if !asked.IsZero() && asked.Before(peek) {
+			peek = asked
+		}
+		_ = c.Conn.SetReadDeadline(peek)
 		var first [1]byte
 		if _, err := io.ReadFull(c.Conn, first[:]); err != nil {
 			c.err = err
 			return
 		}
-		_ = c.Conn.SetReadDeadline(time.Time{})
+		_ = c.Conn.SetReadDeadline(asked)
 		pc := &prefixConn{Conn: c.Conn, prefix: first[:]}
 		if first[0] == 0x16 {
 			c.inner, c.tls = tls.Server(pc, c.cfg), true
+			return
+		}
+		if c.opt.RequireTLS {
+			c.err = ErrPlaintextRefused
+			if c.opt.OnRefused != nil {
+				c.opt.OnRefused(c.Conn.RemoteAddr().String())
+			}
+			_ = c.Conn.Close()
 			return
 		}
 		c.inner = pc

@@ -1,4 +1,4 @@
-# HTTPS on the portal port
+# HTTPS and TLS (portal, gRPC, relay)
 
 Back to [README](README.md). Code: `internal/coordinator/tlscert` (`manager.go`, `mux.go`), wiring in `cmd/coordinator/run.go`, config in `internal/coordinator/config`. Tests: `tlscert_test.go`, `TestSessionCookieIsSecureOverTLSEvenInDev`.
 
@@ -20,5 +20,14 @@ Systemd drop-in `/etc/systemd/system/lazycake-coordinator.service.d/https.conf` 
 - **Short life:** if the coordinator is down for days, or port 80 is unreachable, the certificate expires and https breaks (http keeps working unless FORCE is on and a stale cert is "ready": `Ready` checks expiry). Look for `getting a certificate failed` in the journal; the usual cause is port 80.
 - **An IP certificate belongs to the IP.** If the droplet's address changes, change `LAZYCAKE_TLS_HOST` (a loaded certificate for another address is refused).
 - Let's Encrypt limits: 5 failed validations per hour per identifier. Try changes against staging first (`/tmp` probe that runs `tlscert.Manager.Run` works; build it from a throwaway `cmd/_probe`).
-- **Not covered:** the agent's gRPC connection on 7443 and the tunnel relay are still unencrypted at the transport level (backlog 8.18, second half: agent and gateway TLS needs agent/gateway releases).
 - Clients validate the certificate for the IP: use `https://<ip>:8080`; names that do not match the certificate fail.
+
+## TLS for agents, gateways and lcctl (v0.4.26)
+The same certificate also secures the connections that carry bearer tokens.
+- **gRPC (7443)** takes TLS and plaintext on one port (`tlscert.ListenerWith`, same first-byte detection as 8080, ALPN `h2` for gRPC). `LAZYCAKE_REQUIRE_TLS=1` (needs `LAZYCAKE_TLS_HOST`) closes plaintext connections (`ErrPlaintextRefused`; one warning line per 30 s, "update that agent or gateway"). Until it is on, old (≤ v0.4.25) agents and gateways keep working in plaintext.
+- **QUIC relay (UDP 7444)** serves the real certificate (`Relay.TLSConfig = tlsMgr.TLSConfig`, ALPN `lazycake-tunnel`, TLS 1.3) instead of a throwaway self-signed one, and clients **verify** it (before, they skipped verification, so a man in the middle could read the token in the control frame). The payload was always Noise-encrypted end to end; this protects the tokens and headers.
+- **Clients** (`cmd/agent`, `cmd/gateway`, `cmd/lcctl`, via `internal/transport`): TLS with the verified certificate for every coordinator address that is **not on this machine**, plaintext for loopback (local development, tests). `LAZYCAKE_COORDINATOR_TLS=0` forces plaintext (a dev coordinator on a LAN), `=1` forces TLS. **No automatic fallback to plaintext**: a fallback is a downgrade attack. Containers need `ca-certificates` (the agent and gateway Alpine images have them; the chain Let's Encrypt serves for the IP certificate is trusted by Alpine 3.20).
+- **Release guard:** `internal/transport` is part of the shared code hashed for both programs; v0.4.26 bumped `AgentRelease` and `GatewayRelease`.
+- **Rollout:** deploy the coordinator first (it accepts both), update every agent and gateway (the dashboard's update command; same machine, token and settings), confirm each reconnected, then set `LAZYCAKE_REQUIRE_TLS=1` in the drop-in and restart. A machine on an old release is refused from then on (it logs reconnect failures; update it).
+- **A connection mid-certificate-renewal** is fine: `GetCertificate` serves the current certificate on every handshake. During the ~5 s after a coordinator boot with no certificate yet, TLS handshakes fail and clients retry with backoff.
+- **Deadlines:** the first-byte peek restores the deadline the HTTP/gRPC server had set (`lazyConn.SetReadDeadline` remembers it); losing it would have switched off the header and handshake timeouts for the first request (test `TestPeekDoesNotLoosenTheServersDeadlines`).

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -85,9 +86,36 @@ func run() error {
 		log.Info("seeded portal demo accounts", "customer", cfg.SeedPortalCustomerUsername, "provider", cfg.SeedPortalProviderUsername)
 	}
 
+	// HTTPS and TLS for agents (internal/coordinator/tlscert): one certificate, obtained and renewed here (validation is answered on port 80), used by
+	// the portal on its port, the agent/gateway gRPC port and the tunnel relay.
+	var tlsMgr *tlscert.Manager
+	if cfg.TLSHost != "" {
+		tlsMgr, err = tlscert.New(tlscert.Config{Host: cfg.TLSHost, Dir: cfg.TLSDir, DirectoryURL: cfg.TLSACMEDirectory, HTTPAddr: cfg.TLSChallengeAddr, Log: log})
+		if err != nil {
+			return fmt.Errorf("setting up HTTPS: %w", err)
+		}
+		if _, port, err := net.SplitHostPort(cfg.HTTPAddr); err == nil && port != "" {
+			tlscert.RedirectPort = port
+		}
+		go tlsMgr.Run(ctx)
+	} else if cfg.RequireTLS {
+		return fmt.Errorf("LAZYCAKE_REQUIRE_TLS needs LAZYCAKE_TLS_HOST")
+	}
+
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", cfg.GRPCAddr, err)
+	}
+	if tlsMgr != nil {
+		// Agents, gateways and lcctl connect here with their tokens: take TLS and (until RequireTLS) plain gRPC on the same port.
+		grpcTLS := tlsMgr.TLSConfig().Clone()
+		grpcTLS.NextProtos = []string{"h2"}
+		var lastRefusal atomic.Int64
+		lis = tlscert.ListenerWith(lis, grpcTLS, tlscert.Options{RequireTLS: cfg.RequireTLS, OnRefused: func(remote string) {
+			if now := time.Now().Unix(); now-lastRefusal.Swap(now) >= 30 { // one line per half minute, not one per retry
+				log.Warn("refused a plaintext gRPC connection: update that agent or gateway to a release that uses TLS", "remote", remote)
+			}
+		}})
 	}
 
 	// Bus fans coordinator activity out to task 6.1's SSE stream. It's a
@@ -209,6 +237,9 @@ func run() error {
 			reconciler.RecordRelayBytes(stats.TaskID, stats.BytesAgentToGW+stats.BytesGWToAgent)
 		},
 	}
+	if tlsMgr != nil {
+		tunnelRelay.TLSConfig = tlsMgr.TLSConfig // the real certificate: clients verify it, so a man in the middle cannot read the tokens they send
+	}
 	relayErr := make(chan error, 1)
 	go func() { relayErr <- tunnelRelay.Serve(ctx, cfg.RelayAddr) }()
 	log.Info("tunnel relay listening", "addr", cfg.RelayAddr)
@@ -249,18 +280,8 @@ func run() error {
 	// No WriteTimeout: the dashboard's SSE streams are long-lived writes. The read side is bounded so a client dribbling
 	// a request in byte by byte (slowloris) cannot hold connections open.
 	var httpHandler http.Handler = httpMux
-	var tlsMgr *tlscert.Manager
-	if cfg.TLSHost != "" {
-		// HTTPS on this same port (see internal/coordinator/tlscert): the certificate is obtained and renewed here, validation is answered on
-		// port 80, and the one listener speaks both TLS and plain HTTP.
-		tlsMgr, err = tlscert.New(tlscert.Config{Host: cfg.TLSHost, Dir: cfg.TLSDir, DirectoryURL: cfg.TLSACMEDirectory, HTTPAddr: cfg.TLSChallengeAddr, Log: log})
-		if err != nil {
-			return fmt.Errorf("setting up HTTPS: %w", err)
-		}
-		if _, port, err := net.SplitHostPort(cfg.HTTPAddr); err == nil && port != "" {
-			tlscert.RedirectPort = port
-		}
-		go tlsMgr.Run(ctx)
+	if tlsMgr != nil {
+		// HTTPS on this same port: the one listener speaks both TLS and plain HTTP.
 		httpHandler = tlscert.Wrap(httpMux, cfg.ForceHTTPS, tlsMgr.Ready)
 	}
 	httpServer := &http.Server{

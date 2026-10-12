@@ -27,7 +27,7 @@ func DialGateway(ctx context.Context, addr, token, gatewayID string, noisePubkey
 }
 
 func dial(ctx context.Context, addr string, cf controlFrame) (*quicgo.Conn, error) {
-	conn, err := quicgo.DialAddr(ctx, addr, insecureClientTLSConfig(), connConfig)
+	conn, err := quicgo.DialAddr(ctx, addr, clientTLSConfig(addr), connConfig)
 	if err != nil {
 		return nil, fmt.Errorf("dialing relay at %s: %w", addr, err)
 	}

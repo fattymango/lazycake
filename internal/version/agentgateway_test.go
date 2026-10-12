@@ -15,7 +15,7 @@ import (
 // What the agent and the gateway are built from (paths relative to the repo root): their commands and internals, the transport pieces
 // both share with the coordinator's relay (not the relay itself), and the generated messages each speaks.
 var sharedCode = []string{
-	"internal/id", "internal/logging", "internal/tunnel/noise",
+	"internal/id", "internal/logging", "internal/transport", "internal/tunnel/noise",
 	"internal/tunnel/quic/client.go", "internal/tunnel/quic/frame.go", "internal/tunnel/quic/probe.go", "internal/tunnel/quic/tls.go",
 }
 
@@ -32,10 +32,10 @@ var (
 
 // The release in which each program's code (hashed below) was last changed, and its hash. Change a pair together with its release constant.
 const (
-	recordedAgentHash      = "e570bfeb8b211864f8e1e5029273a8438da505ea727c636305511c4eb77ec755"
-	recordedAgentRelease   = "v0.4.15"
-	recordedGatewayHash    = "87d176c51c6b8c8ec025ba9f777ed9054342f581db0ffc9ba7f852dc5a42c9db"
-	recordedGatewayRelease = "v0.4.12"
+	recordedAgentHash      = "8d86cdc1cc94787c648217bfe1a72803ae87c83bd2599fcdebb503d2789d1f2f"
+	recordedAgentRelease   = "v0.4.26"
+	recordedGatewayHash    = "8db6986dc66cf7c1a36568fd0d5685b8af95301b898b935e629dccdc983f15bf"
+	recordedGatewayRelease = "v0.4.26"
 )
 
 func repoRoot(t *testing.T) string {

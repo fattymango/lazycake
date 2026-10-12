@@ -3,6 +3,17 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.26 — 2026-10-12
+
+Coordinator, agent and gateway (both show "Update available"; update them with the dashboard's command, settings are kept). No migration.
+
+### Added
+- **Agents, gateways and `lcctl` now talk to the coordinator over TLS.** Their bearer tokens used to cross the network in clear text on the gRPC port (7443), and the tunnel relay's QUIC connection skipped certificate checks, so someone on the path could read them. The coordinator now serves the same Let's Encrypt certificate on 7443 (TLS and plain gRPC on one port, so machines not yet updated keep working) and on the relay, and the new clients verify it. TLS is automatic for any coordinator address that is not on the same machine; `LAZYCAKE_COORDINATOR_TLS=0` keeps plaintext for a development coordinator, `=1` forces TLS. There is no fallback to plaintext, on purpose.
+- **`LAZYCAKE_REQUIRE_TLS=1` on the coordinator** closes plaintext gRPC connections once every machine is updated.
+
+### Fixed
+- The first-byte check that lets 8080 serve both http and https wiped the connection's read deadline, which switched off the slow-client (slowloris) timeout for the first request on each connection. It now keeps the server's deadline.
+
 ## v0.4.25 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration. Production needs port 80 open and a systemd drop-in (see `.claude/https.md`).
@@ -14,9 +25,6 @@ Coordinator only; agents and gateways are unchanged. No migration. Production ne
 ### Changed
 - The session cookie is always `Secure` when the request came over https, even on a dev-mode server.
 - Dependencies: `golang.org/x/crypto` 0.58 (needed for the Let's Encrypt `shortlived` profile), plus its `x/sys`, `x/sync`, `x/text` updates.
-
-### Not covered
-- The agent's gRPC connection (7443) and the tunnel relay are still unencrypted at the transport level (backlog 8.18, second half).
 
 ## v0.4.24 — 2026-10-12
 
