@@ -3,6 +3,13 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.23 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Changed
+- **One browser tab icon for both themes** (the cake alone on a transparent background). The dark variant added in v0.4.22 is gone: browsers did not switch it reliably.
+
 ## v0.4.22 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration.

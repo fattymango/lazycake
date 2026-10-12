@@ -5,19 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
   <title>LazyCake</title>
-  <link id="favicon" rel="icon" type="image/png" href="/favicon-64.png?v=2" />
-  <script>
-    // One icon link whose file follows the browser's light/dark setting. The media attribute on <link rel="icon"> is ignored by Chrome, so the
-    // switch is done here (and again if the setting changes while the tab is open).
-    (function () {
-      var mq = window.matchMedia("(prefers-color-scheme: dark)");
-      var set = function () {
-        document.getElementById("favicon").href = (mq.matches ? "/favicon-dark-64.png" : "/favicon-64.png") + "?v=2";
-      };
-      set();
-      if (mq.addEventListener) mq.addEventListener("change", set);
-    })();
-  </script>
+  <link rel="icon" type="image/png" href="/favicon-64.png?v=3" />
   <script>
     // Apply the saved/OS theme before first paint so there is no flash of the
     // wrong theme. Must stay in step with src/lib/theme.tsx (same storage key).
