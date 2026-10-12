@@ -10,16 +10,16 @@ Providers lend the spare capacity of their machines; customers submit container 
 
 <table>
   <tr>
-    <td width="50%"><img src="img/customer-overview.png" alt="Customer overview"></td>
-    <td width="50%"><img src="img/customer-task-running.png" alt="Customer task view"></td>
+    <td width="50%"><img src="docs/img/customer-overview.png" alt="Customer overview"></td>
+    <td width="50%"><img src="docs/img/customer-task-running.png" alt="Customer task view"></td>
   </tr>
   <tr>
-    <td width="50%"><img src="img/provider-overview.png" alt="Provider overview"></td>
-    <td width="50%"><img src="img/provider-add-machine.png" alt="Provider: add a machine"></td>
+    <td width="50%"><img src="docs/img/provider-overview.png" alt="Provider overview"></td>
+    <td width="50%"><img src="docs/img/provider-add-machine.png" alt="Provider: add a machine"></td>
   </tr>
 </table>
 
-*Top: customer overview and gateways. Bottom: provider overview and add a machine.*
+*Top: customer overview and task view. Bottom: provider overview and add a machine.*
 
 ## Why the name
 
