@@ -36,7 +36,7 @@ LazyCake is a marketplace for leftover CPU: **providers** lend spare machine cap
 | `internal/agent/*` | conn, exec, runtime, capacity, lease, netns, probe, reconcile, usage, bench |
 | `internal/gateway/*`, `internal/tunnel/*` | gateway listener; Noise + QUIC transport |
 | `proto/` → `internal/proto/` | protobuf definitions → generated Go (`make proto`, uses `buf`) |
-| `migrations/` | goose SQL migrations (latest 026) |
+| `migrations/` | goose SQL migrations (latest 027) |
 | `web/` | React 18 + TS + Vite + Tailwind dashboard; built into `internal/coordinator/webassets/dist` (gitignored) |
 | `docs/` | design plans, per-phase progress, load-test report; `CHANGELOG.md` is user-facing |
 | `deploy/` | Dockerfile (targets `agent`, `gateway`, coordinator), compose, systemd unit |

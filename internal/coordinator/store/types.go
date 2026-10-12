@@ -457,3 +457,42 @@ type Reservation struct {
 	Cores    float64
 	MemoryMB int
 }
+
+// OAuthClient is an AI client that registered itself (RFC 7591 dynamic registration). Public clients only: no secret, PKCE instead.
+type OAuthClient struct {
+	ClientID     string
+	ClientName   string
+	RedirectURIs []string
+	CreatedAt    time.Time
+}
+
+// OAuthCode is an approval waiting to be exchanged for tokens.
+type OAuthCode struct {
+	CodeHash      []byte
+	ClientID      string
+	AccountID     string
+	Role          PortalRole
+	RedirectURI   string
+	CodeChallenge string
+	ExpiresAt     time.Time
+}
+
+// OAuthToken is one grant's current token pair (hashes only).
+type OAuthToken struct {
+	ID               string
+	AccessHash       []byte
+	RefreshHash      []byte
+	ClientID         string
+	AccountID        string
+	Role             PortalRole
+	AccessExpiresAt  time.Time
+	RefreshExpiresAt time.Time
+}
+
+// OAuthGrant is a connected app as the account owner sees it.
+type OAuthGrant struct {
+	ID         string
+	ClientName string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+}

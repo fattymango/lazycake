@@ -1,11 +1,12 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/lib/auth";
+import { AuthProvider, RequireAuth, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { ErrorBoundary } from "@/ui/ErrorBoundary";
 import { FullScreenError, FullScreenLoader } from "@/ui/FullScreenState";
 import { ToastProvider } from "@/ui/Toast";
 import { TooltipProvider } from "@/ui/Tooltip";
 import { Login } from "@/features/auth/Login";
+import { Authorize } from "@/features/auth/Authorize";
 import { Signup } from "@/features/auth/Signup";
 import { Kit } from "@/features/kit/Kit";
 import { Portal } from "@/features/Portal";
@@ -40,6 +41,14 @@ function Gate() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route
+        path="/authorize"
+        element={
+          <RequireAuth>
+            <Authorize />
+          </RequireAuth>
+        }
+      />
       {import.meta.env.DEV && <Route path="/_kit" element={<Kit />} />}
       <Route
         path="/*"

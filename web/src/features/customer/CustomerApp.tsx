@@ -1,5 +1,5 @@
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { CreditCard, LayoutDashboard, ListChecks, Network, SquarePlus, Wallet } from "lucide-react";
+import { CreditCard, LayoutDashboard, ListChecks, Network, Plug, SquarePlus, Wallet } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLiveEvents } from "@/lib/live";
 import { useAsync } from "@/lib/hooks/useAsync";
@@ -11,6 +11,7 @@ import { Button } from "@/ui/Button";
 import { ErrorBoundary } from "@/ui/ErrorBoundary";
 import { NotFound } from "@/ui/NotFound";
 import { Tooltip } from "@/ui/Tooltip";
+import { ConnectedApps } from "@/features/account/ConnectedApps";
 import { Billing } from "./Billing";
 import { GatewayDetail } from "./GatewayDetail";
 import { Gateways } from "./Gateways";
@@ -29,7 +30,13 @@ const nav: NavSection[] = [
     ],
   },
   { label: "Infrastructure", items: [{ to: "/gateways", label: "Gateways", icon: Network }] },
-  { label: "Account", items: [{ to: "/billing", label: "Billing", icon: CreditCard }] },
+  {
+    label: "Account",
+    items: [
+      { to: "/billing", label: "Billing", icon: CreditCard },
+      { to: "/apps", label: "Connected apps", icon: Plug },
+    ],
+  },
 ];
 
 const crumbs = {
@@ -37,6 +44,7 @@ const crumbs = {
   "/tasks/new": { label: "New task" },
   gateways: { label: "Gateways" },
   billing: { label: "Billing" },
+  apps: { label: "Connected apps" },
 };
 
 function BalanceChip() {
@@ -73,6 +81,7 @@ export function CustomerApp() {
           <Route path="/gateways" element={<Gateways />} />
           <Route path="/gateways/:id" element={<GatewayDetail />} />
           <Route path="/billing" element={<Billing />} />
+          <Route path="/apps" element={<ConnectedApps />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

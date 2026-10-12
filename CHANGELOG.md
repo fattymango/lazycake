@@ -3,6 +3,17 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.24 — 2026-10-12
+
+Needs migration 027 (before the coordinator). Agents and gateways are unchanged.
+
+### Added
+- **LazyCake for AI apps (MCP).** Add `http(s)://<your coordinator>/mcp` as an MCP server in Claude, Cursor or any MCP client. It opens a LazyCake page asking you to allow the app, you click Allow, and it is connected: no tokens to copy. The app then acts as your account: customers can submit and stop tasks, read their output and usage, see their balance and gateways; providers can see their machines and earnings and create install commands. It spends from your own balance, as you would.
+- **Connected apps page** (both roles): see every connected app and when it was last used, and disconnect one to end its access immediately.
+
+### Notes
+- Production serves plain HTTP until HTTPS (backlog 8.18) exists. Apps that insist on HTTPS for remote MCP servers (the Claude web and desktop connectors) cannot connect yet; Claude Code (`claude mcp add --transport http`), the MCP SDKs and inspectors can.
+
 ## v0.4.23 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration.

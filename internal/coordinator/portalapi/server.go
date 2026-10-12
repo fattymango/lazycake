@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fattymango/lazycake/internal/coordinator/api"
@@ -53,8 +54,16 @@ type Server struct {
 	// not necessarily cfg.GRPCAddr's bind address verbatim behind NAT or
 	// a reverse proxy; see OPEN_QUESTIONS.md).
 	CoordinatorAddr string
+	// PublicURL is the https://host the dashboard is reached on, for the OAuth/MCP discovery documents (LAZYCAKE_PUBLIC_URL). Empty: read from each
+	// request (and X-Forwarded-Proto/Host behind a proxy).
+	PublicURL string
+	// Version is reported to MCP clients as the server version.
+	Version string
 
 	limiter *loginLimiter
+
+	apiOnce sync.Once
+	api     http.Handler
 
 	// Per-IP request limits (see ratelimit). Built by Handler; tests may replace them first.
 	reqLimit    *ratelimit.Limiter // every /api/portal/ request
@@ -70,6 +79,19 @@ type Server struct {
 // portal frontends is task 7.10, still open (see
 // docs/01-dashboard-portals/PROGRESS.md).
 func (s *Server) Handler() http.Handler {
+	s.initLimits()
+	mux := http.NewServeMux()
+	s.routes(mux)
+	return s.rateLimited(mux)
+}
+
+// apiHandler is Handler built once, for the MCP tools that call the REST API in-process.
+func (s *Server) apiHandler() http.Handler {
+	s.apiOnce.Do(func() { s.api = s.Handler() })
+	return s.api
+}
+
+func (s *Server) initLimits() {
 	if s.limiter == nil {
 		s.limiter = newLoginLimiter()
 	}
@@ -84,8 +106,9 @@ func (s *Server) Handler() http.Handler {
 	if s.signupLimit == nil {
 		s.signupLimit = ratelimit.NewLimiter(5, 10*time.Minute, 5)
 	}
+}
 
-	mux := http.NewServeMux()
+func (s *Server) routes(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/portal/customer/signup", s.handleSignup(store.RoleCustomer))
 	mux.HandleFunc("POST /api/portal/provider/signup", s.handleSignup(store.RoleProvider))
@@ -128,6 +151,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/portal/provider/ledger", s.requireSession(store.RoleProvider, s.handleProviderLedger))
 	mux.HandleFunc("GET /api/portal/provider/events", s.requireSession(store.RoleProvider, s.handleAccountEvents))
 
+	// Connecting AI apps (MCP): the consent step and the list of connected apps. Cookie session only, never a bearer token, so an app cannot
+	// approve itself or hide from the list.
+	mux.HandleFunc("GET /api/portal/oauth/client", s.requireAnySession(s.handleOAuthClient))
+	mux.HandleFunc("POST /api/portal/oauth/authorize", s.requireAnySession(s.handleOAuthAuthorize))
+	mux.HandleFunc("GET /api/portal/oauth/grants", s.requireAnySession(s.handleListGrants))
+	mux.HandleFunc("DELETE /api/portal/oauth/grants/{id}", s.requireAnySession(s.handleRevokeGrant))
+
 	// Anything under /api/portal/ that matched no route above is a typo'd or
 	// removed endpoint: answer in the same {"error": ...} shape as every other
 	// failure instead of net/http's plain-text "404 page not found", which the
@@ -135,8 +165,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/portal/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 	})
+}
 
-	return s.rateLimited(mux)
+// MCPHandler serves what an AI client talks to, outside /api/portal/: the MCP endpoint itself, its OAuth discovery documents, dynamic client
+// registration and the token endpoint. Mount it for /mcp, /oauth/ and /.well-known/ (see .claude/mcp.md).
+func (s *Server) MCPHandler() http.Handler {
+	s.initLimits()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-protected-resource", withCORS(s.handleProtectedResourceMetadata))
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", withCORS(s.handleProtectedResourceMetadata))
+	mux.HandleFunc("/.well-known/oauth-authorization-server", withCORS(s.handleAuthServerMetadata))
+	mux.HandleFunc("OPTIONS /oauth/register", withCORS(nil))
+	mux.HandleFunc("POST /oauth/register", withCORS(s.handleRegister))
+	mux.HandleFunc("OPTIONS /oauth/token", withCORS(nil))
+	mux.HandleFunc("POST /oauth/token", withCORS(s.handleToken))
+	mux.HandleFunc("/mcp", withCORS(s.handleMCP))
+	return mux
 }
 
 // rateLimited throttles by client IP: everything under /api/portal/ gets a generous limit, and login and signup a

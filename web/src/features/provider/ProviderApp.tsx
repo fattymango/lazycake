@@ -1,9 +1,10 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { LayoutDashboard, PlusCircle, Wallet } from "lucide-react";
+import { LayoutDashboard, Plug, PlusCircle, Wallet } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { AppShell, type NavSection } from "@/ui/AppShell";
 import { ErrorBoundary } from "@/ui/ErrorBoundary";
 import { NotFound } from "@/ui/NotFound";
+import { ConnectedApps } from "@/features/account/ConnectedApps";
 import { AddMachine } from "./AddMachine";
 import { Earnings } from "./Earnings";
 import { MachineDetail } from "./MachineDetail";
@@ -17,13 +18,20 @@ const nav: NavSection[] = [
       { to: "/machines/add", label: "Add machine", icon: PlusCircle },
     ],
   },
-  { label: "Account", items: [{ to: "/earnings", label: "Earnings", icon: Wallet }] },
+  {
+    label: "Account",
+    items: [
+      { to: "/earnings", label: "Earnings", icon: Wallet },
+      { to: "/apps", label: "Connected apps", icon: Plug },
+    ],
+  },
 ];
 
 const crumbs = {
   machines: { label: "Machines", to: "/" },
   "/machines/add": { label: "Add machine" },
   earnings: { label: "Earnings" },
+  apps: { label: "Connected apps" },
 };
 
 export function ProviderApp() {
@@ -37,6 +45,7 @@ export function ProviderApp() {
           <Route path="/machines/add" element={<AddMachine />} />
           <Route path="/machines/:id" element={<MachineDetail />} />
           <Route path="/earnings" element={<Earnings />} />
+          <Route path="/apps" element={<ConnectedApps />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

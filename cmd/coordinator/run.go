@@ -215,10 +215,15 @@ func run() error {
 	dash := &dashboard.Server{Store: st, Bus: bus, Trust: sched.Trust, Log: log}
 	portal := &portalapi.Server{
 		Store: st, Customer: customerServer, Registry: registry, Bus: bus, Prober: tunnelRelay, Disconnector: tunnelRelay, Log: log,
-		Dev: cfg.Dev, CoordinatorAddr: cfg.PublicGRPCAddr,
+		Dev: cfg.Dev, CoordinatorAddr: cfg.PublicGRPCAddr, PublicURL: cfg.PublicURL, Version: version.Version,
 	}
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/api/portal/", portal.Handler())
+	// The MCP server for AI clients, with its OAuth endpoints (.claude/mcp.md). Their consent page is the SPA's /authorize.
+	mcpHandler := portal.MCPHandler()
+	httpMux.Handle("/mcp", mcpHandler)
+	httpMux.Handle("/oauth/", mcpHandler)
+	httpMux.Handle("/.well-known/", mcpHandler)
 	// The customer/provider portal (this repo's own web/ SPA, task 7.6-7.9)
 	// takes "/" - the operator dashboard (dash.Handler(), pre-dating it)
 	// moves to "/ops": task 7.10, "not yet wired into cmd/coordinator/

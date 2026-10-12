@@ -27,6 +27,9 @@ type Config struct {
 	// when unset, which is correct for local/demo compose but not most
 	// real deployments - an operator behind NAT must set this explicitly.
 	PublicGRPCAddr string
+	// PublicURL is the https://host the dashboard and MCP server are reached on, for the OAuth discovery documents (LAZYCAKE_PUBLIC_URL).
+	// Empty: derived from each request.
+	PublicURL string
 	// Dev enables human-readable logging instead of JSON.
 	Dev bool
 	// SeedDemoToken, if set, makes the coordinator ensure a demo account
@@ -66,6 +69,7 @@ func Load(getenv func(string) string) (Config, error) {
 		SeedPortalPassword:         getenv("LAZYCAKE_SEED_PORTAL_PASSWORD"),
 	}
 	cfg.PublicGRPCAddr = orDefault(getenv("LAZYCAKE_PUBLIC_GRPC_ADDR"), cfg.GRPCAddr)
+	cfg.PublicURL = getenv("LAZYCAKE_PUBLIC_URL")
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("LAZYCAKE_DATABASE_URL is required")

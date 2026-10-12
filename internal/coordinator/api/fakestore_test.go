@@ -498,6 +498,26 @@ func (f *fakeStore) SetGatewayMaxMbps(ctx context.Context, id string, mbps int) 
 	return nil
 }
 
+func (f *fakeStore) CreateOAuthClient(context.Context, store.OAuthClient) error { return nil }
+func (f *fakeStore) GetOAuthClient(context.Context, string) (store.OAuthClient, error) {
+	return store.OAuthClient{}, store.ErrNotFound
+}
+func (f *fakeStore) CreateOAuthCode(context.Context, store.OAuthCode) error { return nil }
+func (f *fakeStore) ConsumeOAuthCode(context.Context, []byte) (store.OAuthCode, error) {
+	return store.OAuthCode{}, store.ErrNotFound
+}
+func (f *fakeStore) CreateOAuthToken(context.Context, store.OAuthToken) error { return nil }
+func (f *fakeStore) GetOAuthTokenByAccess(context.Context, []byte) (store.OAuthToken, error) {
+	return store.OAuthToken{}, store.ErrNotFound
+}
+func (f *fakeStore) RotateOAuthToken(context.Context, []byte, store.OAuthToken) (store.OAuthToken, error) {
+	return store.OAuthToken{}, store.ErrNotFound
+}
+func (f *fakeStore) ListOAuthGrants(context.Context, string) ([]store.OAuthGrant, error) {
+	return nil, nil
+}
+func (f *fakeStore) RevokeOAuthGrant(context.Context, string, string) error { return store.ErrNotFound }
+
 func (f *fakeStore) NodeReservations(ctx context.Context, nodeIDs []string) (map[string]store.Reservation, error) {
 	return map[string]store.Reservation{}, nil
 }

@@ -309,6 +309,20 @@ type PortalAuth interface {
 	// ErrNotFound if it doesn't exist, is revoked, or has expired -
 	// callers never need to check those fields themselves.
 	GetSession(ctx context.Context, idHash []byte) (Session, error)
+	// OAuth for the MCP server (migration 027). Codes are single use; tokens are looked up by the hash of the bearer value.
+	CreateOAuthClient(ctx context.Context, c OAuthClient) error
+	GetOAuthClient(ctx context.Context, clientID string) (OAuthClient, error)
+	CreateOAuthCode(ctx context.Context, c OAuthCode) error
+	// ConsumeOAuthCode deletes the code and returns it, or ErrNotFound if it is unknown, used or expired.
+	ConsumeOAuthCode(ctx context.Context, codeHash []byte) (OAuthCode, error)
+	CreateOAuthToken(ctx context.Context, t OAuthToken) error
+	// GetOAuthTokenByAccess returns the live grant for an access token (not revoked, access not expired) and marks it used.
+	GetOAuthTokenByAccess(ctx context.Context, accessHash []byte) (OAuthToken, error)
+	// RotateOAuthToken swaps the token pair of the grant that holds refreshHash (live refresh token, issued to next.ClientID) for the new one and returns the grant.
+	RotateOAuthToken(ctx context.Context, refreshHash []byte, next OAuthToken) (OAuthToken, error)
+	ListOAuthGrants(ctx context.Context, accountID string) ([]OAuthGrant, error)
+	// RevokeOAuthGrant revokes one of accountID's grants; ErrNotFound if it is not theirs.
+	RevokeOAuthGrant(ctx context.Context, accountID, grantID string) error
 	// RevokeSession marks a session revoked (logout). A no-op, not an
 	// error, if it doesn't exist or is already revoked.
 	RevokeSession(ctx context.Context, idHash []byte) error

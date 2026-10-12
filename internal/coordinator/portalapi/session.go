@@ -100,6 +100,15 @@ func sessionFromContext(ctx context.Context) sessionInfo {
 // request's context - task 7.2's session middleware.
 func (s *Server) requireSession(role store.PortalRole, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// An AI app connected through MCP carries a bearer token instead of the cookie; it is the same account with the same role check.
+		if b, ok := s.bearerSession(r); ok {
+			if b.Role != role {
+				writeError(w, http.StatusUnauthorized, "session expired or invalid")
+				return
+			}
+			next(w, r.WithContext(withSession(r.Context(), b)))
+			return
+		}
 		cookie, err := r.Cookie(cookieName)
 		if err != nil || cookie.Value == "" {
 			writeError(w, http.StatusUnauthorized, "not signed in")
