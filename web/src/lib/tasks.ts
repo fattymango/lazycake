@@ -21,12 +21,16 @@ export function costByTask(entries: LedgerEntry[] | undefined): Map<string, numb
   return m;
 }
 
-export type TaskFilter = "all" | "active" | "succeeded" | "failed";
+export type TaskFilter = "all" | "queued" | "running" | "succeeded" | "failed" | "stopped";
 
 export function matchesTaskFilter(t: Task, f: TaskFilter): boolean {
   switch (f) {
-    case "active":
-      return !isTerminalState(t.state);
+    case "queued":
+      return t.state === "queued" || t.state === "reserved";
+    case "running":
+      return t.state === "dispatched" || t.state === "running";
+    case "stopped":
+      return t.state === "cancelled";
     case "succeeded":
       return t.state === "succeeded";
     case "failed":
@@ -40,4 +44,22 @@ export function matchesTaskFilter(t: Task, f: TaskFilter): boolean {
 export function taskCommand(t: Task): string | null {
   const parts = [...(t.entrypoint ?? []), ...(t.args ?? [])];
   return parts.length ? parts.map((p) => (/\s/.test(p) ? JSON.stringify(p) : p)).join(" ") : null;
+}
+
+export type TaskSort = "newest" | "oldest" | "longest" | "cost";
+
+/** A sorted copy. Tasks with no value for the key (not started, never charged) go last. */
+export function sortTasks(tasks: Task[], sort: TaskSort, costs: Map<string, number>, now = Date.now()): Task[] {
+  const byKey = (key: (t: Task) => number | undefined) => (a: Task, b: Task) => (key(b) ?? -1) - (key(a) ?? -1);
+  const out = [...tasks];
+  switch (sort) {
+    case "oldest":
+      return out.sort((a, b) => a.created_at_ms - b.created_at_ms);
+    case "longest":
+      return out.sort(byKey((t) => taskDurationMs(t, now)));
+    case "cost":
+      return out.sort(byKey((t) => costs.get(t.id)));
+    default:
+      return out.sort((a, b) => b.created_at_ms - a.created_at_ms);
+  }
 }

@@ -1,8 +1,17 @@
 import { cn } from "@/lib/cn";
 
-/** The LazyCake mark: a chocolate cake that is also a database server. Source art in docs/brand; public/logo.png is the 128 px export. */
+/**
+ * The LazyCake mark: a chocolate cake that is also a database server. Source art in docs/brand; public/logo.png (cream tile) and
+ * public/logo-dark.png (same art on the dark theme's surface colour) are the 128 px exports, one shown per theme.
+ */
 export function LogoMark({ className }: { className?: string }) {
-  return <img src="/logo.png" alt="" aria-hidden className={cn("size-8 shrink-0", className)} />;
+  const size = cn("size-8 shrink-0", className);
+  return (
+    <>
+      <img src="/logo.png" alt="" aria-hidden className={cn(size, "dark:hidden")} />
+      <img src="/logo-dark.png" alt="" aria-hidden className={cn(size, "hidden dark:block")} />
+    </>
+  );
 }
 
 export function Logo({ className, compact }: { className?: string; compact?: boolean }) {

@@ -1365,3 +1365,47 @@ func TestNewCustomerStartsWithOneHundredDollarsAndProviderWithNone(t *testing.T)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, a.BalanceMicros)
 }
+
+// A provider's machine page never heard about a customer's task starting or finishing there, because task events carry the customer's account.
+func TestProviderHearsTaskEventsOnItsOwnMachinesOnly(t *testing.T) {
+	c, st, bus := newTestServer(t)
+	prov := signUpProvider(t, c, "host")
+	require.NoError(t, st.UpsertNode(context.Background(), store.Node{ID: "nod_mine", AccountID: prov.AccountID, Hostname: "h", Arch: "amd64", OfferCores: 1, OfferMemoryMB: 512, OfferDiskMB: 1000}))
+
+	req, err := http.NewRequest(http.MethodGet, c.base+"/api/portal/provider/events", nil)
+	require.NoError(t, err)
+	resp, err := c.hc.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	reader := bufio.NewReader(resp.Body)
+	time.Sleep(50 * time.Millisecond)
+
+	bus.Publish(events.Event{Type: "task_state", AccountID: "act_a_customer", NodeID: "nod_someone_elses", TaskID: "not-mine", State: "running"})
+	bus.Publish(events.Event{Type: "task_state", AccountID: "act_a_customer", NodeID: "nod_mine", TaskID: "mine", State: "running"})
+
+	var ev eventView
+	require.NoError(t, json.Unmarshal([]byte(readSSEDataLine(t, reader)), &ev))
+	require.Equal(t, "mine", ev.TaskID, "the task on the provider's machine arrives, the one on another provider's machine does not")
+}
+
+// "Recent tasks" on the machine page were whatever order the database returned, cut to 100.
+func TestMachineTasksAreNewestFirst(t *testing.T) {
+	c, st, _ := newTestServer(t)
+	prov := signUpProvider(t, c, "host2")
+	require.NoError(t, st.UpsertNode(context.Background(), store.Node{ID: "nod_ord", AccountID: prov.AccountID, Hostname: "h", Arch: "amd64", OfferCores: 1, OfferMemoryMB: 512, OfferDiskMB: 1000}))
+	require.NoError(t, st.CreateAccount(context.Background(), store.Account{ID: "act_cust_ord", Name: "cust_ord"}))
+	for i, id := range []string{"tsk_ord_a", "tsk_ord_b", "tsk_ord_c"} {
+		require.NoError(t, st.CreateTask(context.Background(), store.Task{
+			ID: id, AccountID: "act_cust_ord", State: store.TaskQueued, Image: "x",
+			Limits:       store.Limits{CPUCores: 1, MemoryMB: 128, DiskMB: 500},
+			Requirements: store.Requirements{Arch: "amd64", Isolation: "podman"},
+			Delivery:     store.AtMostOnce, Retry: store.Retry{MaxAttempts: 1},
+		}))
+		_, err := st.(*store.PostgresStore).Pool().Exec(context.Background(),
+			`UPDATE tasks SET node_id = 'nod_ord', state = 'succeeded', started_at = now() - ($2 || ' minutes')::interval WHERE id = $1`, id, fmt.Sprint(30-i*10))
+		require.NoError(t, err)
+	}
+	got := decodeBody[[]nodeTaskView](t, c.do(http.MethodGet, "/api/portal/provider/nodes/nod_ord/tasks", nil))
+	require.Len(t, got, 3)
+	require.Equal(t, []string{"tsk_ord_c", "tsk_ord_b", "tsk_ord_a"}, []string{got[0].ID, got[1].ID, got[2].ID}, "the most recently started first")
+}

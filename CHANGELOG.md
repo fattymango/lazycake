@@ -3,6 +3,19 @@
 Versions follow `vMAJOR.MINOR.PATCH`. Every binary reports its version (`coordinator --version`, `agent --version`, ...) and the
 coordinator logs it at startup.
 
+## v0.4.21 — 2026-10-12
+
+Coordinator only; agents and gateways are unchanged. No migration.
+
+### Fixed
+- **A machine's "Recent tasks" were not recent.** The list had no order (the database returned whatever it liked) and was then cut to 100, so the newest tasks could be missing. It is now newest first (by when each task started, or was submitted if it has not started).
+- **A task did not appear on the machine page until you reloaded.** The live update for a task went only to the customer who ran it, so a provider (a different account) never heard that a task had started or finished on their machine. Providers now receive those updates for their own machines (task id, state and machine only).
+- The login lockout test passed only when run slowly (under `-race`): the per-address login limit tripped first. Test fixed; no behaviour change.
+
+### Changed
+- **Customer Tasks page: filter and sort.** Filter by All, Queued, Running, Succeeded, Failed or Stopped (with counts), and sort by newest, oldest, longest run or highest cost.
+- **The logo has a dark-theme version** (the same cake on the dark surface colour) instead of the cream tile showing in both themes.
+
 ## v0.4.20 — 2026-10-12
 
 Coordinator only; agents and gateways are unchanged. No migration.

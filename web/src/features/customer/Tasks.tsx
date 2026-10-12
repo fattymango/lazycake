@@ -5,13 +5,13 @@ import { apiGet } from "@/lib/api";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useLiveReload } from "@/lib/hooks/useLiveReload";
 import { usePageTitle } from "@/lib/hooks/usePageTitle";
-import { costByTask, matchesTaskFilter, taskCommand, type TaskFilter } from "@/lib/tasks";
+import { costByTask, matchesTaskFilter, sortTasks, taskCommand, type TaskFilter, type TaskSort } from "@/lib/tasks";
 import type { LedgerEntry, Task } from "@/lib/types";
 import { TaskTable } from "@/components/TaskTable";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { EmptyState, ErrorState } from "@/ui/EmptyState";
-import { Input } from "@/ui/Input";
+import { Input, Select } from "@/ui/Input";
 import { PageHeader } from "@/ui/PageHeader";
 import { Pagination } from "@/ui/Pagination";
 import { Segmented } from "@/ui/Segmented";
@@ -23,6 +23,7 @@ export function Tasks() {
   const tasks = useAsync((s) => apiGet<Task[]>("/api/portal/customer/tasks", s), []);
   const ledger = useAsync((s) => apiGet<LedgerEntry[]>("/api/portal/customer/ledger", s), []);
   const [filter, setFilter] = useState<TaskFilter>("all");
+  const [sort, setSort] = useState<TaskSort>("newest");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
@@ -40,16 +41,18 @@ export function Tasks() {
   const counts = useMemo(
     () => ({
       all: all.length,
-      active: all.filter((t) => matchesTaskFilter(t, "active")).length,
+      queued: all.filter((t) => matchesTaskFilter(t, "queued")).length,
+      running: all.filter((t) => matchesTaskFilter(t, "running")).length,
       succeeded: all.filter((t) => matchesTaskFilter(t, "succeeded")).length,
       failed: all.filter((t) => matchesTaskFilter(t, "failed")).length,
+      stopped: all.filter((t) => matchesTaskFilter(t, "stopped")).length,
     }),
     [all]
   );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return all.filter(
+    const matching = all.filter(
       (t) =>
         matchesTaskFilter(t, filter) &&
         (!q ||
@@ -58,7 +61,8 @@ export function Tasks() {
           (t.node_id ?? "").toLowerCase().includes(q) ||
           (taskCommand(t) ?? "").toLowerCase().includes(q))
     );
-  }, [all, filter, query]);
+    return sortTasks(matching, sort, costs);
+  }, [all, filter, query, sort, costs]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount);
@@ -66,6 +70,7 @@ export function Tasks() {
 
   const reset = () => {
     setFilter("all");
+    setSort("newest");
     setQuery("");
     setPage(1);
   };
@@ -96,11 +101,27 @@ export function Tasks() {
             }}
             options={[
               { value: "all", label: "All", count: counts.all },
-              { value: "active", label: "Active", count: counts.active },
+              { value: "queued", label: "Queued", count: counts.queued },
+              { value: "running", label: "Running", count: counts.running },
               { value: "succeeded", label: "Succeeded", count: counts.succeeded },
               { value: "failed", label: "Failed", count: counts.failed },
+              { value: "stopped", label: "Stopped", count: counts.stopped },
             ]}
           />
+          <Select
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value as TaskSort);
+              setPage(1);
+            }}
+            aria-label="Sort tasks"
+            className="sm:w-44"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="longest">Longest run</option>
+            <option value="cost">Highest cost</option>
+          </Select>
           <Input
             leading={<Search />}
             value={query}

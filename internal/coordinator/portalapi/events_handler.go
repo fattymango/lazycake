@@ -1,11 +1,13 @@
 package portalapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/fattymango/lazycake/internal/coordinator/events"
+	"github.com/fattymango/lazycake/internal/coordinator/store"
 )
 
 // sseKeepalive is how often handleAccountEvents writes a no-op comment
@@ -62,7 +64,7 @@ func (s *Server) handleAccountEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
 
-	ch, cancel := s.Bus.SubscribeAccount(sess.AccountID)
+	ch, cancel, mine := s.eventStreamFor(r.Context(), sess)
 	defer cancel()
 
 	ticker := time.NewTicker(sseKeepalive)
@@ -79,8 +81,47 @@ func (s *Server) handleAccountEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			if !mine(ev) {
+				continue
+			}
 			writeSSEJSON(w, toEventView(ev))
 			flusher.Flush()
 		}
+	}
+}
+
+// eventStreamFor picks what a session sees. A task's events carry its customer's account, so a provider, who is a different account, would never
+// hear that a customer's task started or finished on the provider's own machine: the machine page only updated on reload. A provider therefore
+// also gets the task_state events of tasks on its machines (state and ids only, which is what its machine page lists anyway).
+func (s *Server) eventStreamFor(ctx context.Context, sess sessionInfo) (<-chan events.Event, func(), func(events.Event) bool) {
+	if sess.Role != store.RoleProvider {
+		ch, cancel := s.Bus.SubscribeAccount(sess.AccountID)
+		return ch, cancel, func(events.Event) bool { return true }
+	}
+	ch, cancel := s.Bus.Subscribe()
+	owned := map[string]bool{}
+	checked := map[string]bool{}
+	refresh := func() {
+		nodes, err := s.Store.ListNodesByAccount(ctx, sess.AccountID)
+		if err != nil {
+			return
+		}
+		for _, n := range nodes {
+			owned[n.ID] = true
+		}
+	}
+	refresh()
+	return ch, cancel, func(ev events.Event) bool {
+		if ev.AccountID == sess.AccountID {
+			return true
+		}
+		if ev.Type != "task_state" || ev.NodeID == "" {
+			return false
+		}
+		if !owned[ev.NodeID] && !checked[ev.NodeID] {
+			checked[ev.NodeID] = true // a machine registered after this stream opened: look once
+			refresh()
+		}
+		return owned[ev.NodeID]
 	}
 }

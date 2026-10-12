@@ -111,7 +111,7 @@ func (s *PostgresStore) ListTasksByNode(ctx context.Context, nodeID string, stat
 		stateStrs[i] = string(st)
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+taskColumns+` FROM tasks WHERE node_id = $1 AND state = ANY($2)`,
+		`SELECT `+taskColumns+` FROM tasks WHERE node_id = $1 AND state = ANY($2) ORDER BY COALESCE(started_at, created_at) DESC`,
 		nodeID, stateStrs)
 	if err != nil {
 		return nil, fmt.Errorf("listing tasks by node: %w", err)
